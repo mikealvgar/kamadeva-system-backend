@@ -1,0 +1,370 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum InventoryMovementType {
+  PURCHASE_IN
+  SALE_OUT
+  RETURN_IN
+  ADJUSTMENT_IN
+  ADJUSTMENT_OUT
+}
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  CONVERTED
+  CANCELLED
+}
+
+enum SaleStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  TRANSFER
+  OTHER
+}
+
+enum IdempotencyStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+model User {
+  id           String  @id @default(uuid()) @db.Uuid
+  name         String
+  email        String  @unique
+  passwordHash String
+  isActive     Boolean @default(true)
+
+  roles         UserRole[]
+  refreshTokens RefreshToken[]
+
+  quotes             Quote[]             @relation("QuoteCreatedBy")
+  sales              Sale[]              @relation("SaleCreatedBy")
+  payments           Payment[]           @relation("PaymentCreatedBy")
+  inventoryMovements InventoryMovement[] @relation("InventoryMovementCreatedBy")
+  idempotencyKeys    IdempotencyKey[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
+model Role {
+  id          String  @id @default(uuid()) @db.Uuid
+  name        String  @unique
+  description String?
+  isActive    Boolean @default(true)
+
+  users UserRole[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("roles")
+}
+
+model UserRole {
+  userId String @db.Uuid
+  roleId String @db.Uuid
+
+  user User @relation(fields: [userId], references: [id])
+  role Role @relation(fields: [roleId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model RefreshToken {
+  id        String @id @default(uuid()) @db.Uuid
+  tokenHash String
+  userId    String @db.Uuid
+  user      User   @relation(fields: [userId], references: [id])
+
+  expiresAt DateTime
+  revokedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model Category {
+  id          String  @id @default(uuid()) @db.Uuid
+  name        String
+  slug        String  @unique
+  description String?
+  isActive    Boolean @default(true)
+
+  products Product[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("categories")
+}
+
+model Product {
+  id          String   @id @default(uuid()) @db.Uuid
+  sku         String   @unique
+  barcode     String?  @unique
+  name        String
+  description String?
+  price       Decimal  @db.Decimal(12, 2)
+  cost        Decimal? @db.Decimal(12, 2)
+  isActive    Boolean  @default(true)
+
+  categoryId String   @db.Uuid
+  category   Category @relation(fields: [categoryId], references: [id])
+
+  quoteItems         QuoteItem[]
+  saleItems          SaleItem[]
+  inventoryMovements InventoryMovement[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([categoryId])
+  @@map("products")
+}
+
+model Customer {
+  id       String  @id @default(uuid()) @db.Uuid
+  name     String
+  email    String?
+  phone    String?
+  taxId    String?
+  address  String?
+  isActive Boolean @default(true)
+
+  quotes Quote[]
+  sales  Sale[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+  @@map("customers")
+}
+
+model InventoryMovement {
+  id        String  @id @default(uuid()) @db.Uuid
+  productId String  @db.Uuid
+  product   Product @relation(fields: [productId], references: [id])
+
+  type           InventoryMovementType
+  quantityChange Decimal               @db.Decimal(14, 3)
+  unitCost       Decimal?              @db.Decimal(12, 2)
+
+  referenceType String?
+  referenceId   String?
+
+  saleItemId String?   @db.Uuid
+  saleItem   SaleItem? @relation(fields: [saleItemId], references: [id])
+
+  createdById String? @db.Uuid
+  createdBy   User?   @relation("InventoryMovementCreatedBy", fields: [createdById], references: [id])
+
+  notes     String?
+  createdAt DateTime @default(now())
+
+  @@index([productId])
+  @@index([type])
+  @@index([referenceType, referenceId])
+  @@index([saleItemId])
+  @@map("inventory_movements")
+}
+
+model Quote {
+  id     String      @id @default(uuid()) @db.Uuid
+  folio  String      @unique
+  status QuoteStatus @default(DRAFT)
+
+  customerId String   @db.Uuid
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  items QuoteItem[]
+
+  subtotal Decimal @db.Decimal(12, 2)
+  discount Decimal @default(0) @db.Decimal(12, 2)
+  tax      Decimal @default(0) @db.Decimal(12, 2)
+  total    Decimal @db.Decimal(12, 2)
+
+  notes     String?
+  expiresAt DateTime?
+
+  createdById String? @db.Uuid
+  createdBy   User?   @relation("QuoteCreatedBy", fields: [createdById], references: [id])
+
+  convertedSale Sale?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([status])
+  @@map("quotes")
+}
+
+model QuoteItem {
+  id String @id @default(uuid()) @db.Uuid
+
+  quoteId String @db.Uuid
+  quote   Quote  @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  productId String  @db.Uuid
+  product   Product @relation(fields: [productId], references: [id])
+
+  quantity  Decimal @db.Decimal(14, 3)
+  unitPrice Decimal @db.Decimal(12, 2)
+  discount  Decimal @default(0) @db.Decimal(12, 2)
+  tax       Decimal @default(0) @db.Decimal(12, 2)
+  total     Decimal @db.Decimal(12, 2)
+
+  createdAt DateTime @default(now())
+
+  @@index([quoteId])
+  @@index([productId])
+  @@map("quote_items")
+}
+
+model Sale {
+  id     String     @id @default(uuid()) @db.Uuid
+  folio  String     @unique
+  status SaleStatus @default(PENDING)
+
+  customerId String?   @db.Uuid
+  customer   Customer? @relation(fields: [customerId], references: [id])
+
+  quoteId String? @unique @db.Uuid
+  quote   Quote?  @relation(fields: [quoteId], references: [id])
+
+  items    SaleItem[]
+  payments Payment[]
+
+  subtotal Decimal @db.Decimal(12, 2)
+  discount Decimal @default(0) @db.Decimal(12, 2)
+  tax      Decimal @default(0) @db.Decimal(12, 2)
+  total    Decimal @db.Decimal(12, 2)
+
+  createdById String? @db.Uuid
+  createdBy   User?   @relation("SaleCreatedBy", fields: [createdById], references: [id])
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([status])
+  @@map("sales")
+}
+
+model SaleItem {
+  id String @id @default(uuid()) @db.Uuid
+
+  saleId String @db.Uuid
+  sale   Sale   @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  productId String  @db.Uuid
+  product   Product @relation(fields: [productId], references: [id])
+
+  quantity  Decimal @db.Decimal(14, 3)
+  unitPrice Decimal @db.Decimal(12, 2)
+  discount  Decimal @default(0) @db.Decimal(12, 2)
+  tax       Decimal @default(0) @db.Decimal(12, 2)
+  total     Decimal @db.Decimal(12, 2)
+
+  inventoryMovements InventoryMovement[]
+
+  createdAt DateTime @default(now())
+
+  @@index([saleId])
+  @@index([productId])
+  @@map("sale_items")
+}
+
+model Payment {
+  id String @id @default(uuid()) @db.Uuid
+
+  saleId String @db.Uuid
+  sale   Sale   @relation(fields: [saleId], references: [id])
+
+  amount Decimal       @db.Decimal(12, 2)
+  method PaymentMethod
+  status PaymentStatus @default(PENDING)
+
+  provider          String?
+  providerReference String? @unique
+
+  createdById String? @db.Uuid
+  createdBy   User?   @relation("PaymentCreatedBy", fields: [createdById], references: [id])
+
+  idempotencyKeys IdempotencyKey[]
+
+  paidAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([saleId])
+  @@index([status])
+  @@map("payments")
+}
+
+model IdempotencyKey {
+  id String @id @default(uuid()) @db.Uuid
+
+  key         String
+  scope       String
+  requestHash String
+  status      IdempotencyStatus @default(PENDING)
+
+  responseStatusCode Int?
+  responseBody       Json?
+  errorMessage       String?
+
+  userId String? @db.Uuid
+  user   User?   @relation(fields: [userId], references: [id])
+
+  paymentId String?  @db.Uuid
+  payment   Payment? @relation(fields: [paymentId], references: [id])
+
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([key, scope])
+  @@index([userId])
+  @@index([paymentId])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}
