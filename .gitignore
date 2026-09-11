@@ -63,3 +63,6 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 .devin
 .windsurf
 .env
+TASK.md
+AGENTS.md
+PROGRESS.md

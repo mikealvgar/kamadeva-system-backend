@@ -7,5 +7,9 @@ export default defineConfig({
     globals: true,
     root: './',
     include: ['**/*.e2e-spec.ts'],
+    globalSetup: ['./test/postgres.setup.ts'],
+    setupFiles: ['./test/environment.setup.ts'],
+    hookTimeout: 30000,
+    testTimeout: 15000,
   },
 });
