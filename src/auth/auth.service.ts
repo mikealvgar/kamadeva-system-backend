@@ -1,6 +1,7 @@
 import {
   ConflictException,
   Injectable,
+  InternalServerErrorException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -15,6 +16,8 @@ import type { RegisterDto } from './dto/register.dto.js';
 import type { LoginDto } from './dto/login.dto.js';
 import type { AuthUser } from './types/auth-user.type.js';
 import type { AuthResult, TokenPair } from './types/auth-result.type.js';
+import { serializableTransaction } from '../prisma/serializable-transaction.js';
+import { isRoleName } from '../roles/role-names.js';
 
 type RefreshPayload = { sub: string; jti: string; exp: number };
 type UserWithRoles = NonNullable<Awaited<ReturnType<UsersService['findById']>>>;
@@ -43,14 +46,25 @@ export class AuthService {
       email,
       roles: [],
     };
-    const session = await this.issueSession(user);
     try {
-      await this.prisma.$transaction(async (tx) => {
+      return await serializableTransaction(this.prisma, async (tx) => {
+        const name = (await tx.user.count()) === 0 ? 'ADMIN' : 'VENDEDOR';
+        const role = await tx.role.findUnique({ where: { name } });
+        if (!role?.isActive)
+          throw new InternalServerErrorException(
+            'Rol inicial no configurado o inactivo',
+          );
+        user.roles = [name];
+        const session = await this.issueSession(user);
         await this.users.create(
           { id: user.id, name: user.name, email, passwordHash },
           tx,
         );
+        await tx.userRole.create({
+          data: { userId: user.id, roleId: role.id },
+        });
         await tx.refreshToken.create({ data: session.record });
+        return { user, ...session.tokens };
       });
     } catch (error) {
       if (
@@ -61,7 +75,6 @@ export class AuthService {
       }
       throw error;
     }
-    return { user, ...session.tokens };
   }
 
   async login(dto: LoginDto): Promise<AuthResult> {
@@ -138,7 +151,7 @@ export class AuthService {
       name: user.name,
       email: user.email,
       roles: user.roles
-        .filter(({ role }) => role.isActive)
+        .filter(({ role }) => role.isActive && isRoleName(role.name))
         .map(({ role }) => role.name),
     };
   }

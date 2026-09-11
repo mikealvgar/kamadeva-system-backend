@@ -20,7 +20,7 @@ npx prisma generate --config prisma7.config.ts
 npm run start:dev
 ```
 
-`migrate deploy` aplica las migraciones pendientes a la base configurada. No requiere reset. Esta funcionalidad reutiliza la migración inicial; `jti` identifica `RefreshToken.id`, sin añadir columnas.
+`migrate deploy` aplica las migraciones pendientes a la base configurada. No requiere reset. La migración `20260911010000_seed_admin_vendedor_roles` siembra los dos roles de forma idempotente; `jti` identifica `RefreshToken.id`, sin añadir columnas.
 
 Compilar y arrancar la versión de producción:
 
@@ -56,7 +56,7 @@ Duraciones aceptadas: entero en segundos o entero con sufijo `s`, `m`, `h`, `d`,
 
 Los errores de infraestructura conservan el estado `500`; logout no oculta fallos de persistencia. Los cuerpos inválidos se rechazan mediante `ValidationPipe` antes de ejecutar el contrato de logout.
 
-Usuario público: `{ id, name, email, roles }`. Al registrarse, `roles` es `[]`; no existe rol inicial configurado. Roles inactivos no se incluyen. No se exponen entidades Prisma, `passwordHash` ni `tokenHash`.
+Usuario público: `{ id, name, email, roles }`. El primer usuario registrado recibe `roles: ["ADMIN"]`; los siguientes reciben `["VENDEDOR"]`. Roles inactivos no se incluyen. No se exponen entidades Prisma, `passwordHash` ni `tokenHash`.
 
 Nombre se recorta; correo se recorta y convierte a minúsculas. Contraseña: mínimo 8 caracteres y máximo 72 bytes UTF-8, sin recortar ni truncar. Los campos desconocidos se rechazan con `400`.
 
@@ -96,4 +96,29 @@ Las pruebas unitarias usan dobles y no necesitan PostgreSQL. Las E2E requieren D
 
 E2E cubre validaciones, registro concurrente, credenciales, usuario inactivo, guard JWT, expiración, firma/algoritmo, rotación concurrente, logout, persistencia al reiniciar la aplicación y Swagger. Las pruebas reinician Nest conservando PostgreSQL para verificar que el estado de sesión no depende de memoria local.
 
-Especificación ejecutada: `specs/spec-auth-services.md`. Seguimiento local: `TASK.md` y `PROGRESS.md`.
+## Roles y autorización
+
+| Rol | Acceso |
+| --- | --- |
+| `ADMIN` | Gestión de roles y acceso a rutas de VENDEDOR. |
+| `VENDEDOR` | Rutas que admiten VENDEDOR; sin gestión de roles. |
+
+El conjunto es cerrado, con mayúsculas exactas. No hay creación dinámica de roles. Un usuario puede tener ambos roles. `@Roles()` usa OR y ADMIN también satisface VENDEDOR. Sin metadata, `@UseGuards(JwtAuthGuard, RolesGuard)` solo exige autenticación.
+
+| Endpoint (requiere ADMIN) | Resultado |
+| --- | --- |
+| `GET /api/roles` | Los dos roles ordenados por nombre: `{ id, name, description, isActive }`. |
+| `GET /api/users/:userId/roles` | `{ userId, roles }`, solo roles activos. |
+| `PUT /api/users/:userId/roles` | Reemplaza todos los roles con `{ "roles": ["ADMIN"] }`, `["VENDEDOR"]` o ambos; devuelve `{ userId, roles }`. |
+| `DELETE /api/users/:userId/roles/:roleName` | `204`, incluso si el rol no estaba asignado. |
+| `DELETE /api/users/:userId` | `204`. Elimina usuario, sesiones y asignaciones. Solo si no tiene cotizaciones, ventas, pagos ni movimientos asociados. |
+
+Sin token válido o usuario inactivo: `401`; sin ADMIN: `403`; usuario inexistente: `404`. UUID v4 inválido, roles desconocidos, vacíos o duplicados: `400`. Borrarse a sí mismo: `400` con `No puedes eliminar tu propio usuario`. Asignar un rol inactivo: `422`. Remover el último ADMIN activo: `409` con `No se puede remover el último administrador`; eliminarlo o eliminar un usuario con registros asociados: `409`. Repetir un PUT válido es idempotente.
+
+El registro cuenta usuarios dentro de una transacción PostgreSQL `Serializable` que crea usuario, asignación y sesión. Los cambios de roles comprueban usuario, roles y último administrador en el mismo nivel de aislamiento. Los conflictos `P2034` reintentan la operación completa hasta cuatro veces con una nueva instantánea: dos primeros registros concurrentes terminan con un ADMIN y un VENDEDOR; dos degradaciones concurrentes no pueden eliminar al último administrador. Errores restantes conservan `500`; email duplicado produce `409`.
+
+Cambiar roles no modifica ni revoca access tokens emitidos: siguen válidos hasta `exp`, con su claim anterior. Login o refresh genera un claim actualizado. Sin embargo, `JwtStrategy` recarga roles desde DB en cada petición, así que los permisos cambian inmediatamente. No se revocan refresh tokens por cambios de rol. Roles inactivos se filtran; su activación se administra directamente en DB.
+
+La migración vacía `20260911000000_seed_roles` permanece intacta. No hay bootstrap por correo: solo el primer registro recibe ADMIN automáticamente; usuarios preexistentes no reciben roles retroactivamente.
+
+Especificaciones implementadas: `specs/spec-auth-services.md` y `specs/spec-roles-assignment.md` (con acceso de ADMIN a VENDEDOR confirmado por el usuario).

@@ -5,6 +5,7 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { UsersService } from '../../users/users.service.js';
 import { JwtPayload } from '../types/jwt-payload.type.js';
 import { isUUID } from 'class-validator';
+import { isRoleName } from '../../roles/role-names.js';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
@@ -45,7 +46,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       email: user.email,
       name: user.name,
       roles: user.roles
-        .filter(({ role }) => role.isActive)
+        .filter(({ role }) => role.isActive && isRoleName(role.name))
         .map((userRole) => userRole.role.name),
     };
   }

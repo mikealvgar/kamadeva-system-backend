@@ -41,7 +41,12 @@ describe('AuthService', () => {
   };
   const users = { findByEmail: vi.fn(), findById: vi.fn(), create: vi.fn() };
   const tokens = { findUnique: vi.fn(), create: vi.fn(), updateMany: vi.fn() };
-  const tx = { refreshToken: tokens };
+  const tx = {
+    refreshToken: tokens,
+    user: { count: vi.fn() },
+    role: { findUnique: vi.fn() },
+    userRole: { create: vi.fn() },
+  };
   const prisma = { refreshToken: tokens, $transaction: vi.fn() };
   const jwt = { signAsync: vi.fn(), verifyAsync: vi.fn() };
   const config: Record<string, unknown> = {
@@ -53,6 +58,8 @@ describe('AuthService', () => {
   beforeEach(async () => {
     vi.resetAllMocks();
     users.findByEmail.mockResolvedValue(null);
+    tx.user.count.mockResolvedValue(0);
+    tx.role.findUnique.mockResolvedValue({ id: 'admin-id', isActive: true });
     users.findById.mockResolvedValue(user);
     users.create.mockResolvedValue(user);
     tokens.findUnique.mockResolvedValue(record);
@@ -88,7 +95,7 @@ describe('AuthService', () => {
         id: expect.any(String),
         name: 'Test',
         email: user.email,
-        roles: [],
+        roles: ['ADMIN'],
       },
       accessToken: 'access-token',
       refreshToken: 'refresh-token',
@@ -109,6 +116,42 @@ describe('AuthService', () => {
         tokenHash: hash,
       }),
     });
+  });
+  it('assigns VENDEDOR to subsequent registrations and signs the assigned role', async () => {
+    tx.user.count.mockResolvedValue(1);
+    tx.role.findUnique.mockResolvedValue({ id: 'seller-id', isActive: true });
+    const result = await service.register(dto);
+    expect(result.user.roles).toEqual(['VENDEDOR']);
+    expect(tx.role.findUnique).toHaveBeenCalledWith({
+      where: { name: 'VENDEDOR' },
+    });
+    expect(tx.userRole.create).toHaveBeenCalledWith({
+      data: { userId: result.user.id, roleId: 'seller-id' },
+    });
+    expect(jwt.signAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ roles: ['VENDEDOR'] }),
+    );
+  });
+  it('retries serialization conflicts with a fresh user count', async () => {
+    tx.user.count.mockResolvedValueOnce(0).mockResolvedValueOnce(1);
+    users.create.mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError('serialization', {
+        code: 'P2034',
+        clientVersion: '7',
+      }),
+    );
+    expect((await service.register(dto)).user.roles).toEqual(['VENDEDOR']);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: 'Serializable',
+    });
+  });
+  it('fails without writing a user if the seed role is missing', async () => {
+    tx.role.findUnique.mockResolvedValue(null);
+    await expect(service.register(dto)).rejects.toThrow(
+      'Rol inicial no configurado',
+    );
+    expect(users.create).not.toHaveBeenCalled();
   });
   it('rejects a duplicate before hashing', async () => {
     users.findByEmail.mockResolvedValue(user);
@@ -154,7 +197,7 @@ describe('AuthService', () => {
     users.findByEmail.mockResolvedValue({
       ...user,
       roles: [
-        { role: { name: 'STAFF', isActive: true } },
+        { role: { name: 'VENDEDOR', isActive: true } },
         { role: { name: 'OLD', isActive: false } },
       ],
     });
@@ -163,12 +206,12 @@ describe('AuthService', () => {
       id: user.id,
       name: user.name,
       email: user.email,
-      roles: ['STAFF'],
+      roles: ['VENDEDOR'],
     });
     expect(jwt.signAsync).toHaveBeenCalledWith({
       sub: user.id,
       email: user.email,
-      roles: ['STAFF'],
+      roles: ['VENDEDOR'],
     });
   });
   it('rotates and verifies with an explicit refresh secret and HS256', async () => {

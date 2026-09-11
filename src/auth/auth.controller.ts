@@ -32,7 +32,11 @@ export class AuthController {
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
   @Header('Cache-Control', 'no-store')
-  @ApiOperation({ summary: 'Registrar usuario y crear sesión' })
+  @ApiOperation({
+    summary: 'Registrar usuario y crear sesión',
+    description:
+      'Primer usuario: ADMIN; siguientes: VENDEDOR. Asignación transaccional segura ante concurrencia.',
+  })
   @ApiCreatedResponse({ type: AuthResultDto })
   @ApiConflictResponse({ description: 'Correo ya registrado' })
   register(@Body() dto: RegisterDto): Promise<AuthResult> {
