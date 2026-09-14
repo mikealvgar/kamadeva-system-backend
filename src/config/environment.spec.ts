@@ -6,6 +6,9 @@ const valid = {
   JWT_REFRESH_SECRET: 'refresh',
   JWT_ACCESS_EXPIRES_IN: '15m',
   JWT_REFRESH_EXPIRES_IN: '7d',
+  CLOUDINARY_CLOUD_NAME: 'test-cloud',
+  CLOUDINARY_API_KEY: 'test-key',
+  CLOUDINARY_API_SECRET: 'test-secret',
 };
 
 describe('Environment validation', () => {

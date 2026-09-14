@@ -139,6 +139,9 @@ model Product {
   barcode     String?  @unique
   name        String
   description String?
+  brand       String?
+  tallas      String[] @default([])
+  imageUrl    String?
   price       Decimal  @db.Decimal(12, 2)
   cost        Decimal? @db.Decimal(12, 2)
   isActive    Boolean  @default(true)

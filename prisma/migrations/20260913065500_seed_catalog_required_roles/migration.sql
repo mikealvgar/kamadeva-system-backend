@@ -1,0 +1,5 @@
+INSERT INTO "roles" ("id", "name", "description", "isActive", "createdAt", "updatedAt")
+VALUES
+  ('00000000-0000-4000-8000-000000000001', 'ADMIN', 'Administrador', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+  ('00000000-0000-4000-8000-000000000002', 'VENDEDOR', 'Vendedor', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+ON CONFLICT ("name") DO NOTHING;

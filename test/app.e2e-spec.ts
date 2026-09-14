@@ -468,14 +468,16 @@ describe('Auth HTTP + PostgreSQL', () => {
         seller.accessToken,
         `${admin.accessToken}invalid`,
       ]) {
-        for (const call of [
-          http().get('/api/roles'),
-          http().get(endpoint(seller.user.id)),
-          http()
-            .put(endpoint(seller.user.id))
-            .send({ roles: ['ADMIN'] }),
-          http().delete(`${endpoint(seller.user.id)}/VENDEDOR`),
+        for (const makeCall of [
+          () => http().get('/api/roles'),
+          () => http().get(endpoint(seller.user.id)),
+          () =>
+            http()
+              .put(endpoint(seller.user.id))
+              .send({ roles: ['ADMIN'] }),
+          () => http().delete(`${endpoint(seller.user.id)}/VENDEDOR`),
         ]) {
+          const call = makeCall();
           if (token) call.set('Authorization', `Bearer ${token}`);
           await call.expect(token === seller.accessToken ? 403 : 401);
         }
@@ -720,8 +722,14 @@ describe('Auth HTTP + PostgreSQL', () => {
         .set('Authorization', auth)
         .expect(400);
       expect(self.body.message).toBe('No puedes eliminar tu propio usuario');
-      await http().delete(target).set('Authorization', auth).expect(204).expect('');
-      expect(await prisma.user.findUnique({ where: { id: seller.user.id } })).toBeNull();
+      await http()
+        .delete(target)
+        .set('Authorization', auth)
+        .expect(204)
+        .expect('');
+      expect(
+        await prisma.user.findUnique({ where: { id: seller.user.id } }),
+      ).toBeNull();
       expect(
         await prisma.refreshToken.count({ where: { userId: seller.user.id } }),
       ).toBe(0);
@@ -730,7 +738,10 @@ describe('Auth HTTP + PostgreSQL', () => {
       ).toBe(0);
       await post('login', { email: seller.user.email, password }).expect(401);
       await post('refresh', { refreshToken: seller.refreshToken }).expect(401);
-      await http().get(endpoint(seller.user.id)).set('Authorization', auth).expect(404);
+      await http()
+        .get(endpoint(seller.user.id))
+        .set('Authorization', auth)
+        .expect(404);
     });
     it('rejects deletion of users with associated records', async () => {
       const admin = await register();

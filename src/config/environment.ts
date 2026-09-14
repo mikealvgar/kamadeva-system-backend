@@ -23,6 +23,9 @@ export function validateEnvironment(config: Record<string, unknown>) {
     'JWT_REFRESH_SECRET',
     'JWT_ACCESS_EXPIRES_IN',
     'JWT_REFRESH_EXPIRES_IN',
+    'CLOUDINARY_CLOUD_NAME',
+    'CLOUDINARY_API_KEY',
+    'CLOUDINARY_API_SECRET',
   ]) {
     if (typeof config[key] !== 'string' || !config[key].trim()) {
       throw new Error(`${key} es obligatorio`);

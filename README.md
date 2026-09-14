@@ -12,7 +12,7 @@ cp .env-example .env
 docker compose up -d postgres
 ```
 
-Completar `.env` con dos secretos distintos. Ejecutar `openssl rand -hex 32` una vez para cada secreto y colocar los resultados en `JWT_ACCESS_SECRET` y `JWT_REFRESH_SECRET`. No guardar `.env` en Git.
+Completar `.env` con dos secretos JWT distintos y las tres variables de Cloudinary indicadas abajo. Ejecutar `openssl rand -hex 32` una vez para cada secreto y colocar los resultados en `JWT_ACCESS_SECRET` y `JWT_REFRESH_SECRET`. No guardar `.env` en Git.
 
 ```bash
 npx prisma migrate deploy --config prisma7.config.ts
@@ -20,7 +20,7 @@ npx prisma generate --config prisma7.config.ts
 npm run start:dev
 ```
 
-`migrate deploy` aplica las migraciones pendientes a la base configurada. No requiere reset. La migración `20260911010000_seed_admin_vendedor_roles` siembra los dos roles de forma idempotente; `jti` identifica `RefreshToken.id`, sin añadir columnas.
+`migrate deploy` aplica las migraciones pendientes a la base configurada. No requiere reset. La migración inicial `20260913065414_catalog_categories` crea el esquema completo existente, incluida la unicidad de categorías y la referencia restrictiva desde productos. `20260913065500_seed_catalog_required_roles` siembra los dos roles de forma idempotente; `jti` identifica `RefreshToken.id`, sin añadir columnas.
 
 Compilar y arrancar la versión de producción:
 
@@ -98,20 +98,20 @@ E2E cubre validaciones, registro concurrente, credenciales, usuario inactivo, gu
 
 ## Roles y autorización
 
-| Rol | Acceso |
-| --- | --- |
-| `ADMIN` | Gestión de roles y acceso a rutas de VENDEDOR. |
+| Rol        | Acceso                                            |
+| ---------- | ------------------------------------------------- |
+| `ADMIN`    | Gestión de roles y acceso a rutas de VENDEDOR.    |
 | `VENDEDOR` | Rutas que admiten VENDEDOR; sin gestión de roles. |
 
 El conjunto es cerrado, con mayúsculas exactas. No hay creación dinámica de roles. Un usuario puede tener ambos roles. `@Roles()` usa OR y ADMIN también satisface VENDEDOR. Sin metadata, `@UseGuards(JwtAuthGuard, RolesGuard)` solo exige autenticación.
 
-| Endpoint (requiere ADMIN) | Resultado |
-| --- | --- |
-| `GET /api/roles` | Los dos roles ordenados por nombre: `{ id, name, description, isActive }`. |
-| `GET /api/users/:userId/roles` | `{ userId, roles }`, solo roles activos. |
-| `PUT /api/users/:userId/roles` | Reemplaza todos los roles con `{ "roles": ["ADMIN"] }`, `["VENDEDOR"]` o ambos; devuelve `{ userId, roles }`. |
-| `DELETE /api/users/:userId/roles/:roleName` | `204`, incluso si el rol no estaba asignado. |
-| `DELETE /api/users/:userId` | `204`. Elimina usuario, sesiones y asignaciones. Solo si no tiene cotizaciones, ventas, pagos ni movimientos asociados. |
+| Endpoint (requiere ADMIN)                   | Resultado                                                                                                               |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/roles`                            | Los dos roles ordenados por nombre: `{ id, name, description, isActive }`.                                              |
+| `GET /api/users/:userId/roles`              | `{ userId, roles }`, solo roles activos.                                                                                |
+| `PUT /api/users/:userId/roles`              | Reemplaza todos los roles con `{ "roles": ["ADMIN"] }`, `["VENDEDOR"]` o ambos; devuelve `{ userId, roles }`.           |
+| `DELETE /api/users/:userId/roles/:roleName` | `204`, incluso si el rol no estaba asignado.                                                                            |
+| `DELETE /api/users/:userId`                 | `204`. Elimina usuario, sesiones y asignaciones. Solo si no tiene cotizaciones, ventas, pagos ni movimientos asociados. |
 
 Sin token válido o usuario inactivo: `401`; sin ADMIN: `403`; usuario inexistente: `404`. UUID v4 inválido, roles desconocidos, vacíos o duplicados: `400`. Borrarse a sí mismo: `400` con `No puedes eliminar tu propio usuario`. Asignar un rol inactivo: `422`. Remover el último ADMIN activo: `409` con `No se puede remover el último administrador`; eliminarlo o eliminar un usuario con registros asociados: `409`. Repetir un PUT válido es idempotente.
 
@@ -119,6 +119,98 @@ El registro cuenta usuarios dentro de una transacción PostgreSQL `Serializable`
 
 Cambiar roles no modifica ni revoca access tokens emitidos: siguen válidos hasta `exp`, con su claim anterior. Login o refresh genera un claim actualizado. Sin embargo, `JwtStrategy` recarga roles desde DB en cada petición, así que los permisos cambian inmediatamente. No se revocan refresh tokens por cambios de rol. Roles inactivos se filtran; su activación se administra directamente en DB.
 
-La migración vacía `20260911000000_seed_roles` permanece intacta. No hay bootstrap por correo: solo el primer registro recibe ADMIN automáticamente; usuarios preexistentes no reciben roles retroactivamente.
+No hay bootstrap por correo: solo el primer registro recibe ADMIN automáticamente; usuarios preexistentes no reciben roles retroactivamente.
 
-Especificaciones implementadas: `specs/spec-auth-services.md` y `specs/spec-roles-assignment.md` (con acceso de ADMIN a VENDEDOR confirmado por el usuario).
+Especificaciones implementadas disponibles en este checkout: `specs/spec-auth-services.md`, `specs/spec-catalog.md` y `specs/spec-catalog-products.md`. La gestión de roles también está implementada y cubierta por pruebas.
+
+## Catálogo: categorías
+
+Todos los endpoints requieren un access token Bearer y un usuario activo. `ADMIN` puede escribir; `ADMIN` y `VENDEDOR` pueden leer. Sin token válido o con usuario inactivo: `401`; sin rol permitido: `403`.
+
+| Endpoint                             | Entrada                                                   | Resultado                                                                            |
+| ------------------------------------ | --------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `POST /api/catalog/categories`       | `name`, opcionales `slug` y `description`                 | `201`: `CategoryDto`; slug duplicado: `409`.                                         |
+| `GET /api/catalog/categories`        | Query opcional `includeInactive=true` o `false`           | `200`: `CategoryDto[]`, ordenado por nombre; por defecto solo activas.               |
+| `GET /api/catalog/categories/:id`    | UUID                                                      | `200`: `CategoryDto`, incluidas inactivas; inexistente: `404`.                       |
+| `PATCH /api/catalog/categories/:id`  | Al menos uno de `name`, `slug`, `description`, `isActive` | `200`: `CategoryDto`; inexistente: `404`; slug duplicado: `409`.                     |
+| `DELETE /api/catalog/categories/:id` | UUID                                                      | `204` sin cuerpo; con productos asociados: `409`; inexistente o ya eliminada: `404`. |
+
+`CategoryDto`: `{ id, name, slug, description, isActive }`. Nombre obligatorio al crear, recortado, no vacío y máximo 100 caracteres. Slug explícito debe cumplir `^[a-z0-9]+(-[a-z0-9]+)*$`; si se omite, se genera del nombre en minúsculas, sin acentos y con separadores convertidos a guiones. Renombrar sin enviar slug lo regenera. Un nombre que no permita generar un slug válido produce `400`; puede acompañarse de un slug explícito válido.
+
+Descripción opcional de máximo 500 caracteres; se recorta y un valor vacío o `null` se guarda como `null`. `name`, `slug` e `isActive` no aceptan `null`. UUID, campos o query inválidos, campos desconocidos y PATCH vacío producen `400`. La base protege el slug único y el borrado con productos, también ante concurrencia.
+
+```bash
+curl -i http://localhost:3000/api/catalog/categories \
+  -H 'Authorization: Bearer <accessToken ADMIN>' \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Anillos","description":"Joyería de anillos"}'
+
+curl -i 'http://localhost:3000/api/catalog/categories?includeInactive=true' \
+  -H 'Authorization: Bearer <accessToken>'
+
+curl -i -X PATCH http://localhost:3000/api/catalog/categories/<id> \
+  -H 'Authorization: Bearer <accessToken ADMIN>' \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Anillos de boda","isActive":false}'
+```
+
+`test/catalog.e2e-spec.ts` cubre CRUD, normalización, validación, duplicados concurrentes, referencias, permisos y Swagger. Las suites E2E se ejecutan secuencialmente porque comparten la base temporal y autenticación verifica el primer registro. Catálogo crea y limpia sus propios datos. El CRUD de productos se documenta a continuación.
+
+## Catálogo: productos
+
+Todos los endpoints exigen JWT y usuario activo. `ADMIN` escribe; `ADMIN` y `VENDEDOR` leen. Sin token válido o usuario inactivo: `401`; sin rol permitido: `403`.
+
+| Endpoint                                  | Entrada                                                                                                                     | Resultado                                                                                              |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `POST /api/catalog/products`              | `sku`, `articulo`, `precioVenta`, `categoryId`; opcionales `descripcion`, `codigoBarras`, `marca`, `tallas`, `precioCompra` | `201`: `ProductDto`; categoría inexistente: `404`; SKU/código duplicado: `409`.                        |
+| `GET /api/catalog/products`               | Query `categoryId`, `includeInactive` (`true` o `false`), `search`                                                          | `200`: `ProductDto[]` por artículo ascendente; por defecto solo activos.                               |
+| `GET /api/catalog/products/:id`           | UUID v4                                                                                                                     | `200`: `ProductDto`, incluso inactivo; inexistente: `404`.                                             |
+| `GET /api/catalog/products/:id/movements` | UUID v4                                                                                                                     | `200`: movimientos por fecha descendente; producto inexistente: `404`.                                 |
+| `PATCH /api/catalog/products/:id`         | Al menos un campo de creación o `isActive`                                                                                  | `200`: `ProductDto`; producto/categoría inexistente: `404`; duplicados: `409`.                         |
+| `DELETE /api/catalog/products/:id`        | UUID v4                                                                                                                     | `204` sin cuerpo; referencias en cotizaciones, ventas o movimientos: `409`; inexistente: `404`.        |
+| `POST /api/catalog/products/:id/image`    | Multipart, un campo `file`                                                                                                  | `200`: `ProductDto`; archivo inválido: `400`; producto inexistente: `404`; fallo del proveedor: `502`. |
+
+Respuesta pública: `{ id, sku, articulo, descripcion, codigoBarras, marca, tallas, precioCompra, precioVenta, stock, imageUrl, isActive, categoria, createdAt, updatedAt }`. `categoria` incluye únicamente `{ id, name, slug }`. Se conservan los nombres internos de Prisma; el servicio mapea los campos públicos.
+
+SKU se recorta y pasa a mayúsculas (máximo 64); artículo se recorta y no puede quedar vacío (máximo 200). Descripción admite hasta 500 caracteres; código de barras 64 y marca 100. Los textos opcionales se recortan y un valor vacío o `null` elimina el valor. El código de barras es único cuando existe. Tallas se recortan, deben ser strings no vacíos y no pueden repetirse después del recorte. Una lista vacía se persiste como `[]` y se devuelve como `null`; `null` no se acepta como entrada para `tallas`.
+
+Precios entran como números JSON de hasta 10 enteros y 2 decimales. Venta debe ser positiva; compra puede ser cero, omitirse o ponerse a `null`. Ambos salen como strings con dos decimales. UUID, tipos, precisión, campos desconocidos y PATCH vacío producen `400`. `stock` e `imageUrl` no se aceptan en los cuerpos de creación o actualización.
+
+`stock` se deriva de `SUM(InventoryMovement.quantityChange)` y se devuelve con tres decimales, incluso negativo; no existe una columna de stock. Los productos sin movimientos devuelven `"0.000"`. El listado usa una sola agregación para todos los productos devueltos. `search` busca en artículo, SKU o código de barras sin distinguir mayúsculas. Inactivar un producto no altera sus movimientos ni su existencia.
+
+Los movimientos solo se consultan y exponen `{ id, type, quantityChange, unitCost, referenceType, referenceId, notes, createdAt }`. La creación/corrección de movimientos corresponde al hito de inventario.
+
+### Cloudinary
+
+Estas variables son obligatorias al arrancar y van exclusivamente en `.env` o en el gestor de secretos del despliegue:
+
+| Variable                | Valor esperado                                 |
+| ----------------------- | ---------------------------------------------- |
+| `CLOUDINARY_CLOUD_NAME` | Nombre del entorno de productos de Cloudinary. |
+| `CLOUDINARY_API_KEY`    | API key de ese entorno.                        |
+| `CLOUDINARY_API_SECRET` | API secret correspondiente.                    |
+
+Se acepta una imagen JPEG, PNG o WebP de hasta 5 MiB (5 × 1024 × 1024 bytes). Multer limita el multipart en memoria y la validación comprueba la firma del archivo además del MIME declarado. El SDK sube a `kamadeva/products` con `public_id = product-{id}`, `overwrite=true` e `invalidate=true`; se persiste únicamente `secure_url`. La siguiente carga reemplaza la imagen. Si el proveedor falla, se responde `502` y no se modifica la URL persistida. Eliminar un producto no elimina su imagen remota en este hito. Referencias: [subidas de Cloudinary](https://cloudinary.com/documentation/image_upload_api_reference) y [validación de archivos de Nest](https://docs.nestjs.com/techniques/file-upload).
+
+La migración `20260913222113_product_extended_fields` agrega solo `brand`, `tallas` (con default `[]`) e `imageUrl`. Aplicar las migraciones pendientes en el entorno correspondiente:
+
+```bash
+npx prisma migrate deploy --config prisma7.config.ts
+npx prisma generate --config prisma7.config.ts
+```
+
+```bash
+curl -i http://localhost:3000/api/catalog/products \
+  -H 'Authorization: Bearer <accessToken ADMIN>' \
+  -H 'Content-Type: application/json' \
+  -d '{"sku":"AN-R-001","articulo":"Anillo de plata","categoryId":"<uuid categoría>","precioCompra":780.25,"precioVenta":1250.50,"marca":"Kamadeva","tallas":["7","8"]}'
+
+curl -i 'http://localhost:3000/api/catalog/products?search=anillo&includeInactive=true' \
+  -H 'Authorization: Bearer <accessToken>'
+
+curl -i http://localhost:3000/api/catalog/products/<id>/image \
+  -H 'Authorization: Bearer <accessToken ADMIN>' \
+  -F 'file=@/ruta/anillo.png'
+```
+
+Las pruebas unitarias sustituyen Prisma y el SDK. `test/catalog-products.e2e-spec.ts` usa PostgreSQL real temporal y sustituye `PRODUCT_IMAGES`: ninguna prueba llama a Cloudinary real. La suite mantiene un servidor HTTP durante su ejecución y limpia sus propios datos.
