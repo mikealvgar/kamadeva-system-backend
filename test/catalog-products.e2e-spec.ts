@@ -335,7 +335,7 @@ describe('Products HTTP + PostgreSQL', () => {
     }
   });
 
-  it('derives fractional positive and negative stock for detail and list without mutation endpoints', async () => {
+  it('derives fractional positive and negative stock and rejects client-supplied quantityChange', async () => {
     const product = await create();
     const other = await create({ articulo: 'Sin movimientos' });
     const newest = new Date('2026-09-13T12:00:00Z');
@@ -410,7 +410,7 @@ describe('Products HTTP + PostgreSQL', () => {
       .post(`${base}/${product.id}/movements`)
       .set('Authorization', tokens.admin!)
       .send({ quantityChange: 10 })
-      .expect(404);
+      .expect(400);
   });
 
   it('updates public fields and category, preserves stock and rejects invalid patches', async () => {

@@ -178,7 +178,7 @@ Precios entran como números JSON de hasta 10 enteros y 2 decimales. Venta debe 
 
 `stock` se deriva de `SUM(InventoryMovement.quantityChange)` y se devuelve con tres decimales, incluso negativo; no existe una columna de stock. Los productos sin movimientos devuelven `"0.000"`. El listado usa una sola agregación para todos los productos devueltos. `search` busca en artículo, SKU o código de barras sin distinguir mayúsculas. Inactivar un producto no altera sus movimientos ni su existencia.
 
-Los movimientos solo se consultan y exponen `{ id, type, quantityChange, unitCost, referenceType, referenceId, notes, createdAt }`. La creación/corrección de movimientos corresponde al hito de inventario.
+Los movimientos exponen `{ id, type, quantityChange, unitCost, referenceType, referenceId, notes, createdAt }`. El alta manual y la consulta global se describen en Inventario.
 
 ### Cloudinary
 
@@ -214,3 +214,28 @@ curl -i http://localhost:3000/api/catalog/products/<id>/image \
 ```
 
 Las pruebas unitarias sustituyen Prisma y el SDK. `test/catalog-products.e2e-spec.ts` usa PostgreSQL real temporal y sustituye `PRODUCT_IMAGES`: ninguna prueba llama a Cloudinary real. La suite mantiene un servidor HTTP durante su ejecución y limpia sus propios datos.
+
+## Inventario
+
+| Endpoint | Permiso | Contrato |
+| --- | --- | --- |
+| `POST /api/catalog/products/:id/movements` | ADMIN | `201`: movimiento manual; producto inexistente `404`. |
+| `GET /api/inventory/movements` | ADMIN o VENDEDOR | `200`: lista por `createdAt` descendente, sin paginación. Filtros opcionales `productId` (UUID v4), `type`, `startDate` y `endDate` (ISO 8601, inclusivos). Producto filtrado inexistente: `404`. |
+
+Ambos requieren token válido y usuario activo (`401`); permisos insuficientes producen `403`. UUID, cuerpo o query inválidos producen `400`. Una lista sin coincidencias devuelve `[]`.
+
+`quantity` es un número positivo con hasta 11 enteros y 3 decimales (máximo `99999999999.999`), compatible con `Decimal(14,3)`. El servidor deriva `quantityChange`: positivo para `PURCHASE_IN`, `RETURN_IN` y `ADJUSTMENT_IN`; negativo para `ADJUSTMENT_OUT`. `SALE_OUT` está reservado para ventas y se rechaza en el alta manual. No se impide que un ajuste deje stock negativo.
+
+`unitCost` es opcional, no negativo, hasta 10 enteros y 2 decimales; omitido se guarda como `null`. `notes` es opcional, se recorta y admite hasta 500 caracteres; vacío u omitido se guarda como `null`. Los opcionales aceptan omisión, pero no `null` explícito. La respuesta reutiliza `InventoryMovementDto`, con cantidad y costo como strings de tres y dos decimales. Las referencias quedan en `null`; `createdById` procede del usuario autenticado y no se expone ni se acepta en el cuerpo.
+
+```bash
+curl -i 'http://localhost:3000/api/catalog/products/<uuid>/movements' \
+  -H 'Authorization: Bearer <accessToken ADMIN>' \
+  -H 'Content-Type: application/json' \
+  -d '{"type":"PURCHASE_IN","quantity":10,"unitCost":780.25,"notes":"Compra a proveedor"}'
+
+curl -i 'http://localhost:3000/api/inventory/movements?type=PURCHASE_IN&startDate=2026-09-01T00:00:00Z' \
+  -H 'Authorization: Bearer <accessToken>'
+```
+
+Cada alta se refleja en el stock derivado del listado y detalle de productos. Los movimientos no se editan ni borran; se corrigen creando un ajuste nuevo. No se requiere migración. `test/inventory.e2e-spec.ts` comprueba el contrato con PostgreSQL temporal aislado.

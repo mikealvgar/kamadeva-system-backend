@@ -9,6 +9,7 @@ import { validateEnvironment } from './config/environment.js';
 import { RolesModule } from './roles/roles.module.js';
 import { CatalogModule } from './catalog/catalog.module.js';
 import { CatalogProductsModule } from './catalog/products/catalog-products.module.js';
+import { InventoryModule } from './catalog/inventory/inventory.module.js';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { CatalogProductsModule } from './catalog/products/catalog-products.modul
     RolesModule,
     CatalogModule,
     CatalogProductsModule,
+    InventoryModule,
   ],
   controllers: [AppController],
   providers: [AppService],
