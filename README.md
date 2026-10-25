@@ -239,3 +239,16 @@ curl -i 'http://localhost:3000/api/inventory/movements?type=PURCHASE_IN&startDat
 ```
 
 Cada alta se refleja en el stock derivado del listado y detalle de productos. Los movimientos no se editan ni borran; se corrigen creando un ajuste nuevo. No se requiere migración. `test/inventory.e2e-spec.ts` comprueba el contrato con PostgreSQL temporal aislado.
+
+## Arquitectura Limpia y Modular (Clean Architecture)
+
+El módulo transaccional de cotizaciones y ventas (`src/quotes/`) implementa **Modular Clean Architecture (Ports & Adapters)** con cuatro capas concéntricas:
+
+1. **`domain/`**: Entidades y agregados puros (`QuoteAggregate`, `QuoteItem`, `SaleAggregate`), Value Objects (`Money`, `Quantity`, `Folio`), excepciones de negocio (`QuoteExpiredException`, `InsufficientStockException`) y eventos de dominio (`QuoteConvertedToSaleEvent`). Cero dependencias de NestJS o Prisma.
+2. **`application/`**: Casos de uso de responsabilidad única (`CreateQuoteUseCase`, `PayQuoteUseCase`, `SendQuoteUseCase`, `UpdateQuoteUseCase`, `DeleteQuoteUseCase`) y puertos límite (`QuoteRepositoryPort`, `SaleRepositoryPort`, `UnitOfWorkPort`, `EventPublisherPort`).
+3. **`infrastructure/`**: Adaptadores secundarios que implementan los puertos (`PrismaQuoteRepository`, `PrismaSaleRepository`, `PrismaUnitOfWorkAdapter` con retries serializables, y `NestEventEmitterAdapter`).
+4. **`presentation/`**: `QuotesController` y DTOs públicos de Swagger que delegan a los casos de uso y traducen errores de dominio mediante `handleDomainError`.
+
+### Eventos de Dominio y Extensibilidad
+
+El sistema publica eventos de dominio en memoria mediante `@nestjs/event-emitter` (`EventPublisherPort`). Nuevos módulos (por ejemplo, facturación electrónica, envío de WhatsApp o analítica) pueden suscribirse a eventos como `quote.converted-to-sale` sin necesidad de acoplarse ni inyectar servicios del módulo de ventas.

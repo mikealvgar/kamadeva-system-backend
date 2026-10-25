@@ -47,7 +47,7 @@ export const saleSelect = {
 export type QuoteRecord = Prisma.QuoteGetPayload<{
   select: typeof quoteSelect;
 }>;
-type SaleRecord = Prisma.SaleGetPayload<{ select: typeof saleSelect }>;
+export type SaleRecord = Prisma.SaleGetPayload<{ select: typeof saleSelect }>;
 type CustomerRecord = Prisma.CustomerGetPayload<{
   select: typeof customerSelect;
 }>;
