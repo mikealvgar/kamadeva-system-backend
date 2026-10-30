@@ -1,15 +1,11 @@
-export class DomainException extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = this.constructor.name;
-  }
-}
+import { DomainException } from '../../../common/domain/domain-exception.js';
 
-export class InvalidAmountException extends DomainException {
-  constructor(message = 'Importe fuera de rango') {
-    super(message);
-  }
-}
+export {
+  DomainException,
+  InvalidAmountException,
+} from '../../../common/domain/domain-exception.js';
+// Raised by the shared sale registration when paying a quote.
+export { InsufficientStockException } from '../../../sales/domain/sale-exceptions.js';
 
 export class QuoteNotFoundException extends DomainException {
   constructor(message = 'Cotización inexistente') {
@@ -53,11 +49,6 @@ export class QuoteAlreadyConvertedException extends DomainException {
   }
 }
 
-export class InsufficientStockException extends DomainException {
-  constructor(message = 'Sin inventario suficiente') {
-    super(message);
-  }
-}
 
 export class PaymentAmountMismatchException extends DomainException {
   constructor(
@@ -81,6 +72,12 @@ export class InvalidExpirationDateException extends DomainException {
 
 export class RelatedRecordConflictException extends DomainException {
   constructor(message = 'Conflicto con un registro relacionado') {
+    super(message);
+  }
+}
+
+export class InvalidSizeSelectionException extends DomainException {
+  constructor(message = 'Talla inválida para el producto') {
     super(message);
   }
 }

@@ -3,20 +3,21 @@ import { Prisma } from '../../../generated/prisma/client.js';
 import type { DomainEvent } from '../../../common/domain/domain-event.js';
 import { QuoteAggregate } from '../../domain/entities/quote.aggregate.js';
 import { QuoteItem } from '../../domain/entities/quote-item.entity.js';
-import type { SaleAggregate } from '../../domain/entities/sale.aggregate.js';
+import type { SaleAggregate } from '../../../sales/domain/sale.aggregate.js';
 import {
   InsufficientStockException,
   PaymentAmountMismatchException,
   QuoteExpiredException,
 } from '../../domain/exceptions/quote-exceptions.js';
-import type {
-  InventoryQueryPort,
-  QuoteRepositoryPort,
-} from '../ports/quote-repository.port.js';
-import type { SaleRepositoryPort } from '../ports/sale-repository.port.js';
-import type { UnitOfWorkPort } from '../ports/unit-of-work.port.js';
+import type { QuoteRepositoryPort } from '../ports/quote-repository.port.js';
+import type { InventoryQueryPort } from '../../../sales/application/ports/inventory-query.port.js';
+import type { SaleRepositoryPort } from '../../../sales/application/ports/sale-repository.port.js';
+import { RegisterSaleUseCase } from '../../../sales/application/use-cases/register-sale.use-case.js';
+import type { UnitOfWorkPort } from '../../../common/application/unit-of-work.port.js';
 import type { EventPublisherPort } from '../ports/event-publisher.port.js';
 import { PayQuoteUseCase } from './pay-quote.use-case.js';
+import type { FolioSequencePort } from '../../../common/application/folio-sequence.port.js';
+import { Folio, type FolioSeries } from '../../../common/domain/folio.js';
 
 class MockQuoteRepo implements Partial<QuoteRepositoryPort> {
   quotes = new Map<string, QuoteAggregate>();
@@ -34,32 +35,20 @@ class MockQuoteRepo implements Partial<QuoteRepositoryPort> {
 
 class MockSaleRepo implements SaleRepositoryPort {
   sales = new Map<string, SaleAggregate>();
-  deductions: unknown[] = [];
 
   async save(sale: SaleAggregate): Promise<void> {
     this.sales.set(sale.id, sale);
-    this.deductions.push(
-      ...sale.items.map((i) => ({
-        productId: i.productId,
-        quantity: i.quantity,
-      })),
-    );
   }
 
-  async findById(id: string): Promise<SaleAggregate | null> {
-    return this.sales.get(id) ?? null;
+  async existsForQuote(quoteId: string): Promise<boolean> {
+    return [...this.sales.values()].some((sale) => sale.quoteId === quoteId);
   }
 
-  async findByQuoteId(quoteId: string): Promise<SaleAggregate | null> {
-    for (const sale of this.sales.values()) {
-      if (sale.quoteId === quoteId) return sale;
-    }
+  async findForCancellation(): Promise<SaleAggregate | null> {
     return null;
   }
 
-  async recordInventoryDeductions(items: unknown[]): Promise<void> {
-    this.deductions.push(...items);
-  }
+  async saveCancellation(): Promise<void> {}
 }
 
 class MockInventoryQuery implements InventoryQueryPort {
@@ -75,6 +64,16 @@ class MockInventoryQuery implements InventoryQueryPort {
       res.set(id, this.stock.get(id) ?? new Prisma.Decimal(0));
     }
     return res;
+  }
+}
+
+class InMemoryFolioSequence implements FolioSequencePort {
+  counters = new Map<FolioSeries, number>();
+
+  async next(series: FolioSeries): Promise<Folio> {
+    const value = (this.counters.get(series) ?? 0) + 1;
+    this.counters.set(series, value);
+    return Folio.fromSequence(series, value);
   }
 }
 
@@ -105,6 +104,7 @@ describe('Application Layer: PayQuoteUseCase', () => {
   let uow: DirectUnitOfWork;
   let events: RecordingEventPublisher;
   let useCase: PayQuoteUseCase;
+  let folios: InMemoryFolioSequence;
 
   beforeEach(() => {
     quoteRepo = new MockQuoteRepo();
@@ -112,10 +112,11 @@ describe('Application Layer: PayQuoteUseCase', () => {
     invQuery = new MockInventoryQuery();
     uow = new DirectUnitOfWork();
     events = new RecordingEventPublisher();
+    folios = new InMemoryFolioSequence();
     useCase = new PayQuoteUseCase(
       quoteRepo as unknown as QuoteRepositoryPort,
       saleRepo,
-      invQuery,
+      new RegisterSaleUseCase(saleRepo, invQuery, folios),
       uow,
       events,
     );
@@ -123,6 +124,7 @@ describe('Application Layer: PayQuoteUseCase', () => {
 
   it('converts quote to sale when payment matches and stock is sufficient', async () => {
     const quote = new QuoteAggregate({
+      folio: 'C-000001',
       customerId: 'cust-1',
       items: [
         new QuoteItem({ productId: 'prod-1', quantity: 2, unitPrice: 150 }),
@@ -138,10 +140,13 @@ describe('Application Layer: PayQuoteUseCase', () => {
 
     expect(sale.id).toBeDefined();
     expect(sale.status).toBe('COMPLETED');
-    expect(sale.folio.prefix).toBe('VEN');
+    expect(sale.folio.toString()).toBe('V-000001');
     expect(quote.status).toBe('CONVERTED');
 
-    expect(saleRepo.deductions).toHaveLength(1);
+    const saved = saleRepo.sales.get(sale.id)!;
+    expect(saved.quoteId).toBe(quote.id);
+    expect(saved.items).toHaveLength(1);
+    expect(saved.payment).toMatchObject({ method: 'CASH', status: 'PAID' });
     expect(
       events.events.some((e) => e.eventName === 'quote.converted-to-sale'),
     ).toBe(true);
@@ -152,6 +157,7 @@ describe('Application Layer: PayQuoteUseCase', () => {
 
   it('rejects conversion when payment amount differs from quote total', async () => {
     const quote = new QuoteAggregate({
+      folio: 'C-000001',
       customerId: 'cust-1',
       items: [
         new QuoteItem({ productId: 'prod-1', quantity: 1, unitPrice: 100 }),
@@ -170,6 +176,7 @@ describe('Application Layer: PayQuoteUseCase', () => {
 
   it('rejects conversion when stock is insufficient', async () => {
     const quote = new QuoteAggregate({
+      folio: 'C-000001',
       customerId: 'cust-1',
       items: [
         new QuoteItem({ productId: 'prod-1', quantity: 50, unitPrice: 10 }),
@@ -184,10 +191,12 @@ describe('Application Layer: PayQuoteUseCase', () => {
         actorId: 'user-1',
       }),
     ).rejects.toThrow(InsufficientStockException);
+    expect(folios.counters.size).toBe(0);
   });
 
   it('rejects conversion when quote has expired', async () => {
     const quote = new QuoteAggregate({
+      folio: 'C-000001',
       customerId: 'cust-1',
       expiresAt: new Date(Date.now() - 3600000),
       items: [

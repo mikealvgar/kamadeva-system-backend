@@ -11,6 +11,7 @@ import {
   InvalidExpirationDateException,
   InvalidFolioException,
   InvalidQuoteStateException,
+  InvalidSizeSelectionException,
   PaymentAmountMismatchException,
   ProductNotFoundException,
   QuoteAlreadyConvertedException,
@@ -45,6 +46,7 @@ export function handleDomainError(error: unknown): never {
     error instanceof InvalidAmountException ||
     error instanceof PaymentAmountMismatchException ||
     error instanceof InvalidExpirationDateException ||
+    error instanceof InvalidSizeSelectionException ||
     error instanceof DomainException
   ) {
     throw new BadRequestException(error.message);

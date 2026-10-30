@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { QuoteAggregate } from './entities/quote.aggregate.js';
 import { QuoteItem } from './entities/quote-item.entity.js';
-import { Money, Quantity } from './value-objects/money.js';
-import { Folio } from './value-objects/folio.js';
+import { Money, Quantity } from '../../common/domain/money.js';
+import { Folio } from '../../common/domain/folio.js';
 import {
   InvalidAmountException,
   InvalidQuoteStateException,
@@ -30,12 +30,17 @@ describe('Pure Domain Core: QuoteAggregate & Value Objects', () => {
       expect(q.toString()).toBe('2.500');
     });
 
-    it('validates and formats Folio correctly', () => {
-      const folio = Folio.generate('COT');
-      expect(folio.prefix).toBe('COT');
-      expect(folio.toString()).toMatch(/^COT-\d{8}-[A-Z0-9]{6}$/);
+    it('formats sequential folios and accepts legacy ones', () => {
+      expect(Folio.fromSequence('C', 45).toString()).toBe('C-000045');
+      expect(Folio.fromSequence('V', 1234567).toString()).toBe('V-1234567');
+      expect(Folio.fromSequence('V', 1).series).toBe('V');
+      expect(new Folio('COT-20260920-AB12CD').series).toBe('C');
+      expect(new Folio('VEN-20260920-AB12CD').series).toBe('V');
 
-      expect(() => new Folio('INVALID-FOLIO')).toThrow();
+      for (const value of ['INVALID-FOLIO', 'C-12345', 'X-000001', 'c-000001'])
+        expect(() => new Folio(value)).toThrow();
+      for (const value of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])
+        expect(() => Folio.fromSequence('C', value)).toThrow();
     });
   });
 
@@ -72,6 +77,7 @@ describe('Pure Domain Core: QuoteAggregate & Value Objects', () => {
       });
 
       const quote = new QuoteAggregate({
+        folio: 'C-000001',
         customerId: 'cust-1',
         items: [item1, item2],
       });
@@ -90,6 +96,7 @@ describe('Pure Domain Core: QuoteAggregate & Value Objects', () => {
         unitPrice: '100.00',
       });
       const quote = new QuoteAggregate({
+        folio: 'C-000001',
         customerId: 'cust-1',
         items: [item],
       });
@@ -105,6 +112,7 @@ describe('Pure Domain Core: QuoteAggregate & Value Objects', () => {
       const futureDate = new Date(Date.now() + 60000);
 
       const expiredQuote = new QuoteAggregate({
+        folio: 'C-000001',
         customerId: 'cust-1',
         items: [new QuoteItem({ productId: 'p1', quantity: 1, unitPrice: 10 })],
         expiresAt: pastDate,
@@ -113,6 +121,7 @@ describe('Pure Domain Core: QuoteAggregate & Value Objects', () => {
       expect(() => expiredQuote.assertPayable()).toThrow(QuoteExpiredException);
 
       const validQuote = new QuoteAggregate({
+        folio: 'C-000001',
         customerId: 'cust-1',
         items: [new QuoteItem({ productId: 'p1', quantity: 1, unitPrice: 10 })],
         expiresAt: futureDate,
@@ -123,6 +132,7 @@ describe('Pure Domain Core: QuoteAggregate & Value Objects', () => {
 
     it('rejects payment assertion if quote is already CONVERTED or CANCELLED', () => {
       const quote = new QuoteAggregate({
+        folio: 'C-000001',
         customerId: 'cust-1',
         status: 'CONVERTED',
         items: [new QuoteItem({ productId: 'p1', quantity: 1, unitPrice: 10 })],
@@ -133,6 +143,7 @@ describe('Pure Domain Core: QuoteAggregate & Value Objects', () => {
 
     it('updates details in DRAFT and recalculates totals', () => {
       const quote = new QuoteAggregate({
+        folio: 'C-000001',
         customerId: 'cust-1',
         items: [new QuoteItem({ productId: 'p1', quantity: 1, unitPrice: 10 })],
       });

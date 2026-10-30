@@ -1,10 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { SizeRefDto } from '../../catalog/sizes/dto/size.dto.js';
 import { CustomerDto } from '../../customers/dto/customer.dto.js';
 import { QuoteStatus, SaleStatus } from '../../generated/prisma/client.js';
 
 export class QuoteProductDto {
   @ApiProperty({ format: 'uuid' }) id: string;
-  @ApiProperty() sku: string;
+  @ApiProperty({ example: '7501234567890' }) barcode: string;
   @ApiProperty() name: string;
   @ApiProperty({ type: String, nullable: true }) imageUrl: string | null;
 }
@@ -12,6 +13,7 @@ export class QuoteProductDto {
 export class QuoteItemDto {
   @ApiProperty({ format: 'uuid' }) id: string;
   @ApiProperty({ type: QuoteProductDto }) product: QuoteProductDto;
+  @ApiProperty({ type: SizeRefDto, nullable: true }) size: SizeRefDto | null;
   @ApiProperty({ example: '2.500' }) quantity: string;
   @ApiProperty({ example: '1250.50' }) unitPrice: string;
   @ApiProperty({ example: '100.00' }) discount: string;
@@ -21,7 +23,11 @@ export class QuoteItemDto {
 
 export class QuoteDto {
   @ApiProperty({ format: 'uuid' }) id: string;
-  @ApiProperty({ example: 'COT-20260920-AB12CD' }) folio: string;
+  @ApiProperty({
+    example: 'C-000045',
+    description: 'Consecutivo; registros previos conservan COT-AAAAMMDD-XXXXXX',
+  })
+  folio: string;
   @ApiProperty({ enum: QuoteStatus }) status: QuoteStatus;
   @ApiProperty({ type: CustomerDto }) customer: CustomerDto;
   @ApiProperty({ type: [QuoteItemDto] }) items: QuoteItemDto[];
@@ -39,7 +45,11 @@ export class QuoteDto {
 
 export class SaleDto {
   @ApiProperty({ format: 'uuid' }) id: string;
-  @ApiProperty({ example: 'VEN-20260920-AB12CD' }) folio: string;
+  @ApiProperty({
+    example: 'V-000123',
+    description: 'Consecutivo; registros previos conservan VEN-AAAAMMDD-XXXXXX',
+  })
+  folio: string;
   @ApiProperty({ enum: SaleStatus }) status: SaleStatus;
   @ApiProperty({ type: CustomerDto, nullable: true })
   customer: CustomerDto | null;

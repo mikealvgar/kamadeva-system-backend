@@ -10,11 +10,6 @@ import { Prisma, type PaymentMethod } from '../src/generated/prisma/client.js';
 import { setupApp } from '../src/setup-app.js';
 import type { QuoteDto, SaleDto } from '../src/quotes/dto/quote.dto.js';
 
-vi.mock('node:crypto', async (importOriginal) => {
-  const crypto = await importOriginal<typeof import('node:crypto')>();
-  return { ...crypto, randomUUID: vi.fn(crypto.randomUUID) };
-});
-
 const base = '/api/quotes';
 const future = () => new Date(Date.now() + 86400000).toISOString();
 
@@ -89,7 +84,7 @@ describe('Quotes HTTP + PostgreSQL', () => {
       await prisma.product.create({
         data: {
           name: 'Producto',
-          sku: randomUUID(),
+          barcode: randomUUID(),
           categoryId,
           price: '1250.50',
           imageUrl: 'https://example.test/product.png',
@@ -98,7 +93,7 @@ describe('Quotes HTTP + PostgreSQL', () => {
     ).id;
     otherProductId = (
       await prisma.product.create({
-        data: { name: 'Otro', sku: randomUUID(), categoryId, price: '10.00' },
+        data: { name: 'Otro', barcode: randomUUID(), categoryId, price: '10.00' },
       })
     ).id;
     await prisma.inventoryMovement.createMany({
@@ -155,6 +150,12 @@ describe('Quotes HTTP + PostgreSQL', () => {
       .expect(201);
     return response.body as QuoteDto;
   }
+  async function counter(prefix: 'C' | 'V'): Promise<number> {
+    return (await prisma.folioCounter.findUniqueOrThrow({ where: { prefix } }))
+      .lastValue;
+  }
+  const folioNumber = (folio: string) => Number(folio.slice(2));
+
   async function stock(id = productId): Promise<string> {
     const result = await prisma.inventoryMovement.aggregate({
       where: { productId: id },
@@ -191,7 +192,7 @@ describe('Quotes HTTP + PostgreSQL', () => {
     const result = await create(input);
     expect(result).toEqual({
       id: expect.any(String),
-      folio: expect.stringMatching(/^COT-\d{8}-[0-9A-F]{6}$/),
+      folio: expect.stringMatching(/^C-\d{6,}$/),
       status: 'DRAFT',
       customer: {
         id: customerId,
@@ -208,9 +209,10 @@ describe('Quotes HTTP + PostgreSQL', () => {
           product: {
             id: productId,
             name: 'Producto',
-            sku: expect.any(String),
+            barcode: expect.any(String),
             imageUrl: 'https://example.test/product.png',
           },
+          size: null,
           quantity: '2.500',
           unitPrice: '1250.50',
           discount: '100.00',
@@ -268,42 +270,71 @@ describe('Quotes HTTP + PostgreSQL', () => {
     expect(result.items.map((item) => item.total)).toEqual(['0.02', '0.02']);
   });
 
-  it('retries a real PostgreSQL quote folio collision once', async () => {
+  it('issues consecutive quote and sale folios from the counters', async () => {
+    const quotesBefore = await counter('C');
+    const salesBefore = await counter('V');
     const first = await create();
-    vi.mocked(randomUUID).mockReturnValueOnce(
-      `${first.folio.slice(-6).toLowerCase()}00-0000-4000-8000-000000000000`,
-    );
     const second = await create();
-    expect(second.folio).not.toBe(first.folio);
-    expect(await prisma.quote.count({ where: { customerId } })).toBe(2);
-    expect(
-      await prisma.quoteItem.count({ where: { quote: { customerId } } }),
-    ).toBe(2);
+    expect([first.folio, second.folio].map(folioNumber)).toEqual([
+      quotesBefore + 1,
+      quotesBefore + 2,
+    ]);
+    expect(first.folio).toBe(`C-${String(quotesBefore + 1).padStart(6, '0')}`);
+    const sales: SaleDto[] = [];
+    for (const original of [first, second]) {
+      const paid = await http()
+        .post(`${base}/${original.id}/pay`)
+        .set('Authorization', auth())
+        .send({ method: 'CASH', amount: Number(original.total) })
+        .expect(200);
+      sales.push(paid.body as SaleDto);
+    }
+    expect(sales.map(({ folio }) => folioNumber(folio))).toEqual([
+      salesBefore + 1,
+      salesBefore + 2,
+    ]);
+    expect(await counter('C')).toBe(quotesBefore + 2);
+    expect(await counter('V')).toBe(salesBefore + 2);
   });
 
-  it('retries a real PostgreSQL sale folio collision without duplicate effects', async () => {
-    const first = await create();
-    const paid = await http()
-      .post(`${base}/${first.id}/pay`)
-      .set('Authorization', auth())
-      .send({ method: 'CASH', amount: Number(first.total) })
-      .expect(200);
-    const firstSale = paid.body as SaleDto;
-    const second = await create();
-    vi.mocked(randomUUID).mockReturnValueOnce(
-      `${firstSale.folio.slice(-6).toLowerCase()}00-0000-4000-8000-000000000000`,
+  it('issues unique gapless folios to concurrent quote creations', async () => {
+    const before = await counter('C');
+    const created = await Promise.all(
+      Array.from({ length: 4 }, () =>
+        http().post(base).set('Authorization', auth()).send(body()),
+      ),
     );
-    const retried = await http()
-      .post(`${base}/${second.id}/pay`)
-      .set('Authorization', auth())
-      .send({ method: 'CASH', amount: Number(second.total) })
-      .expect(200);
-    expect((retried.body as SaleDto).folio).not.toBe(firstSale.folio);
-    expect(await prisma.sale.count({ where: { customerId } })).toBe(2);
-    expect(
-      await prisma.payment.count({ where: { sale: { customerId } } }),
-    ).toBe(2);
-    expect(await stock()).toBe('15.000');
+    expect(created.map(({ status }) => status)).toEqual([201, 201, 201, 201]);
+    const numbers = created
+      .map(({ body: quote }) => folioNumber((quote as QuoteDto).folio))
+      .sort((a, b) => a - b);
+    expect(numbers).toEqual([before + 1, before + 2, before + 3, before + 4]);
+    expect(await counter('C')).toBe(before + 4);
+  });
+
+  it('returns 409 on a folio collision without consuming the number', async () => {
+    const existing = await create();
+    const value = folioNumber(existing.folio);
+    // Simulate a counter left behind existing data.
+    await prisma.folioCounter.update({
+      where: { prefix: 'C' },
+      data: { lastValue: value - 1 },
+    });
+    try {
+      const response = await http()
+        .post(base)
+        .set('Authorization', auth())
+        .send(body())
+        .expect(409);
+      expect(response.body.message).toBe('No se pudo generar un folio único');
+      expect(await counter('C')).toBe(value - 1);
+      expect(await prisma.quote.count({ where: { customerId } })).toBe(1);
+    } finally {
+      await prisma.folioCounter.update({
+        where: { prefix: 'C' },
+        data: { lastValue: value },
+      });
+    }
   });
 
   it('lists newest first with combined status, customer and case-insensitive folio filters', async () => {
@@ -455,7 +486,7 @@ describe('Quotes HTTP + PostgreSQL', () => {
         ].sort(),
       );
       expect(sale).toMatchObject({
-        folio: expect.stringMatching(/^VEN-\d{8}-[0-9A-F]{6}$/),
+        folio: expect.stringMatching(/^V-\d{6,}$/),
         status: 'COMPLETED',
         quoteId: original.id,
         customer: original.customer,
@@ -685,6 +716,7 @@ describe('Quotes HTTP + PostgreSQL', () => {
     'rolls back all database writes if %s fails late in conversion',
     async (failureStage) => {
       const original = await create();
+      const salesBefore = await counter('V');
       const transaction = prisma.$transaction.bind(prisma);
       const options = {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
@@ -714,6 +746,14 @@ describe('Quotes HTTP + PostgreSQL', () => {
       }
       await expectNoConversion(original.id);
       expect(await stock()).toBe('20.000');
+      // The reserved folio rolled back with the transaction: no gap.
+      expect(await counter('V')).toBe(salesBefore);
+      const paid = await http()
+        .post(`${base}/${original.id}/pay`)
+        .set('Authorization', auth())
+        .send({ method: 'CASH', amount: Number(original.total) })
+        .expect(200);
+      expect(folioNumber((paid.body as SaleDto).folio)).toBe(salesBefore + 1);
     },
   );
 

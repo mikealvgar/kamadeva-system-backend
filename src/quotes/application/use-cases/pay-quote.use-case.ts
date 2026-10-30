@@ -1,36 +1,32 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '../../../generated/prisma/client.js';
 import {
-  PaymentRecord,
-  SaleAggregate,
+  UNIT_OF_WORK_PORT,
+  type UnitOfWorkPort,
+} from '../../../common/application/unit-of-work.port.js';
+import {
+  SALE_REPOSITORY_PORT,
+  type SaleRepositoryPort,
+} from '../../../sales/application/ports/sale-repository.port.js';
+import { RegisterSaleUseCase } from '../../../sales/application/use-cases/register-sale.use-case.js';
+import {
   SaleItem,
   type PaymentMethod,
-} from '../../domain/entities/sale.aggregate.js';
+  type SaleAggregate,
+} from '../../../sales/domain/sale.aggregate.js';
 import {
   InventoryAllocatedEvent,
   QuoteConvertedToSaleEvent,
 } from '../../domain/events/quote-events.js';
 import {
-  InsufficientStockException,
   PaymentAmountMismatchException,
   QuoteAlreadyConvertedException,
   QuoteNotFoundException,
 } from '../../domain/exceptions/quote-exceptions.js';
-import { Quantity } from '../../domain/value-objects/money.js';
 import {
-  INVENTORY_QUERY_PORT,
   QUOTE_REPOSITORY_PORT,
-  type InventoryQueryPort,
   type QuoteRepositoryPort,
 } from '../ports/quote-repository.port.js';
-import {
-  SALE_REPOSITORY_PORT,
-  type SaleRepositoryPort,
-} from '../ports/sale-repository.port.js';
-import {
-  UNIT_OF_WORK_PORT,
-  type UnitOfWorkPort,
-} from '../ports/unit-of-work.port.js';
 import {
   EVENT_PUBLISHER_PORT,
   type EventPublisherPort,
@@ -49,8 +45,7 @@ export class PayQuoteUseCase {
     private readonly quoteRepo: QuoteRepositoryPort,
     @Inject(SALE_REPOSITORY_PORT)
     private readonly saleRepo: SaleRepositoryPort,
-    @Inject(INVENTORY_QUERY_PORT)
-    private readonly inventoryQuery: InventoryQueryPort,
+    private readonly registerSale: RegisterSaleUseCase,
     @Inject(UNIT_OF_WORK_PORT)
     private readonly unitOfWork: UnitOfWorkPort,
     @Inject(EVENT_PUBLISHER_PORT)
@@ -66,8 +61,7 @@ export class PayQuoteUseCase {
 
       quote.assertPayable();
 
-      const existingSale = await this.saleRepo.findByQuoteId(id, tx);
-      if (existingSale) {
+      if (await this.saleRepo.existsForQuote(id, tx)) {
         throw new QuoteAlreadyConvertedException(
           'La cotización ya fue convertida',
         );
@@ -79,82 +73,52 @@ export class PayQuoteUseCase {
         );
       }
 
-      // Sum repeated products in lines
-      const requested = new Map<string, Quantity>();
-      for (const item of quote.items) {
-        const current = requested.get(item.productId) ?? new Quantity(0);
-        requested.set(item.productId, current.plus(item.quantity));
-      }
-
-      const productIds = [...requested.keys()];
-      await this.quoteRepo.requireProductsExist(productIds, tx);
-
-      const stock = await this.inventoryQuery.getStockForProducts(
-        productIds,
+      await this.quoteRepo.requireProductsExist(
+        [...new Set(quote.items.map((item) => item.productId))],
         tx,
       );
 
-      for (const [productId, quantity] of requested) {
-        const available = stock.get(productId) ?? new Prisma.Decimal(0);
-        if (quantity.greaterThan(available)) {
-          throw new InsufficientStockException('Sin inventario suficiente');
-        }
-      }
-
-      const saleAggregate = new SaleAggregate({
-        customerId: quote.customerId,
-        quoteId: quote.id,
-        createdById: command.actorId,
-        notes: quote.notes,
-        subtotal: quote.subtotal,
-        discount: quote.discount,
-        tax: quote.tax,
-        total: quote.total,
-        items: quote.items.map(
-          (item) =>
-            new SaleItem({
-              productId: item.productId,
-              quantity: item.quantity,
-              unitPrice: item.unitPrice,
-              discount: item.discount,
-              tax: item.tax,
-              total: item.total,
-            }),
-        ),
-      });
-
-      const payment = new PaymentRecord({
-        saleId: saleAggregate.id,
-        amount: quote.total,
-        method: command.method,
-        status: 'PAID',
-        createdById: command.actorId,
-      });
-
-      const finalizedSale = new SaleAggregate({
-        id: saleAggregate.id,
-        folio: saleAggregate.folio,
-        status: 'COMPLETED',
-        customerId: saleAggregate.customerId,
-        quoteId: saleAggregate.quoteId,
-        createdById: saleAggregate.createdById,
-        notes: saleAggregate.notes,
-        subtotal: saleAggregate.subtotal,
-        discount: saleAggregate.discount,
-        tax: saleAggregate.tax,
-        total: saleAggregate.total,
-        items: [...saleAggregate.items],
-        payment,
-      });
-
-      const savedSaleRecord = await this.saleRepo.save(finalizedSale, tx);
-      finalizedSale.rawRecord = savedSaleRecord;
+      // Quoted prices and totals are preserved; stock, folio and payment
+      // follow the same path as a direct sale.
+      const registered = await this.registerSale.execute(
+        {
+          customerId: quote.customerId,
+          quoteId: quote.id,
+          createdById: command.actorId,
+          notes: quote.notes,
+          items: quote.items.map(
+            (item) =>
+              new SaleItem({
+                productId: item.productId,
+                sizeId: item.sizeId,
+                quantity: item.quantity,
+                unitPrice: item.unitPrice,
+                discount: item.discount,
+                tax: item.tax,
+                total: item.total,
+              }),
+          ),
+          totals: {
+            subtotal: quote.subtotal,
+            discount: quote.discount,
+            tax: quote.tax,
+            total: quote.total,
+          },
+          paymentMethod: command.method,
+        },
+        tx,
+      );
 
       quote.markConverted();
-      await this.quoteRepo.update(quote, tx, { status: 'CONVERTED' }, { id: true });
+      await this.quoteRepo.update(
+        quote,
+        tx,
+        { status: 'CONVERTED' },
+        { id: true },
+      );
 
-      return finalizedSale;
-    }, true);
+      return registered;
+    });
 
     await this.eventPublisher.publish(
       new QuoteConvertedToSaleEvent(

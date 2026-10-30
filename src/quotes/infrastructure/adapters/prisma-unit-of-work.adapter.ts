@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../../prisma/prisma.service.js';
 import { serializableTransaction } from '../../../prisma/serializable-transaction.js';
-import type { UnitOfWorkPort } from '../../application/ports/unit-of-work.port.js';
+import type { UnitOfWorkPort } from '../../../common/application/unit-of-work.port.js';
 import {
   InvalidFolioException,
   QuoteAlreadyConvertedException,
@@ -40,33 +40,30 @@ export class PrismaUnitOfWorkAdapter implements UnitOfWorkPort {
 
   async execute<T>(
     work: (tx: Prisma.TransactionClient) => Promise<T>,
-    retryFolio = false,
   ): Promise<T> {
-    for (let attempt = 0; ; attempt++) {
-      try {
-        return await serializableTransaction(this.prisma, work);
-      } catch (error) {
-        if (error instanceof Prisma.PrismaClientKnownRequestError) {
-          if (error.code === 'P2002') {
-            const isFolio = isFolioCollision(error);
-            if (retryFolio && isFolio && attempt === 0) continue;
-            throw isFolio
-              ? new InvalidFolioException('No se pudo generar un folio único')
-              : new QuoteAlreadyConvertedException(
-                  'La cotización ya fue convertida',
-                );
-          }
-          if (error.code === 'P2025') {
-            throw new QuoteNotFoundException('Registro inexistente');
-          }
-          if (error.code === 'P2003') {
-            throw new RelatedRecordConflictException(
-              'Conflicto con un registro relacionado',
-            );
-          }
+    try {
+      return await serializableTransaction(this.prisma, work);
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') {
+          // Folios come from a gapless counter rolled back with the transaction,
+          // so retrying would reserve the same number again.
+          throw isFolioCollision(error)
+            ? new InvalidFolioException('No se pudo generar un folio único')
+            : new QuoteAlreadyConvertedException(
+                'La cotización ya fue convertida',
+              );
         }
-        throw error;
+        if (error.code === 'P2025') {
+          throw new QuoteNotFoundException('Registro inexistente');
+        }
+        if (error.code === 'P2003') {
+          throw new RelatedRecordConflictException(
+            'Conflicto con un registro relacionado',
+          );
+        }
       }
+      throw error;
     }
   }
 }

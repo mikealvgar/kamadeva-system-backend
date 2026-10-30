@@ -10,7 +10,11 @@ import {
 import { SLUG_PATTERN } from '../slugify.js';
 
 export class CreateCategoryDto {
-  @ApiProperty({ example: 'Anillos', maxLength: 100 })
+  @ApiProperty({
+    example: 'ANILLOS',
+    maxLength: 100,
+    description: 'Se guarda en mayúsculas',
+  })
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim() : value,
   )

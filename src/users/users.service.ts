@@ -76,22 +76,25 @@ export class UsersService {
       const user = await this.requireUser(userId, tx);
       if (
         user.isActive &&
-        user.roles.some(
-          ({ role }) => role.name === 'ADMIN' && role.isActive,
-        ) &&
+        user.roles.some(({ role }) => role.name === 'ADMIN' && role.isActive) &&
         (await this.countActiveAdmins(tx)) <= 1
       ) {
         throw new ConflictException(
           'No se puede eliminar el último administrador',
         );
       }
-      const [quotes, sales, payments, movements] = await Promise.all([
+      // Audit trails: deleting would orphan or null who did what.
+      const counts = await Promise.all([
         tx.quote.count({ where: { createdById: userId } }),
         tx.sale.count({ where: { createdById: userId } }),
+        tx.sale.count({ where: { cancelledById: userId } }),
         tx.payment.count({ where: { createdById: userId } }),
         tx.inventoryMovement.count({ where: { createdById: userId } }),
+        tx.expense.count({ where: { createdById: userId } }),
+        tx.cashClosure.count({ where: { closedById: userId } }),
+        tx.purchase.count({ where: { createdById: userId } }),
       ]);
-      if (quotes + sales + payments + movements > 0)
+      if (counts.some((count) => count > 0))
         throw new ConflictException(
           'El usuario tiene registros asociados y no puede eliminarse',
         );

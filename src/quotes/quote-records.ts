@@ -36,7 +36,10 @@ export const quoteSelect = {
       discount: true,
       tax: true,
       total: true,
-      product: { select: { id: true, sku: true, name: true, imageUrl: true } },
+      product: {
+        select: { id: true, barcode: true, name: true, imageUrl: true },
+      },
+      size: { select: { id: true, name: true } },
     },
   },
 } satisfies Prisma.QuoteSelect;
@@ -84,6 +87,7 @@ export function quoteDto(quote: QuoteRecord): QuoteDto {
     items: quote.items.map((item) => ({
       id: item.id,
       product: item.product,
+      size: item.size,
       quantity: item.quantity.toFixed(3),
       unitPrice: item.unitPrice.toFixed(2),
       discount: item.discount.toFixed(2),

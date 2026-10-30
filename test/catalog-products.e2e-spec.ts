@@ -27,11 +27,15 @@ describe('Products HTTP + PostgreSQL', () => {
   const quotes: string[] = [];
   const sales: string[] = [];
   const customers: string[] = [];
+  const sizes: Record<
+    's5' | 's6' | 's7' | 'inactive',
+    { id: string; name: string }
+  > = {} as never;
   const tokens: Record<string, string> = {};
   const uploader = { upload: vi.fn() };
   const http = () => request(app!.getHttpServer());
   const defaults = () => ({
-    sku: `SKU-${randomUUID()}`,
+    codigoBarras: `CB-${randomUUID()}`,
     articulo: 'Anillo',
     precioVenta: 1250.5,
     categoryId: categories[0],
@@ -76,6 +80,19 @@ describe('Products HTTP + PostgreSQL', () => {
       });
       categories.push(category.id);
     }
+    const suffix = randomUUID().slice(0, 8).toUpperCase();
+    // sortOrder deliberately differs from name order.
+    for (const [key, sortOrder, isActive] of [
+      ['s7', 1, true],
+      ['s5', 2, true],
+      ['s6', 3, true],
+      ['inactive', 4, false],
+    ] as const) {
+      sizes[key] = await prisma.size.create({
+        data: { name: `${key}-${suffix}`.toUpperCase(), sortOrder, isActive },
+        select: { id: true, name: true },
+      });
+    }
   });
 
   beforeEach(() => {
@@ -105,6 +122,9 @@ describe('Products HTTP + PostgreSQL', () => {
     try {
       if (prisma) {
         await prisma.category.deleteMany({ where: { id: { in: categories } } });
+        await prisma.size.deleteMany({
+          where: { id: { in: Object.values(sizes).map(({ id }) => id) } },
+        });
         await prisma.userRole.deleteMany({ where: { userId: { in: users } } });
         await prisma.user.deleteMany({ where: { id: { in: users } } });
       }
@@ -126,12 +146,11 @@ describe('Products HTTP + PostgreSQL', () => {
 
   it('creates all public fields with normalized input, exact money and nested category', async () => {
     const product = await create({
-      sku: ' an-r-001 ',
       articulo: ' Anillo de plata ',
       descripcion: ' Talla 8 ',
-      codigoBarras: ' 7501001234567 ',
+      codigoBarras: ' an-r-001 ',
       marca: ' Kamadeva ',
-      tallas: [' 5 ', '6', '7'],
+      tallaIds: [sizes.s5.id, sizes.s6.id, sizes.s7.id],
       precioCompra: 780.25,
     });
     const category = await prisma.category.findUniqueOrThrow({
@@ -139,15 +158,15 @@ describe('Products HTTP + PostgreSQL', () => {
     });
     expect(product).toEqual({
       id: expect.any(String),
-      sku: 'AN-R-001',
       articulo: 'Anillo de plata',
       descripcion: 'Talla 8',
-      codigoBarras: '7501001234567',
+      codigoBarras: 'AN-R-001',
       marca: 'Kamadeva',
-      tallas: ['5', '6', '7'],
+      tallas: [sizes.s7, sizes.s5, sizes.s6],
       precioCompra: '780.25',
       precioVenta: '1250.50',
       stock: '0.000',
+      stockMinimo: null,
       imageUrl: null,
       isActive: true,
       categoria: { id: category.id, name: category.name, slug: category.slug },
@@ -161,64 +180,132 @@ describe('Products HTTP + PostgreSQL', () => {
       name: product.articulo,
       barcode: product.codigoBarras,
       brand: product.marca,
-      tallas: product.tallas,
     });
     expect(stored).not.toHaveProperty('stock');
+    expect(stored).not.toHaveProperty('tallas');
+    expect(
+      await prisma.productSize.count({ where: { productId: product.id } }),
+    ).toBe(3);
   });
 
-  it('normalizes blank optional fields and an empty size list to public nulls', async () => {
+  it('lets only ADMIN set stock through product registration and records every change', async () => {
+    const response = await http()
+      .post(base)
+      .set('Authorization', tokens.admin!)
+      .send({ ...defaults(), precioCompra: 10, stock: 4.25 })
+      .expect(201);
+    const product = response.body as ProductDto;
+    products.push(product.id);
+    expect(product.stock).toBe('4.250');
+    const initial = await prisma.inventoryMovement.findMany({
+      where: { productId: product.id },
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(initial).toHaveLength(1);
+    expect({
+      type: initial[0]!.type,
+      quantityChange: initial[0]!.quantityChange.toFixed(3),
+      unitCost: initial[0]!.unitCost?.toFixed(2),
+      referenceType: initial[0]!.referenceType,
+      createdById: initial[0]!.createdById,
+    }).toEqual({
+      type: 'ADJUSTMENT_IN',
+      quantityChange: '4.250',
+      unitCost: '10.00',
+      referenceType: 'PRODUCT_INITIAL_STOCK',
+      createdById: users[0],
+    });
+
+    const changed = await http()
+      .patch(`${base}/${product.id}`)
+      .set('Authorization', tokens.admin!)
+      .send({ stock: 2 })
+      .expect(200);
+    expect(changed.body.stock).toBe('2.000');
+    await http()
+      .patch(`${base}/${product.id}`)
+      .set('Authorization', tokens.seller!)
+      .send({ stock: 8 })
+      .expect(403);
+    const movements = await prisma.inventoryMovement.findMany({
+      where: { productId: product.id },
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(movements).toHaveLength(2);
+    expect({
+      type: movements[1]!.type,
+      quantityChange: movements[1]!.quantityChange.toFixed(3),
+      referenceType: movements[1]!.referenceType,
+    }).toEqual({
+      type: 'ADJUSTMENT_OUT',
+      quantityChange: '-2.250',
+      referenceType: 'PRODUCT_STOCK_EDIT',
+    });
+  });
+
+  it('normalizes blank optional fields to public nulls and an empty size list to []', async () => {
     const product = await create({
       descripcion: ' ',
-      codigoBarras: '',
       marca: ' ',
-      tallas: [],
+      tallaIds: [],
       precioCompra: 0,
       precioVenta: 0.01,
     });
     expect(product).toMatchObject({
       descripcion: null,
-      codigoBarras: null,
       marca: null,
-      tallas: null,
+      tallas: [],
       precioCompra: '0.00',
       precioVenta: '0.01',
     });
     expect(
-      (await prisma.product.findUniqueOrThrow({ where: { id: product.id } }))
-        .tallas,
-    ).toEqual([]);
-    const other = await create({ codigoBarras: '' });
-    expect(other.codigoBarras).toBeNull();
+      await prisma.productSize.count({ where: { productId: product.id } }),
+    ).toBe(0);
+    expect((await create()).tallas).toEqual([]);
   });
 
-  it.each(['sku', 'codigoBarras'] as const)(
-    'returns 409 for duplicate %s, including concurrent creation',
-    async (field) => {
-      const value = field === 'sku' ? 'SAME-SKU' : '12345';
-      await create({ [field]: value });
+  it('creates products without a category and filters them', async () => {
+    // undefined is dropped from the JSON body, so no categoryId is sent.
+    const product = await create({ categoryId: undefined });
+    expect(product.categoria).toBeNull();
+    const listed = (
       await http()
-        .post(base)
+        .get(`${base}?sinCategoria=true`)
         .set('Authorization', tokens.admin!)
-        .send({
-          ...defaults(),
-          [field]: field === 'sku' ? ' same-sku ' : value,
-        })
-        .expect(409);
-      const racingValue = randomUUID();
-      const responses = await Promise.all(
-        [1, 2].map(() =>
-          http()
-            .post(base)
-            .set('Authorization', tokens.admin!)
-            .send({ ...defaults(), [field]: racingValue }),
-        ),
-      );
-      for (const response of responses)
-        if (response.status === 201)
-          products.push((response.body as ProductDto).id);
-      expect(responses.map(({ status }) => status).sort()).toEqual([201, 409]);
-    },
-  );
+        .expect(200)
+    ).body as ProductDto[];
+    expect(listed.map(({ id }) => id)).toContain(product.id);
+    expect(listed.every(({ categoria }) => categoria === null)).toBe(true);
+    const categorized = await create();
+    await http()
+      .patch(`${base}/${categorized.id}`)
+      .set('Authorization', tokens.admin!)
+      .send({ categoryId: null })
+      .expect(200)
+      .expect(({ body }) => expect(body.categoria).toBeNull());
+  });
+
+  it('returns 409 for a duplicate barcode regardless of case, including concurrent creation', async () => {
+    await create({ codigoBarras: 'SAME-CODE' });
+    await http()
+      .post(base)
+      .set('Authorization', tokens.admin!)
+      .send({ ...defaults(), codigoBarras: ' same-code ' })
+      .expect(409);
+    const racingValue = randomUUID();
+    const responses = await Promise.all(
+      [1, 2].map(() =>
+        http()
+          .post(base)
+          .set('Authorization', tokens.admin!)
+          .send({ ...defaults(), codigoBarras: racingValue }),
+      ),
+    );
+    for (const response of responses)
+      if (response.status === 201)
+        products.push((response.body as ProductDto).id);
+    expect(responses.map(({ status }) => status).sort()).toEqual([201, 409]);
+  });
 
   it('rejects missing categories for create and update, and missing products', async () => {
     await http()
@@ -253,31 +340,39 @@ describe('Products HTTP + PostgreSQL', () => {
 
   it('rejects invalid input, duplicate trimmed sizes, precision overflow and internal fields', async () => {
     for (const body of [
-      { sku: '' },
-      { sku: null },
-      { sku: 'x'.repeat(65) },
+      { codigoBarras: '' },
+      { codigoBarras: ' ' },
+      { codigoBarras: null },
+      { sku: 'OLD-FIELD' },
       { articulo: ' ' },
       { articulo: 'x'.repeat(201) },
       { descripcion: 1 },
       { descripcion: 'x'.repeat(501) },
       { codigoBarras: 'x'.repeat(65) },
       { marca: 'x'.repeat(101) },
-      { tallas: [' 8', '8 '] },
-      { tallas: ['8', 9] },
-      { tallas: [' '] },
-      { tallas: '8' },
-      { tallas: null },
+      { tallas: ['8'] },
+      { tallaIds: [sizes.s5.id, sizes.s5.id] },
+      { tallaIds: ['8'] },
+      { tallaIds: sizes.s5.id },
+      { tallaIds: null },
+      { tallaIds: [sizes.inactive.id] },
+      { tallaIds: [randomUUID()] },
       { precioVenta: 0 },
       { precioVenta: -1 },
       { precioVenta: 1.001 },
       { precioVenta: 10000000000 },
       { precioVenta: '1250.50' },
       { precioVenta: null },
+      { stockMinimo: -1 },
+      { stockMinimo: 1.0001 },
+      { stockMinimo: '1' },
       { precioCompra: -1 },
       { precioCompra: 1.001 },
       { precioCompra: 10000000000 },
       { categoryId: 'bad' },
-      { stock: 10 },
+      { stock: -1 },
+      { stock: 1.0001 },
+      { stock: '10' },
       { imageUrl: 'https://image.test' },
       { name: 'Internal' },
       { isActive: false },
@@ -287,7 +382,7 @@ describe('Products HTTP + PostgreSQL', () => {
         .set('Authorization', tokens.admin!)
         .send({ ...defaults(), ...body })
         .expect(400);
-    for (const field of ['sku', 'articulo', 'precioVenta', 'categoryId']) {
+    for (const field of ['codigoBarras', 'articulo', 'precioVenta']) {
       const body: Record<string, unknown> = defaults();
       delete body[field];
       await http()
@@ -298,10 +393,9 @@ describe('Products HTTP + PostgreSQL', () => {
     }
   });
 
-  it('filters by category, active status, article, SKU and barcode in name order', async () => {
+  it('filters by category, active status, article and barcode in name order', async () => {
     const z = await create({
       articulo: 'Zafiro',
-      sku: 'SEARCH-SKU',
       codigoBarras: 'MixedCode123',
     });
     const a = await create({ articulo: 'Anillo ORO' });
@@ -320,7 +414,6 @@ describe('Products HTTP + PostgreSQL', () => {
       ['?includeInactive=true', [a.id, other.id, z.id]],
       [`?categoryId=${categories[0]}&includeInactive=true`, [a.id, z.id]],
       ['?search=oro', [a.id]],
-      ['?search=search-sku&includeInactive=true', [z.id]],
       ['?search=mixedcode&includeInactive=true', [z.id]],
       ['?search=missing', []],
     ] as const) {
@@ -417,7 +510,7 @@ describe('Products HTTP + PostgreSQL', () => {
     const product = await create({
       codigoBarras: '111',
       marca: 'Original',
-      tallas: ['7'],
+      tallaIds: [sizes.s7.id],
       precioCompra: 10,
     });
     await prisma.inventoryMovement.create({
@@ -432,12 +525,11 @@ describe('Products HTTP + PostgreSQL', () => {
       .patch(target)
       .set('Authorization', tokens.admin!)
       .send({
-        sku: ' new-sku ',
         articulo: ' Artículo nuevo ',
         descripcion: ' ',
-        codigoBarras: null,
+        codigoBarras: ' new-code ',
         marca: '',
-        tallas: [],
+        tallaIds: [],
         precioCompra: null,
         precioVenta: 9999999999.99,
         categoryId: categories[1],
@@ -445,12 +537,11 @@ describe('Products HTTP + PostgreSQL', () => {
       })
       .expect(200);
     expect(response.body).toMatchObject({
-      sku: 'NEW-SKU',
       articulo: 'Artículo nuevo',
       descripcion: null,
-      codigoBarras: null,
+      codigoBarras: 'NEW-CODE',
       marca: null,
-      tallas: null,
+      tallas: [],
       precioCompra: null,
       precioVenta: '9999999999.99',
       categoria: { id: categories[1] },
@@ -459,14 +550,18 @@ describe('Products HTTP + PostgreSQL', () => {
     });
     for (const body of [
       {},
-      { sku: null },
+      { codigoBarras: null },
+      { codigoBarras: ' ' },
       { articulo: null },
       { precioVenta: null },
-      { categoryId: null },
       { isActive: null },
       { isActive: 'false' },
-      { tallas: ['8', ' 8'] },
-      { stock: 99 },
+      { tallas: ['8'] },
+      { tallaIds: [sizes.s5.id, sizes.s5.id] },
+      { tallaIds: [sizes.inactive.id] },
+      { stock: -1 },
+      { stock: 1.0001 },
+      { stock: '99' },
       { imageUrl: 'https://image.test' },
     ]) {
       await http()
@@ -481,10 +576,13 @@ describe('Products HTTP + PostgreSQL', () => {
     ).toEqual(response.body);
   });
 
-  it('rejects duplicate SKU and barcode updates without changing the product', async () => {
-    await create({ sku: 'TAKEN', codigoBarras: '777' });
+  it('rejects duplicate barcode updates without changing the product', async () => {
+    await create({ codigoBarras: 'TAKEN-777' });
     const product = await create();
-    for (const body of [{ sku: ' taken ' }, { codigoBarras: '777' }])
+    for (const body of [
+      { codigoBarras: ' taken-777 ' },
+      { codigoBarras: 'TAKEN-777' },
+    ])
       await http()
         .patch(`${base}/${product.id}`)
         .set('Authorization', tokens.admin!)
@@ -748,9 +846,8 @@ describe('Products HTTP + PostgreSQL', () => {
       expect(schemas.ProductDto.properties[field].type).toBe('string');
     expect(schemas.CreateProductDto.required.sort()).toEqual([
       'articulo',
-      'categoryId',
+      'codigoBarras',
       'precioVenta',
-      'sku',
     ]);
     expect(schemas.UpdateProductDto.required ?? []).toEqual([]);
     expect(
@@ -762,6 +859,6 @@ describe('Products HTTP + PostgreSQL', () => {
       response.body.paths[base].get.parameters
         .map((parameter: { name: string }) => parameter.name)
         .sort(),
-    ).toEqual(['categoryId', 'includeInactive', 'search']);
+    ).toEqual(['categoryId', 'includeInactive', 'search', 'sinCategoria']);
   });
 });

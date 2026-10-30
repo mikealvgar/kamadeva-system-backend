@@ -14,6 +14,7 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UploadedFile,
   UseFilters,
   UseGuards,
@@ -39,6 +40,7 @@ import {
 import { Roles } from '../../auth/decorators/roles.decorator.js';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../../auth/guards/roles.guard.js';
+import type { AuthUser } from '../../auth/types/auth-user.type.js';
 import { CreateProductDto } from './dto/create-product.dto.js';
 import { UpdateProductDto } from './dto/update-product.dto.js';
 import { ListProductsDto } from './dto/list-products.dto.js';
@@ -67,8 +69,11 @@ export class ProductsController {
   @ApiCreatedResponse({ type: ProductDto })
   @ApiNotFoundResponse({ description: 'Categoría inexistente' })
   @ApiConflictResponse({ description: 'El SKU o código de barras ya existe' })
-  create(@Body() dto: CreateProductDto): Promise<ProductDto> {
-    return this.products.create(dto);
+  create(
+    @Body() dto: CreateProductDto,
+    @Req() req: { user: AuthUser },
+  ): Promise<ProductDto> {
+    return this.products.create(dto, req.user.id);
   }
 
   @Get()
@@ -109,8 +114,9 @@ export class ProductsController {
   update(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() dto: UpdateProductDto,
+    @Req() req: { user: AuthUser },
   ): Promise<ProductDto> {
-    return this.products.update(id, dto);
+    return this.products.update(id, dto, req.user.id);
   }
 
   @Delete(':id')

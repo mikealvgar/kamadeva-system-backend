@@ -5,17 +5,21 @@ import {
   CustomerNotFoundException,
   ProductNotFoundException,
   InvalidQuoteStateException,
+  InvalidSizeSelectionException,
 } from '../../domain/exceptions/quote-exceptions.js';
 import type {
   QuoteQueryFilter,
   QuoteRepositoryPort,
 } from '../ports/quote-repository.port.js';
-import type { UnitOfWorkPort } from '../ports/unit-of-work.port.js';
+import type { UnitOfWorkPort } from '../../../common/application/unit-of-work.port.js';
 import type { EventPublisherPort } from '../ports/event-publisher.port.js';
 import type { DomainEvent } from '../../../common/domain/domain-event.js';
 import { CreateQuoteUseCase } from './create-quote.use-case.js';
 import { SendQuoteUseCase } from './send-quote.use-case.js';
 import { DeleteQuoteUseCase } from './delete-quote.use-case.js';
+import { UpdateQuoteUseCase } from './update-quote.use-case.js';
+import type { FolioSequencePort } from '../../../common/application/folio-sequence.port.js';
+import { Folio, type FolioSeries } from '../../../common/domain/folio.js';
 
 class InMemoryQuoteRepo implements QuoteRepositoryPort {
   quotes = new Map<string, QuoteAggregate>();
@@ -23,6 +27,10 @@ class InMemoryQuoteRepo implements QuoteRepositoryPort {
   productPrices = new Map<string, Prisma.Decimal>([
     ['prod-1', new Prisma.Decimal('100.00')],
     ['prod-2', new Prisma.Decimal('250.00')],
+  ]);
+  // prod-2 is sold in sizes; prod-1 has none.
+  activeSizes = new Map<string, Set<string>>([
+    ['prod-2', new Set(['size-m', 'size-g'])],
   ]);
 
   async findById(id: string): Promise<QuoteAggregate | null> {
@@ -76,6 +84,24 @@ class InMemoryQuoteRepo implements QuoteRepositoryPort {
     }
     return map;
   }
+
+  async getActiveProductSizes(
+    productIds: string[],
+  ): Promise<Map<string, Set<string>>> {
+    return new Map(
+      [...this.activeSizes].filter(([id]) => productIds.includes(id)),
+    );
+  }
+}
+
+class InMemoryFolioSequence implements FolioSequencePort {
+  counters = new Map<FolioSeries, number>();
+
+  async next(series: FolioSeries): Promise<Folio> {
+    const value = (this.counters.get(series) ?? 0) + 1;
+    this.counters.set(series, value);
+    return Folio.fromSequence(series, value);
+  }
 }
 
 class DirectUnitOfWork implements UnitOfWorkPort {
@@ -102,26 +128,29 @@ describe('Application Layer: Quote Use Cases', () => {
   let repo: InMemoryQuoteRepo;
   let uow: DirectUnitOfWork;
   let events: RecordingEventPublisher;
+  let folios: InMemoryFolioSequence;
 
   beforeEach(() => {
     repo = new InMemoryQuoteRepo();
     uow = new DirectUnitOfWork();
     events = new RecordingEventPublisher();
+    folios = new InMemoryFolioSequence();
   });
 
   it('CreateQuoteUseCase creates quote, calculates totals from catalog, and publishes event', async () => {
-    const useCase = new CreateQuoteUseCase(repo, uow, events);
+    const useCase = new CreateQuoteUseCase(repo, uow, events, folios);
 
     const quote = await useCase.execute({
       customerId: 'cust-1',
       actorId: 'user-1',
       items: [
         { productId: 'prod-1', quantity: 2 },
-        { productId: 'prod-2', quantity: 1, discount: 20 },
+        { productId: 'prod-2', sizeId: 'size-m', quantity: 1, discount: 20 },
       ],
     });
 
     expect(quote.id).toBeDefined();
+    expect(quote.items.map((item) => item.sizeId)).toEqual([null, 'size-m']);
     expect(quote.status).toBe('DRAFT');
     expect(quote.subtotal.toString()).toBe('450.00');
     expect(quote.discount.toString()).toBe('20.00');
@@ -132,7 +161,7 @@ describe('Application Layer: Quote Use Cases', () => {
   });
 
   it('CreateQuoteUseCase throws if customer does not exist', async () => {
-    const useCase = new CreateQuoteUseCase(repo, uow, events);
+    const useCase = new CreateQuoteUseCase(repo, uow, events, folios);
 
     await expect(
       useCase.execute({
@@ -144,7 +173,7 @@ describe('Application Layer: Quote Use Cases', () => {
   });
 
   it('CreateQuoteUseCase throws if product does not exist in catalog', async () => {
-    const useCase = new CreateQuoteUseCase(repo, uow, events);
+    const useCase = new CreateQuoteUseCase(repo, uow, events, folios);
 
     await expect(
       useCase.execute({
@@ -156,7 +185,7 @@ describe('Application Layer: Quote Use Cases', () => {
   });
 
   it('SendQuoteUseCase transitions quote to SENT and publishes event', async () => {
-    const createUC = new CreateQuoteUseCase(repo, uow, events);
+    const createUC = new CreateQuoteUseCase(repo, uow, events, folios);
     const sendUC = new SendQuoteUseCase(repo, uow, events);
 
     const quote = await createUC.execute({
@@ -171,7 +200,7 @@ describe('Application Layer: Quote Use Cases', () => {
   });
 
   it('DeleteQuoteUseCase deletes draft quotes, but rejects sent quotes', async () => {
-    const createUC = new CreateQuoteUseCase(repo, uow, events);
+    const createUC = new CreateQuoteUseCase(repo, uow, events, folios);
     const sendUC = new SendQuoteUseCase(repo, uow, events);
     const deleteUC = new DeleteQuoteUseCase(repo, uow);
 
@@ -185,5 +214,50 @@ describe('Application Layer: Quote Use Cases', () => {
     await expect(deleteUC.execute(quote.id)).rejects.toThrow(
       InvalidQuoteStateException,
     );
+  });
+
+  it.each([
+    ['missing size for sized product', { productId: 'prod-2', quantity: 1 }],
+    [
+      'size not offered by product',
+      { productId: 'prod-2', sizeId: 'size-xl', quantity: 1 },
+    ],
+    [
+      'size for product without sizes',
+      { productId: 'prod-1', sizeId: 'size-m', quantity: 1 },
+    ],
+  ])('CreateQuoteUseCase rejects %s', async (_label, item) => {
+    const useCase = new CreateQuoteUseCase(repo, uow, events, folios);
+    await expect(
+      useCase.execute({
+        customerId: 'cust-1',
+        actorId: 'user-1',
+        items: [item],
+      }),
+    ).rejects.toThrow(InvalidSizeSelectionException);
+    expect(repo.quotes.size).toBe(0);
+    expect(events.events).toHaveLength(0);
+    expect(folios.counters.size).toBe(0);
+  });
+
+  it('UpdateQuoteUseCase validates and keeps the selected size', async () => {
+    const createUC = new CreateQuoteUseCase(repo, uow, events, folios);
+    const updateUC = new UpdateQuoteUseCase(repo, uow);
+    const quote = await createUC.execute({
+      customerId: 'cust-1',
+      actorId: 'user-1',
+      items: [{ productId: 'prod-1', quantity: 1 }],
+    });
+
+    await expect(
+      updateUC.execute(quote.id, {
+        items: [{ productId: 'prod-2', quantity: 1 }],
+      }),
+    ).rejects.toThrow(InvalidSizeSelectionException);
+
+    const updated = await updateUC.execute(quote.id, {
+      items: [{ productId: 'prod-2', sizeId: 'size-g', quantity: 2 }],
+    });
+    expect(updated.items.map((item) => item.sizeId)).toEqual(['size-g']);
   });
 });

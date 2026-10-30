@@ -27,6 +27,8 @@ describe('Catalog HTTP + PostgreSQL', () => {
     app = module.createNestApplication();
     setupApp(app);
     await app.init();
+    // Keep one listener for the suite instead of reopening a port per request.
+    await app.listen(0, '127.0.0.1');
     prisma = app.get(PrismaService);
     for (const [key, role, isActive] of [
       ['admin', 'ADMIN', true],
@@ -93,7 +95,7 @@ describe('Catalog HTTP + PostgreSQL', () => {
     });
     expect(category).toEqual({
       id: expect.any(String),
-      name: 'Ánillos & colección!',
+      name: 'ÁNILLOS & COLECCIÓN!',
       slug: 'anillos-coleccion',
       description: null,
       isActive: true,
@@ -171,7 +173,7 @@ describe('Catalog HTTP + PostgreSQL', () => {
       .expect(200);
     expect(response.body).toEqual({
       ...category,
-      name: 'Anillos de boda',
+      name: 'ANILLOS DE BODA',
       slug: 'anillos-de-boda',
     });
     response = await http()
@@ -180,7 +182,7 @@ describe('Catalog HTTP + PostgreSQL', () => {
       .send({ name: 'Oro', slug: 'joyas', isActive: false })
       .expect(200);
     expect(response.body).toMatchObject({
-      name: 'Oro',
+      name: 'ORO',
       slug: 'joyas',
       isActive: false,
     });
@@ -193,7 +195,7 @@ describe('Catalog HTTP + PostgreSQL', () => {
       expect(response.body).toMatchObject({
         description: null,
         slug: 'joyas',
-        name: 'Oro',
+        name: 'ORO',
       });
     }
   });
@@ -301,7 +303,7 @@ describe('Catalog HTTP + PostgreSQL', () => {
     const product = await prisma.product.create({
       data: {
         name: 'Anillo',
-        sku: randomUUID(),
+        barcode: randomUUID(),
         price: '100.00',
         categoryId: category.id,
       },

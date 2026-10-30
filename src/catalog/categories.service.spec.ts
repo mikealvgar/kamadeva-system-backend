@@ -48,12 +48,12 @@ describe('CategoriesService', () => {
     ['!!!', ''],
   ])('slugifies %s', (name, expected) => expect(slugify(name)).toBe(expected));
 
-  it('creates normalized public fields and relies on the unique constraint', async () => {
+  it('creates upper-case names, normalized fields and relies on the unique constraint', async () => {
     expect(
       await service.create({ name: ' Ánillos ', description: '  ' }),
     ).toEqual(category);
     expect(prisma.category.create).toHaveBeenCalledWith({
-      data: { name: 'Ánillos', slug: 'anillos', description: null },
+      data: { name: 'ÁNILLOS', slug: 'anillos', description: null },
       select,
     });
   });
@@ -64,7 +64,7 @@ describe('CategoriesService', () => {
       description: ' Oro ',
     });
     expect(prisma.category.create).toHaveBeenCalledWith({
-      data: { name: 'Anillos', slug: 'joyas', description: 'Oro' },
+      data: { name: 'ANILLOS', slug: 'joyas', description: 'Oro' },
       select,
     });
   });
@@ -97,19 +97,19 @@ describe('CategoriesService', () => {
     });
   });
   it('regenerates slug on rename and returns the updated public category', async () => {
-    expect(await service.update(category.id, { name: ' Oro rosa ' })).toEqual(
+    expect(await service.update(category.id, { name: ' Oro   rosa ' })).toEqual(
       category,
     );
     expect(prisma.category.update).toHaveBeenCalledWith({
       where: { id: category.id },
-      data: { name: 'Oro rosa', slug: 'oro-rosa' },
+      data: { name: 'ORO ROSA', slug: 'oro-rosa' },
       select,
     });
   });
   it('uses explicit slug when renaming', async () => {
     await service.update(category.id, { name: 'Oro', slug: 'mi-oro' });
     expect(prisma.category.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { name: 'Oro', slug: 'mi-oro' } }),
+      expect.objectContaining({ data: { name: 'ORO', slug: 'mi-oro' } }),
     );
   });
   it.each(['', '   ', null])(

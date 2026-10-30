@@ -1,6 +1,10 @@
 import { Prisma } from '../generated/prisma/client.js';
 import type { PrismaService } from './prisma.service.js';
-import { serializableTransaction } from './serializable-transaction.js';
+import { ConflictException } from '@nestjs/common';
+import {
+  SERIALIZATION_CONFLICT_MESSAGE,
+  serializableTransaction,
+} from './serializable-transaction.js';
 
 const adapterError = (kind: string) =>
   Object.assign(
@@ -37,15 +41,19 @@ describe('serializableTransaction', () => {
     },
   );
   it.each([prismaError('P2034'), adapterError('TransactionWriteConflict')])(
-    'stops after five attempts and preserves %s',
+    'stops after five attempts with a retryable 409 caused by %s',
     async (error) => {
       const transaction = vi.fn().mockRejectedValue(error);
-      await expect(
-        serializableTransaction(
-          { $transaction: transaction } as unknown as PrismaService,
-          vi.fn(),
-        ),
-      ).rejects.toBe(error);
+      const failure: unknown = await serializableTransaction(
+        { $transaction: transaction } as unknown as PrismaService,
+        vi.fn(),
+      ).catch((caught: unknown) => caught);
+      expect(failure).toBeInstanceOf(ConflictException);
+      expect(failure).toMatchObject({
+        status: 409,
+        message: SERIALIZATION_CONFLICT_MESSAGE,
+        cause: error,
+      });
       expect(transaction).toHaveBeenCalledTimes(5);
     },
   );

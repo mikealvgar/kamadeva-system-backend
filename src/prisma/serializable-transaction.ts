@@ -1,3 +1,5 @@
+import { setTimeout } from 'node:timers/promises';
+import { ConflictException } from '@nestjs/common';
 import { Prisma } from '../generated/prisma/client.js';
 import type { PrismaService } from './prisma.service.js';
 
@@ -15,7 +17,15 @@ function isWriteConflict(error: unknown): boolean {
   );
 }
 
-/** Retry the entire operation with a fresh snapshot after a serialization conflict. */
+export const SERIALIZATION_CONFLICT_MESSAGE =
+  'Conflicto de concurrencia, intente de nuevo';
+
+/**
+ * Retry the entire operation with a fresh snapshot after a serialization conflict.
+ * Randomized, growing backoff spreads out callers contending on one hot row
+ * (e.g. a folio counter); immediate retries would let only one win per round.
+ * Exhausted retries surface as a retryable 409, not a 500.
+ */
 export async function serializableTransaction<T>(
   prisma: PrismaService,
   operation: (tx: Prisma.TransactionClient) => Promise<T>,
@@ -26,7 +36,12 @@ export async function serializableTransaction<T>(
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       });
     } catch (error) {
-      if (attempt >= 4 || !isWriteConflict(error)) throw error;
+      if (!isWriteConflict(error)) throw error;
+      if (attempt >= 4)
+        throw new ConflictException(SERIALIZATION_CONFLICT_MESSAGE, {
+          cause: error,
+        });
+      await setTimeout(Math.random() * 10 * 2 ** attempt);
     }
   }
 }

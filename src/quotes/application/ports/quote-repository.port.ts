@@ -2,7 +2,6 @@ import { Prisma } from '../../../generated/prisma/client.js';
 import type { QuoteAggregate } from '../../domain/entities/quote.aggregate.js';
 
 export const QUOTE_REPOSITORY_PORT = Symbol('QUOTE_REPOSITORY_PORT');
-export const INVENTORY_QUERY_PORT = Symbol('INVENTORY_QUERY_PORT');
 
 export interface QuoteQueryFilter {
   status?: string;
@@ -27,11 +26,9 @@ export interface QuoteRepositoryPort {
     productIds: string[],
     tx?: Prisma.TransactionClient,
   ): Promise<Map<string, Prisma.Decimal>>;
-}
-
-export interface InventoryQueryPort {
-  getStockForProducts(
+  /** Active size ids per product; products without active sizes are absent. */
+  getActiveProductSizes(
     productIds: string[],
     tx?: Prisma.TransactionClient,
-  ): Promise<Map<string, Prisma.Decimal>>;
+  ): Promise<Map<string, Set<string>>>;
 }

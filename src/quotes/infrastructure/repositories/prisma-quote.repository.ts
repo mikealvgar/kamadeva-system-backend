@@ -84,6 +84,7 @@ export class PrismaQuoteRepository implements QuoteRepositoryPort {
         items: {
           create: quote.items.map((item) => ({
             productId: item.productId,
+            sizeId: item.sizeId,
             quantity: item.quantity.toDecimal(),
             unitPrice: item.unitPrice.toDecimal(),
             discount: item.discount.toDecimal(),
@@ -116,6 +117,7 @@ export class PrismaQuoteRepository implements QuoteRepositoryPort {
         deleteMany: {},
         create: quote.items.map((item) => ({
           productId: item.productId,
+          sizeId: item.sizeId,
           quantity: item.quantity.toDecimal(),
           unitPrice: item.unitPrice.toDecimal(),
           discount: item.discount.toDecimal(),
@@ -179,12 +181,31 @@ export class PrismaQuoteRepository implements QuoteRepositoryPort {
     return new Map(products.map((p) => [p.id, p.price]));
   }
 
+  async getActiveProductSizes(
+    productIds: string[],
+    tx?: Prisma.TransactionClient,
+  ): Promise<Map<string, Set<string>>> {
+    const client = this.getClient(tx);
+    const links = await client.productSize.findMany({
+      where: { productId: { in: productIds }, size: { isActive: true } },
+      select: { productId: true, sizeId: true },
+    });
+    const result = new Map<string, Set<string>>();
+    for (const { productId, sizeId } of links) {
+      const sizes = result.get(productId) ?? new Set<string>();
+      sizes.add(sizeId);
+      result.set(productId, sizes);
+    }
+    return result;
+  }
+
   private toDomain(record: QuoteRecord): QuoteAggregate {
     const items = record.items.map(
       (item) =>
         new QuoteItem({
           id: item.id,
           productId: item.product.id,
+          sizeId: item.size?.id ?? null,
           quantity: item.quantity,
           unitPrice: item.unitPrice,
           discount: item.discount,

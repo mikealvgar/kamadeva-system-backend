@@ -150,6 +150,9 @@ describe('UsersService.deleteUser', () => {
     sale: { count: vi.fn() },
     payment: { count: vi.fn() },
     inventoryMovement: { count: vi.fn() },
+    expense: { count: vi.fn() },
+    cashClosure: { count: vi.fn() },
+    purchase: { count: vi.fn() },
     refreshToken: { deleteMany: vi.fn() },
     userRole: { deleteMany: vi.fn() },
     idempotencyKey: { updateMany: vi.fn() },
@@ -171,6 +174,9 @@ describe('UsersService.deleteUser', () => {
     tx.sale.count.mockResolvedValue(0);
     tx.payment.count.mockResolvedValue(0);
     tx.inventoryMovement.count.mockResolvedValue(0);
+    tx.expense.count.mockResolvedValue(0);
+    tx.cashClosure.count.mockResolvedValue(0);
+    tx.purchase.count.mockResolvedValue(0);
   });
   it('deletes sessions, assignments and user in one transaction', async () => {
     await expect(
@@ -201,9 +207,9 @@ describe('UsersService.deleteUser', () => {
     expect(tx.user.delete).not.toHaveBeenCalled();
   });
   it('returns 400 for self-deletion without touching the database', async () => {
-    await expect(
-      service.deleteUser('same', 'same'),
-    ).rejects.toMatchObject({ status: 400 });
+    await expect(service.deleteUser('same', 'same')).rejects.toMatchObject({
+      status: 400,
+    });
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
   it('returns 409 for the last active ADMIN', async () => {
@@ -221,18 +227,36 @@ describe('UsersService.deleteUser', () => {
     });
     expect(tx.user.delete).not.toHaveBeenCalled();
   });
-  it.each([['quote'], ['sale'], ['payment'], ['inventoryMovement']])(
-    'returns 409 when the user has associated %s records',
-    async (model) => {
-      tx[model as 'quote'].count.mockResolvedValue(1);
-      await expect(
-        service.deleteUser('target', 'requester'),
-      ).rejects.toMatchObject({
-        status: 409,
-        message: 'El usuario tiene registros asociados y no puede eliminarse',
-      });
-      expect(tx.user.delete).not.toHaveBeenCalled();
-      expect(tx.refreshToken.deleteMany).not.toHaveBeenCalled();
-    },
-  );
+  it.each([
+    ['quote'],
+    ['sale'],
+    ['payment'],
+    ['inventoryMovement'],
+    ['expense'],
+    ['cashClosure'],
+    ['purchase'],
+  ])('returns 409 when the user has associated %s records', async (model) => {
+    tx[model as 'quote'].count.mockResolvedValue(1);
+    await expect(
+      service.deleteUser('target', 'requester'),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: 'El usuario tiene registros asociados y no puede eliminarse',
+    });
+    expect(tx.user.delete).not.toHaveBeenCalled();
+    expect(tx.refreshToken.deleteMany).not.toHaveBeenCalled();
+  });
+  it('returns 409 when the user cancelled sales, keeping who cancelled', async () => {
+    tx.sale.count.mockImplementation(
+      ({ where }: { where: { cancelledById?: string } }) =>
+        Promise.resolve(where.cancelledById ? 1 : 0),
+    );
+    await expect(
+      service.deleteUser('target', 'requester'),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(tx.sale.count).toHaveBeenCalledWith({
+      where: { cancelledById: 'target' },
+    });
+    expect(tx.user.delete).not.toHaveBeenCalled();
+  });
 });

@@ -1,9 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { isValidSizeSelection } from '../../../catalog/sizes/size-selection.js';
 import { QuoteAggregate } from '../../domain/entities/quote.aggregate.js';
 import { QuoteItem } from '../../domain/entities/quote-item.entity.js';
 import { QuoteCreatedEvent } from '../../domain/events/quote-events.js';
 import {
   InvalidExpirationDateException,
+  InvalidSizeSelectionException,
   ProductNotFoundException,
 } from '../../domain/exceptions/quote-exceptions.js';
 import {
@@ -13,14 +15,19 @@ import {
 import {
   UNIT_OF_WORK_PORT,
   type UnitOfWorkPort,
-} from '../ports/unit-of-work.port.js';
+} from '../../../common/application/unit-of-work.port.js';
 import {
   EVENT_PUBLISHER_PORT,
   type EventPublisherPort,
 } from '../ports/event-publisher.port.js';
+import {
+  FOLIO_SEQUENCE_PORT,
+  type FolioSequencePort,
+} from '../../../common/application/folio-sequence.port.js';
 
 export interface CreateQuoteItemCommand {
   productId: string;
+  sizeId?: string;
   quantity: number;
   discount?: number;
   tax?: number;
@@ -54,6 +61,8 @@ export class CreateQuoteUseCase {
     private readonly unitOfWork: UnitOfWorkPort,
     @Inject(EVENT_PUBLISHER_PORT)
     private readonly eventPublisher: EventPublisherPort,
+    @Inject(FOLIO_SEQUENCE_PORT)
+    private readonly folioSequence: FolioSequencePort,
   ) {}
 
   async execute(command: CreateQuoteCommand): Promise<QuoteAggregate> {
@@ -66,14 +75,21 @@ export class CreateQuoteUseCase {
         ...new Set(command.items.map((item) => item.productId)),
       ];
       const prices = await this.quoteRepo.getProductPrices(productIds, tx);
+      const sizes = await this.quoteRepo.getActiveProductSizes(productIds, tx);
 
       const items = command.items.map((input) => {
         const unitPrice = prices.get(input.productId);
         if (unitPrice === undefined) {
           throw new ProductNotFoundException('Producto inexistente');
         }
+        if (!isValidSizeSelection(input.sizeId, sizes.get(input.productId))) {
+          throw new InvalidSizeSelectionException(
+            'Talla inválida para el producto',
+          );
+        }
         return new QuoteItem({
           productId: input.productId,
+          sizeId: input.sizeId,
           quantity: input.quantity,
           unitPrice,
           discount: input.discount,
@@ -82,6 +98,7 @@ export class CreateQuoteUseCase {
       });
 
       const quoteAggregate = new QuoteAggregate({
+        folio: await this.folioSequence.next('C', tx),
         customerId: command.customerId,
         createdById: command.actorId,
         notes: command.notes?.trim() || null,
@@ -92,7 +109,7 @@ export class CreateQuoteUseCase {
       const saved = await this.quoteRepo.save(quoteAggregate, tx);
       quoteAggregate.rawRecord = saved;
       return quoteAggregate;
-    }, true);
+    });
 
     await this.eventPublisher.publish(
       new QuoteCreatedEvent(

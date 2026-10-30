@@ -20,6 +20,15 @@ export class QuoteItemInputDto {
   @IsUUID()
   productId: string;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Obligatoria si el producto tiene tallas activas; prohibida si no tiene',
+  })
+  @ValidateIf((_object: unknown, value: unknown) => value !== undefined)
+  @IsUUID()
+  sizeId?: string;
+
   @ApiProperty({ minimum: 0.001, maximum: 99999999999.999, multipleOf: 0.001 })
   @IsNumber({ maxDecimalPlaces: 3 })
   @IsPositive()

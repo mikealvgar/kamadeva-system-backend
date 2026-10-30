@@ -7,7 +7,7 @@ import {
 import {
   UNIT_OF_WORK_PORT,
   type UnitOfWorkPort,
-} from '../ports/unit-of-work.port.js';
+} from '../../../common/application/unit-of-work.port.js';
 
 @Injectable()
 export class DeleteQuoteUseCase {

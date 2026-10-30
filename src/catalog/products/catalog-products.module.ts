@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { v2 as cloudinary } from 'cloudinary';
 import { AuthModule } from '../../auth/auth.module.js';
+import { ProductImportController } from './import/product-import.controller.js';
+import { ProductImportService } from './import/product-import.service.js';
 import { ProductsController } from './products.controller.js';
 import { ProductsService } from './products.service.js';
 import {
@@ -12,9 +14,10 @@ import {
 
 @Module({
   imports: [AuthModule],
-  controllers: [ProductsController],
+  controllers: [ProductImportController, ProductsController],
   providers: [
     ProductsService,
+    ProductImportService,
     { provide: PRODUCT_IMAGES, useClass: ProductImagesService },
     {
       provide: CLOUDINARY_SDK,

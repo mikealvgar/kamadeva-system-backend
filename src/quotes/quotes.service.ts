@@ -7,7 +7,7 @@ import type {
 import type { ListQuotesDto } from './dto/list-quotes.dto.js';
 import type { PayQuoteDto } from './dto/pay-quote.dto.js';
 import type { QuoteDto, SaleDto } from './dto/quote.dto.js';
-import { quoteDto, saleDto, type QuoteRecord, type SaleRecord } from './quote-records.js';
+import { quoteDto, saleDto, type QuoteRecord } from './quote-records.js';
 import { CreateQuoteUseCase } from './application/use-cases/create-quote.use-case.js';
 import { UpdateQuoteUseCase } from './application/use-cases/update-quote.use-case.js';
 import { SendQuoteUseCase } from './application/use-cases/send-quote.use-case.js';
@@ -18,11 +18,12 @@ import {
   ListQuotesUseCase,
 } from './application/use-cases/query-quotes.use-case.js';
 import { PrismaQuoteRepository } from './infrastructure/repositories/prisma-quote.repository.js';
-import {
-  PrismaInventoryQueryAdapter,
-  PrismaSaleRepository,
-} from './infrastructure/repositories/prisma-sale.repository.js';
+import { PrismaSaleRepository } from '../sales/infrastructure/prisma-sale.repository.js';
+import { PrismaInventoryQueryAdapter } from '../sales/infrastructure/prisma-inventory-query.adapter.js';
+import { RegisterSaleUseCase } from '../sales/application/use-cases/register-sale.use-case.js';
+import { saleSelect } from './quote-records.js';
 import { PrismaUnitOfWorkAdapter } from './infrastructure/adapters/prisma-unit-of-work.adapter.js';
+import { PrismaFolioSequenceAdapter } from '../common/infrastructure/prisma-folio-sequence.adapter.js';
 import {
   EVENT_PUBLISHER_PORT,
   type EventPublisherPort,
@@ -39,9 +40,8 @@ export class QuotesService {
   private readonly getQuoteByIdUseCase: GetQuoteByIdUseCase;
   private readonly listQuotesUseCase: ListQuotesUseCase;
   private readonly quoteRepo: PrismaQuoteRepository;
-  private readonly saleRepo: PrismaSaleRepository;
-  private readonly inventoryQuery: PrismaInventoryQueryAdapter;
   private readonly unitOfWork: PrismaUnitOfWorkAdapter;
+  private readonly folioSequence: PrismaFolioSequenceAdapter;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -50,9 +50,8 @@ export class QuotesService {
     eventPublisher?: EventPublisherPort,
   ) {
     this.quoteRepo = new PrismaQuoteRepository(this.prisma);
-    this.saleRepo = new PrismaSaleRepository(this.prisma);
-    this.inventoryQuery = new PrismaInventoryQueryAdapter(this.prisma);
     this.unitOfWork = new PrismaUnitOfWorkAdapter(this.prisma);
+    this.folioSequence = new PrismaFolioSequenceAdapter(this.prisma);
     const publisher: EventPublisherPort = eventPublisher ?? {
       publish: async () => {},
       publishAll: async () => {},
@@ -62,6 +61,7 @@ export class QuotesService {
       this.quoteRepo,
       this.unitOfWork,
       publisher,
+      this.folioSequence,
     );
     this.updateQuoteUseCase = new UpdateQuoteUseCase(
       this.quoteRepo,
@@ -72,10 +72,15 @@ export class QuotesService {
       this.unitOfWork,
       publisher,
     );
+    const saleRepo = new PrismaSaleRepository(this.prisma);
     this.payQuoteUseCase = new PayQuoteUseCase(
       this.quoteRepo,
-      this.saleRepo,
-      this.inventoryQuery,
+      saleRepo,
+      new RegisterSaleUseCase(
+        saleRepo,
+        new PrismaInventoryQueryAdapter(this.prisma),
+        this.folioSequence,
+      ),
       this.unitOfWork,
       publisher,
     );
@@ -158,10 +163,12 @@ export class QuotesService {
         method: dto.method,
         actorId,
       });
-      const resolved =
-        (sale.rawRecord as SaleRecord) ??
-        (await this.saleRepo.findRecordById(sale.id));
-      return saleDto(resolved!);
+      const record = await this.prisma.sale.findUnique({
+        where: { id: sale.id },
+        select: saleSelect,
+      });
+      if (!record) throw new NotFoundException('Venta inexistente');
+      return saleDto(record);
     } catch (err) {
       handleDomainError(err);
     }

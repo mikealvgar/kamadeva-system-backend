@@ -1,9 +1,10 @@
 import { Prisma } from '../../../generated/prisma/client.js';
-import { Money, Quantity } from '../value-objects/money.js';
+import { Money, Quantity } from '../../../common/domain/money.js';
 
 export interface QuoteItemProps {
   id?: string;
   productId: string;
+  sizeId?: string | null;
   quantity: Quantity | number | string | Prisma.Decimal;
   unitPrice: Money | number | string | Prisma.Decimal;
   discount?: Money | number | string | Prisma.Decimal;
@@ -13,6 +14,7 @@ export interface QuoteItemProps {
 export class QuoteItem {
   readonly id?: string;
   readonly productId: string;
+  readonly sizeId: string | null;
   readonly quantity: Quantity;
   readonly unitPrice: Money;
   readonly discount: Money;
@@ -23,6 +25,7 @@ export class QuoteItem {
   constructor(props: QuoteItemProps) {
     this.id = props.id;
     this.productId = props.productId;
+    this.sizeId = props.sizeId ?? null;
     this.quantity =
       props.quantity instanceof Quantity
         ? props.quantity

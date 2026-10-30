@@ -11,6 +11,11 @@ import type { CreateCategoryDto } from './dto/create-category.dto.js';
 import type { UpdateCategoryDto } from './dto/update-category.dto.js';
 import { SLUG_PATTERN, slugify } from './slugify.js';
 
+/** Category names are stored upper-case with single spaces. */
+export function normalizeCategoryName(name: string): string {
+  return name.trim().replace(/\s+/g, ' ').toUpperCase();
+}
+
 const categorySelect = {
   id: true,
   name: true,
@@ -28,7 +33,7 @@ export class CategoriesService {
     try {
       return await this.prisma.category.create({
         data: {
-          name: dto.name.trim(),
+          name: normalizeCategoryName(dto.name),
           slug,
           description: dto.description?.trim() || null,
         },
@@ -61,7 +66,7 @@ export class CategoriesService {
       throw new BadRequestException('Debe enviar al menos un campo');
     }
     const data: Prisma.CategoryUpdateInput = {};
-    if (dto.name !== undefined) data.name = dto.name.trim();
+    if (dto.name !== undefined) data.name = normalizeCategoryName(dto.name);
     if (dto.name !== undefined || dto.slug !== undefined)
       data.slug = this.resolveSlug(dto.slug, dto.name);
     if (dto.description !== undefined)

@@ -1,5 +1,5 @@
-import { Folio } from '../value-objects/folio.js';
-import { Money } from '../value-objects/money.js';
+import { Folio } from '../../../common/domain/folio.js';
+import { Money } from '../../../common/domain/money.js';
 import { QuoteItem } from './quote-item.entity.js';
 import {
   InvalidQuoteStateException,
@@ -18,7 +18,7 @@ export type QuoteStatus =
 
 export interface QuoteAggregateProps {
   id?: string;
-  folio?: Folio | string;
+  folio: Folio | string;
   status?: QuoteStatus;
   customerId: string;
   createdById?: string | null;
@@ -53,11 +53,7 @@ export class QuoteAggregate {
   constructor(props: QuoteAggregateProps) {
     this.id = props.id ?? '';
     this._folio =
-      props.folio instanceof Folio
-        ? props.folio
-        : props.folio
-          ? new Folio(props.folio)
-          : Folio.generate('COT');
+      props.folio instanceof Folio ? props.folio : new Folio(props.folio);
     this._status = props.status ?? 'DRAFT';
     this._customerId = props.customerId;
     this._createdById = props.createdById ?? null;

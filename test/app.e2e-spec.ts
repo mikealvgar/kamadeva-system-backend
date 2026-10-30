@@ -67,6 +67,8 @@ describe('Auth HTTP + PostgreSQL', () => {
     app = module.createNestApplication();
     setupApp(app);
     await app.init();
+    // Keep one listener for the suite instead of reopening a port per request.
+    await app.listen(0, '127.0.0.1');
     prisma = app.get(PrismaService);
   }
   async function register(
@@ -753,7 +755,7 @@ describe('Auth HTTP + PostgreSQL', () => {
       });
       const product = await prisma.product.create({
         data: {
-          sku: `sku-${randomUUID()}`,
+          barcode: `sku-${randomUUID()}`,
           name: 'Test',
           price: 10,
           categoryId: category.id,

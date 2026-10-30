@@ -1,9 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { isValidSizeSelection } from '../../../catalog/sizes/size-selection.js';
 import type { QuoteAggregate } from '../../domain/entities/quote.aggregate.js';
 import { QuoteItem } from '../../domain/entities/quote-item.entity.js';
 import {
   DomainException,
   InvalidExpirationDateException,
+  InvalidSizeSelectionException,
   ProductNotFoundException,
   QuoteNotFoundException,
 } from '../../domain/exceptions/quote-exceptions.js';
@@ -14,7 +16,7 @@ import {
 import {
   UNIT_OF_WORK_PORT,
   type UnitOfWorkPort,
-} from '../ports/unit-of-work.port.js';
+} from '../../../common/application/unit-of-work.port.js';
 import type { CreateQuoteItemCommand } from './create-quote.use-case.js';
 
 export interface UpdateQuoteCommand {
@@ -72,14 +74,24 @@ export class UpdateQuoteUseCase {
           ...new Set(command.items.map((item) => item.productId)),
         ];
         const prices = await this.quoteRepo.getProductPrices(productIds, tx);
+        const sizes = await this.quoteRepo.getActiveProductSizes(
+          productIds,
+          tx,
+        );
 
         items = command.items.map((input) => {
           const unitPrice = prices.get(input.productId);
           if (unitPrice === undefined) {
             throw new ProductNotFoundException('Producto inexistente');
           }
+          if (!isValidSizeSelection(input.sizeId, sizes.get(input.productId))) {
+            throw new InvalidSizeSelectionException(
+              'Talla inválida para el producto',
+            );
+          }
           return new QuoteItem({
             productId: input.productId,
+            sizeId: input.sizeId,
             quantity: input.quantity,
             unitPrice,
             discount: input.discount,
@@ -119,6 +131,7 @@ export class UpdateQuoteUseCase {
           deleteMany: {},
           create: items.map((item) => ({
             productId: item.productId,
+            sizeId: item.sizeId,
             quantity: item.quantity.toDecimal(),
             unitPrice: item.unitPrice.toDecimal(),
             discount: item.discount.toDecimal(),

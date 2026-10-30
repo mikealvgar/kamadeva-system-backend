@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module.js';
+import { SalesModule } from '../sales/sales.module.js';
 import { QuotesController } from './quotes.controller.js';
 import { QuotesService } from './quotes.service.js';
 import { CreateQuoteUseCase } from './application/use-cases/create-quote.use-case.js';
@@ -11,23 +12,18 @@ import {
   GetQuoteByIdUseCase,
   ListQuotesUseCase,
 } from './application/use-cases/query-quotes.use-case.js';
-import {
-  INVENTORY_QUERY_PORT,
-  QUOTE_REPOSITORY_PORT,
-} from './application/ports/quote-repository.port.js';
-import { SALE_REPOSITORY_PORT } from './application/ports/sale-repository.port.js';
-import { UNIT_OF_WORK_PORT } from './application/ports/unit-of-work.port.js';
+import { QUOTE_REPOSITORY_PORT } from './application/ports/quote-repository.port.js';
+import { UNIT_OF_WORK_PORT } from '../common/application/unit-of-work.port.js';
+import { FOLIO_SEQUENCE_PORT } from '../common/application/folio-sequence.port.js';
 import { EVENT_PUBLISHER_PORT } from './application/ports/event-publisher.port.js';
 import { PrismaQuoteRepository } from './infrastructure/repositories/prisma-quote.repository.js';
-import {
-  PrismaInventoryQueryAdapter,
-  PrismaSaleRepository,
-} from './infrastructure/repositories/prisma-sale.repository.js';
 import { PrismaUnitOfWorkAdapter } from './infrastructure/adapters/prisma-unit-of-work.adapter.js';
 import { NestEventEmitterAdapter } from './infrastructure/adapters/nest-event-emitter.adapter.js';
+import { PrismaFolioSequenceAdapter } from '../common/infrastructure/prisma-folio-sequence.adapter.js';
 
 @Module({
-  imports: [AuthModule],
+  // SalesModule provides the shared sale registration used by quote payment.
+  imports: [AuthModule, SalesModule],
   controllers: [QuotesController],
   providers: [
     QuotesService,
@@ -40,12 +36,9 @@ import { NestEventEmitterAdapter } from './infrastructure/adapters/nest-event-em
     ListQuotesUseCase,
     PrismaQuoteRepository,
     { provide: QUOTE_REPOSITORY_PORT, useClass: PrismaQuoteRepository },
-    PrismaSaleRepository,
-    { provide: SALE_REPOSITORY_PORT, useClass: PrismaSaleRepository },
-    PrismaInventoryQueryAdapter,
-    { provide: INVENTORY_QUERY_PORT, useClass: PrismaInventoryQueryAdapter },
     PrismaUnitOfWorkAdapter,
     { provide: UNIT_OF_WORK_PORT, useClass: PrismaUnitOfWorkAdapter },
+    { provide: FOLIO_SEQUENCE_PORT, useClass: PrismaFolioSequenceAdapter },
     NestEventEmitterAdapter,
     { provide: EVENT_PUBLISHER_PORT, useClass: NestEventEmitterAdapter },
   ],

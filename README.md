@@ -33,15 +33,16 @@ API: `http://localhost:3000/api`. Swagger: `http://localhost:3000/api/docs`. Ope
 
 ## Variables
 
-| Variable                 | Uso                                                                               |
-| ------------------------ | --------------------------------------------------------------------------------- |
-| `DATABASE_URL`           | URL PostgreSQL obligatoria.                                                       |
-| `JWT_ACCESS_SECRET`      | Secreto obligatorio para JWT de acceso HS256.                                     |
-| `JWT_REFRESH_SECRET`     | Secreto obligatorio y diferente para refresh JWT HS256.                           |
-| `JWT_ACCESS_EXPIRES_IN`  | Duración positiva; ejemplo `15m` o `900`.                                         |
-| `JWT_REFRESH_EXPIRES_IN` | Duración positiva; ejemplo `7d`.                                                  |
-| `BCRYPT_ROUNDS`          | Entero 4–31; por defecto 12. El costo crece exponencialmente; las pruebas usan 4. |
-| `PORT`                   | Puerto HTTP; por defecto 3000.                                                    |
+| Variable                 | Uso                                                                                 |
+| ------------------------ | ----------------------------------------------------------------------------------- |
+| `DATABASE_URL`           | URL PostgreSQL obligatoria.                                                         |
+| `JWT_ACCESS_SECRET`      | Secreto obligatorio para JWT de acceso HS256.                                       |
+| `JWT_REFRESH_SECRET`     | Secreto obligatorio y diferente para refresh JWT HS256.                             |
+| `JWT_ACCESS_EXPIRES_IN`  | Duración positiva; ejemplo `15m` o `900`.                                           |
+| `JWT_REFRESH_EXPIRES_IN` | Duración positiva; ejemplo `7d`.                                                    |
+| `BCRYPT_ROUNDS`          | Entero 4–31; por defecto 12. El costo crece exponencialmente; las pruebas usan 4.   |
+| `PORT`                   | Puerto HTTP; por defecto 3000.                                                      |
+| `BUSINESS_TIMEZONE`      | Zona horaria IANA del negocio para el dashboard; por defecto `America/Mexico_City`. |
 
 Duraciones aceptadas: entero en segundos o entero con sufijo `s`, `m`, `h`, `d`, hasta 10 años. La aplicación falla al arrancar si falta configuración obligatoria o si una duración/costo no es válida.
 
@@ -156,29 +157,75 @@ curl -i -X PATCH http://localhost:3000/api/catalog/categories/<id> \
 
 `test/catalog.e2e-spec.ts` cubre CRUD, normalización, validación, duplicados concurrentes, referencias, permisos y Swagger. Las suites E2E se ejecutan secuencialmente porque comparten la base temporal y autenticación verifica el primer registro. Catálogo crea y limpia sus propios datos. El CRUD de productos se documenta a continuación.
 
+## Catálogo: tallas
+
+Catálogo único de tallas que usan productos, cotizaciones y ventas. El stock sigue siendo por producto, no por talla. `ADMIN` escribe; `ADMIN` y `VENDEDOR` leen. Sin token válido o usuario inactivo: `401`; sin rol permitido: `403`.
+
+| Endpoint                        | Entrada                                         | Resultado                                                                                                            |
+| ------------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/catalog/sizes`       | `name`; opcional `sortOrder` (entero 0–10000)   | `201`: `SizeDto`; nombre duplicado: `409`.                                                                           |
+| `GET /api/catalog/sizes`        | Query opcional `includeInactive=true` o `false` | `200`: `SizeDto[]` por `sortOrder` y nombre; por defecto solo activas.                                               |
+| `GET /api/catalog/sizes/:id`    | UUID                                            | `200`: `SizeDto`, incluso inactiva; inexistente: `404`.                                                              |
+| `PATCH /api/catalog/sizes/:id`  | Al menos uno de `name`, `sortOrder`, `isActive` | `200`: `SizeDto`; inexistente: `404`; nombre duplicado: `409`.                                                       |
+| `DELETE /api/catalog/sizes/:id` | UUID                                            | `204`; asignada a productos, renglones de cotización o de venta: `409` (usar `isActive: false`); inexistente: `404`. |
+
+`SizeDto`: `{ id, name, sortOrder, isActive }`. `name` se recorta y pasa a mayúsculas (máximo 20), así que `m` y `M` son la misma talla. Las tallas migradas desde el campo de texto anterior conservan su nombre aunque excedan 20 caracteres.
+
+En cotizaciones, cada renglón acepta `sizeId` opcional: es obligatorio si el producto tiene tallas activas, debe ser una de ellas, y está prohibido si el producto no tiene tallas; si no se cumple: `400`. Los renglones exponen `size: { id, name } | null`, y al pagar la cotización la talla se copia al renglón de venta.
+
 ## Catálogo: productos
 
 Todos los endpoints exigen JWT y usuario activo. `ADMIN` escribe; `ADMIN` y `VENDEDOR` leen. Sin token válido o usuario inactivo: `401`; sin rol permitido: `403`.
 
-| Endpoint                                  | Entrada                                                                                                                     | Resultado                                                                                              |
-| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `POST /api/catalog/products`              | `sku`, `articulo`, `precioVenta`, `categoryId`; opcionales `descripcion`, `codigoBarras`, `marca`, `tallas`, `precioCompra` | `201`: `ProductDto`; categoría inexistente: `404`; SKU/código duplicado: `409`.                        |
-| `GET /api/catalog/products`               | Query `categoryId`, `includeInactive` (`true` o `false`), `search`                                                          | `200`: `ProductDto[]` por artículo ascendente; por defecto solo activos.                               |
-| `GET /api/catalog/products/:id`           | UUID v4                                                                                                                     | `200`: `ProductDto`, incluso inactivo; inexistente: `404`.                                             |
-| `GET /api/catalog/products/:id/movements` | UUID v4                                                                                                                     | `200`: movimientos por fecha descendente; producto inexistente: `404`.                                 |
-| `PATCH /api/catalog/products/:id`         | Al menos un campo de creación o `isActive`                                                                                  | `200`: `ProductDto`; producto/categoría inexistente: `404`; duplicados: `409`.                         |
-| `DELETE /api/catalog/products/:id`        | UUID v4                                                                                                                     | `204` sin cuerpo; referencias en cotizaciones, ventas o movimientos: `409`; inexistente: `404`.        |
-| `POST /api/catalog/products/:id/image`    | Multipart, un campo `file`                                                                                                  | `200`: `ProductDto`; archivo inválido: `400`; producto inexistente: `404`; fallo del proveedor: `502`. |
+| Endpoint                                  | Entrada                                                                                                                                        | Resultado                                                                                                                  |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/catalog/products`              | `codigoBarras`, `articulo`, `precioVenta`; opcionales `categoryId`, `descripcion`, `marca`, `tallaIds`, `precioCompra`, `stockMinimo`, `stock` | `201`: `ProductDto`; talla inexistente o inactiva: `400`; categoría inexistente: `404`; código de barras duplicado: `409`. |
+| `GET /api/catalog/products`               | Query `categoryId`, `includeInactive` (`true` o `false`), `search`                                                                             | `200`: `ProductDto[]` por artículo ascendente; por defecto solo activos.                                                   |
+| `GET /api/catalog/products/:id`           | UUID v4                                                                                                                                        | `200`: `ProductDto`, incluso inactivo; inexistente: `404`.                                                                 |
+| `GET /api/catalog/products/:id/movements` | UUID v4                                                                                                                                        | `200`: movimientos por fecha descendente; producto inexistente: `404`.                                                     |
+| `PATCH /api/catalog/products/:id`         | Al menos un campo de creación, `stock` o `isActive`                                                                                            | `200`: `ProductDto`; producto/categoría inexistente: `404`; duplicados: `409`.                                             |
+| `DELETE /api/catalog/products/:id`        | UUID v4                                                                                                                                        | `204` sin cuerpo; referencias en cotizaciones, ventas o movimientos: `409`; inexistente: `404`.                            |
+| `POST /api/catalog/products/:id/image`    | Multipart, un campo `file`                                                                                                                     | `200`: `ProductDto`; archivo inválido: `400`; producto inexistente: `404`; fallo del proveedor: `502`.                     |
 
-Respuesta pública: `{ id, sku, articulo, descripcion, codigoBarras, marca, tallas, precioCompra, precioVenta, stock, imageUrl, isActive, categoria, createdAt, updatedAt }`. `categoria` incluye únicamente `{ id, name, slug }`. Se conservan los nombres internos de Prisma; el servicio mapea los campos públicos.
+Respuesta pública: `{ id, articulo, descripcion, codigoBarras, marca, tallas, precioCompra, precioVenta, stock, stockMinimo, imageUrl, isActive, categoria, createdAt, updatedAt }`. `categoria` incluye únicamente `{ id, name, slug }` o es `null` si el producto no tiene categoría. Se conservan los nombres internos de Prisma; el servicio mapea los campos públicos.
 
-SKU se recorta y pasa a mayúsculas (máximo 64); artículo se recorta y no puede quedar vacío (máximo 200). Descripción admite hasta 500 caracteres; código de barras 64 y marca 100. Los textos opcionales se recortan y un valor vacío o `null` elimina el valor. El código de barras es único cuando existe. Tallas se recortan, deben ser strings no vacíos y no pueden repetirse después del recorte. Una lista vacía se persiste como `[]` y se devuelve como `null`; `null` no se acepta como entrada para `tallas`.
+El código de barras es el identificador del producto (ya no existe SKU): obligatorio, único, se recorta y pasa a mayúsculas (máximo 64); no se puede borrar con `null`. Artículo se recorta y no puede quedar vacío (máximo 200). Descripción admite hasta 500 caracteres y marca 100. Los textos opcionales se recortan y un valor vacío o `null` elimina el valor. La categoría es opcional; `categoryId: null` en `PATCH` la quita y `GET` acepta `sinCategoria=true`. `stockMinimo` (opcional, ≥ 0, hasta 3 decimales; `null` lo quita) marca el producto como de stock bajo en el dashboard cuando `stock ≤ stockMinimo`; se devuelve como string con tres decimales o `null`. `tallaIds` es una lista de UUID sin repetidos de tallas activas del catálogo (ver Catálogo: tallas); en `PATCH` reemplaza la lista completa y `[]` la vacía; `null` no se acepta. La respuesta expone `tallas` como `[{ id, name }]` ordenadas por `sortOrder` y nombre; un producto sin tallas devuelve `[]`.
 
-Precios entran como números JSON de hasta 10 enteros y 2 decimales. Venta debe ser positiva; compra puede ser cero, omitirse o ponerse a `null`. Ambos salen como strings con dos decimales. UUID, tipos, precisión, campos desconocidos y PATCH vacío producen `400`. `stock` e `imageUrl` no se aceptan en los cuerpos de creación o actualización.
+Precios entran como números JSON de hasta 10 enteros y 2 decimales. Venta debe ser positiva; compra puede ser cero, omitirse o ponerse a `null`. Ambos salen como strings con dos decimales. `precioCompra` es el costo de adquisición y se puede editar desde el producto; no modifica `precioVenta`. UUID, tipos, precisión, campos desconocidos y PATCH vacío producen `400`. `imageUrl` no se acepta en los cuerpos de creación o actualización.
 
-`stock` se deriva de `SUM(InventoryMovement.quantityChange)` y se devuelve con tres decimales, incluso negativo; no existe una columna de stock. Los productos sin movimientos devuelven `"0.000"`. El listado usa una sola agregación para todos los productos devueltos. `search` busca en artículo, SKU o código de barras sin distinguir mayúsculas. Inactivar un producto no altera sus movimientos ni su existencia.
+`stock` se deriva de `SUM(InventoryMovement.quantityChange)` y se devuelve con tres decimales, incluso negativo; no existe una columna de stock. ADMIN puede enviar `stock` en alta o edición como existencia deseada; el sistema registra la diferencia como movimiento de ajuste y la operación queda auditada. VENDEDOR no puede crear ni editar productos. Los productos sin movimientos devuelven `"0.000"`. El listado usa una sola agregación para todos los productos devueltos. `search` busca en artículo o código de barras sin distinguir mayúsculas. Inactivar un producto no altera sus movimientos ni su existencia.
 
 Los movimientos exponen `{ id, type, quantityChange, unitCost, referenceType, referenceId, notes, createdAt }`. El alta manual y la consulta global se describen en Inventario.
+
+### Importación desde Excel
+
+`POST /api/catalog/products/import` (solo `ADMIN`, `multipart/form-data`) crea los productos de un `.xlsx` que todavía no existen. Campos: `file` (hasta 5 MB; primera hoja; renglón 1 con encabezados), `dryRun` (`true` valida y reporta sin escribir) y `categoryMap` (JSON opcional). Encabezados reconocidos sin importar mayúsculas, acentos ni `*`: `articulo`, `descripcion`, `codigo de barras`, `stock`, `categoria`, `marca`, `precio compra`, `precio venta` (obligatorios: artículo, código, stock, categoría y precio de venta). Hasta 5000 renglones; los vacíos se ignoran.
+
+- **Mismo producto** = mismo código de barras y mismo nombre (sin distinguir mayúsculas ni espacios). Si ya existe en el catálogo se omite; repetido en el archivo, gana el primero. Reimportar el mismo archivo no duplica nada.
+- **Código compartido** por productos con nombres distintos (en el archivo o contra el catálogo): esos renglones no se importan y se reportan como error.
+- **Normalización:** códigos numéricos de Excel pasan a texto entero (`7.503445E7` → `75034450`); se quita la marca de texto inicial (`´`, `'`) y se guardan en mayúsculas. Las categorías se guardan en mayúsculas y se reutilizan sin distinguir mayúsculas ni acentos; las que falten se crean. Stock > 0 crea un movimiento `ADJUSTMENT_IN` (`referenceType: 'IMPORT'`). Precio de compra vacío deja el costo en `null`.
+- **`categoryMap`:** categoría del Excel → categoría destino, o `null` para importar sin categoría. Las llaves se comparan en mayúsculas y sin acentos.
+- **Respuesta `200`:** `{ dryRun, totalRows, created, skipped[{ row, codigoBarras, articulo, reason }], errors[{ row, codigoBarras, articulo, message }], categoriesCreated[], withoutCategory }`. Archivo ausente, no `.xlsx`, inválido, mayor a 5 MB, sin columnas obligatorias o `categoryMap` inválido: `400`. Renglones válidos se escriben en una sola transacción.
+
+Mapa acordado para `Inventario-Kamadeva.xlsx` (categorías en inglés sin categoría; FESTISH y ODY quedan cubiertas):
+
+```json
+{
+  "FETISH": null,
+  "FESTISH": null,
+  "BODY": null,
+  "ODY": null,
+  "BABY DOLL": null,
+  "DILDO": null,
+  "PLUG": null,
+  "PLUG ANAL": null,
+  "PLUG ANAL VIBRADOR": null,
+  "KEGEL": null,
+  "BIKINI": null
+}
+```
+
+Con ese mapa, sobre una base vacía: 672 renglones → 641 creados, 2 omitidos (duplicados en el archivo), 29 con error (27 por código compartido y 2 sin stock), 51 categorías creadas y 172 productos sin categoría.
 
 ### Cloudinary
 
@@ -192,7 +239,7 @@ Estas variables son obligatorias al arrancar y van exclusivamente en `.env` o en
 
 Se acepta una imagen JPEG, PNG o WebP de hasta 5 MiB (5 × 1024 × 1024 bytes). Multer limita el multipart en memoria y la validación comprueba la firma del archivo además del MIME declarado. El SDK sube a `kamadeva/products` con `public_id = product-{id}`, `overwrite=true` e `invalidate=true`; se persiste únicamente `secure_url`. La siguiente carga reemplaza la imagen. Si el proveedor falla, se responde `502` y no se modifica la URL persistida. Eliminar un producto no elimina su imagen remota en este hito. Referencias: [subidas de Cloudinary](https://cloudinary.com/documentation/image_upload_api_reference) y [validación de archivos de Nest](https://docs.nestjs.com/techniques/file-upload).
 
-La migración `20260913222113_product_extended_fields` agrega solo `brand`, `tallas` (con default `[]`) e `imageUrl`. Aplicar las migraciones pendientes en el entorno correspondiente:
+La migración `20260913222113_product_extended_fields` agrega `brand`, `tallas` (texto libre) e `imageUrl`. `20261029180000_sales_sizes_folio_counter` copia esas tallas al catálogo y `20261029200000_drop_product_tallas` vuelve a copiarlas y elimina la columna. Aplicar las migraciones pendientes en el entorno correspondiente:
 
 ```bash
 npx prisma migrate deploy --config prisma7.config.ts
@@ -203,7 +250,7 @@ npx prisma generate --config prisma7.config.ts
 curl -i http://localhost:3000/api/catalog/products \
   -H 'Authorization: Bearer <accessToken ADMIN>' \
   -H 'Content-Type: application/json' \
-  -d '{"sku":"AN-R-001","articulo":"Anillo de plata","categoryId":"<uuid categoría>","precioCompra":780.25,"precioVenta":1250.50,"marca":"Kamadeva","tallas":["7","8"]}'
+  -d '{"codigoBarras":"7501234567890","articulo":"Anillo de plata","categoryId":"<uuid categoría>","precioCompra":780.25,"precioVenta":1250.50,"marca":"Kamadeva"}'
 
 curl -i 'http://localhost:3000/api/catalog/products?search=anillo&includeInactive=true' \
   -H 'Authorization: Bearer <accessToken>'
@@ -217,10 +264,10 @@ Las pruebas unitarias sustituyen Prisma y el SDK. `test/catalog-products.e2e-spe
 
 ## Inventario
 
-| Endpoint | Permiso | Contrato |
-| --- | --- | --- |
-| `POST /api/catalog/products/:id/movements` | ADMIN | `201`: movimiento manual; producto inexistente `404`. |
-| `GET /api/inventory/movements` | ADMIN o VENDEDOR | `200`: lista por `createdAt` descendente, sin paginación. Filtros opcionales `productId` (UUID v4), `type`, `startDate` y `endDate` (ISO 8601, inclusivos). Producto filtrado inexistente: `404`. |
+| Endpoint                                   | Permiso          | Contrato                                                                                                                                                                                          |
+| ------------------------------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/catalog/products/:id/movements` | ADMIN            | `201`: movimiento manual; producto inexistente `404`.                                                                                                                                             |
+| `GET /api/inventory/movements`             | ADMIN o VENDEDOR | `200`: lista por `createdAt` descendente, sin paginación. Filtros opcionales `productId` (UUID v4), `type`, `startDate` y `endDate` (ISO 8601, inclusivos). Producto filtrado inexistente: `404`. |
 
 Ambos requieren token válido y usuario activo (`401`); permisos insuficientes producen `403`. UUID, cuerpo o query inválidos producen `400`. Una lista sin coincidencias devuelve `[]`.
 
@@ -240,14 +287,147 @@ curl -i 'http://localhost:3000/api/inventory/movements?type=PURCHASE_IN&startDat
 
 Cada alta se refleja en el stock derivado del listado y detalle de productos. Los movimientos no se editan ni borran; se corrigen creando un ajuste nuevo. No se requiere migración. `test/inventory.e2e-spec.ts` comprueba el contrato con PostgreSQL temporal aislado.
 
+## Compras a proveedores
+
+Registrar una compra significa recibirla completa. `POST` solo permite `ADMIN`; `ADMIN` y `VENDEDOR` pueden consultar el historial y el detalle. La compra, sus renglones y las entradas `PURCHASE_IN` se guardan en una transacción serializable. No se manejan pagos ni saldos pendientes.
+
+| Endpoint                 | Permiso          | Entrada / resultado                                                                                                                                                                                                                                                                       |
+| ------------------------ | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/purchases`    | ADMIN            | Recibe `proveedorId`, `productos[]` (`productoId`, `cantidad`) y opcionalmente `fechaRecepcion`, `folioProveedor`, `notas`. `201`: compra con renglones y total calculado; proveedor/producto inexistente `404`; proveedor/producto inactivo `409`; costo de compra sin configurar `400`. |
+| `GET /api/purchases`     | ADMIN o VENDEDOR | Filtros opcionales `proveedorId`, `fechaInicio`, `fechaFin`; paginación `pagina`/`limite`. Devuelve compras más recientes primero.                                                                                                                                                        |
+| `GET /api/purchases/:id` | ADMIN o VENDEDOR | `200`: detalle de compra; inexistente `404`.                                                                                                                                                                                                                                              |
+
+Cada renglón fotografía el `precioCompra` actual del producto como `costoUnitario`; el cuerpo de compra no acepta costo ni precio de venta. Subtotales y total se calculan en el servidor con dos decimales. La compra no cambia `precioCompra` ni `precioVenta`; para cambiar el costo hay que editar el producto. Cada entrada conserva la referencia a la compra y al usuario autenticado. Las compras recibidas no se editan ni borran; diferencias de inventario se corrigen con ajustes.
+
+```bash
+curl -i http://localhost:3000/api/purchases \
+  -H 'Authorization: Bearer <accessToken ADMIN>' \
+  -H 'Content-Type: application/json' \
+  -d '{"proveedorId":"<uuid proveedor>","folioProveedor":"FAC-1842","productos":[{"productoId":"<uuid producto>","cantidad":10}]}'
+
+curl -i 'http://localhost:3000/api/purchases?proveedorId=<uuid>&pagina=1&limite=20' \
+  -H 'Authorization: Bearer <accessToken>'
+```
+
+## Ventas
+
+Venta directa de mostrador, historial, detalle y cancelación en `/api/sales`. `ADMIN` y `VENDEDOR` pueden usar todos los endpoints. Sin token válido o con usuario inactivo: `401`; sin rol permitido: `403`. El stock es por producto; la talla es un dato del renglón.
+
+| Endpoint                     | Entrada                                                                                                                                                                        | Resultado                                                                                                                                                                                                      |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/sales`            | Header `Idempotency-Key` (UUID). Body: `customerId?`, `notes?`, `items[]` (`productId`, `sizeId?`, `quantity`, `discount?`, `tax?`), `payment` (`method`, `amount`)            | `201`: `SaleDetailDto`. Cliente/producto inexistente: `404`; producto inactivo, stock insuficiente, llave reutilizada con otro body u otro usuario: `409`; talla inválida o importe distinto del total: `400`. |
+| `GET /api/sales`             | Query `startDate`, `endDate` (ISO 8601, inclusivos), `status`, `createdById`, `customerId`, `paymentMethod`, `folio` (exacto), `page` (≥1), `pageSize` (1–100, por defecto 20) | `200`: `{ data, total, page, pageSize }`, más recientes primero. Incluye ventas nacidas de cotizaciones. `startDate` posterior a `endDate`: `400`.                                                             |
+| `GET /api/sales/:id`         | UUID                                                                                                                                                                           | `200`: `SaleDetailDto`; inexistente: `404`.                                                                                                                                                                    |
+| `POST /api/sales/:id/cancel` | `reason` (1–500)                                                                                                                                                               | `200`: `SaleDetailDto` cancelada; repetir devuelve el mismo resultado sin mover stock otra vez. Inexistente: `404`; venta no completada: `409`.                                                                |
+
+- **Precio y totales:** el precio unitario sale de `Product.price`; el cliente nunca lo envía. Total por renglón = precio × cantidad − descuento + impuesto; un descuento mayor que el subtotal del renglón produce `400`. `payment.amount` debe coincidir exactamente con el total (sin pagos parciales ni cambio).
+- **Cliente:** si se omite `customerId` se usa el cliente por defecto "Público general".
+- **Tallas:** obligatorias si el producto tiene tallas activas y deben ser suyas; prohibidas si no tiene.
+- **Efectos:** en una sola transacción serializable se verifica el stock (sumando renglones repetidos del mismo producto), se reserva el folio `V-`, se guardan venta y renglones, un movimiento `SALE_OUT` por renglón y un pago `PAID`.
+- **Idempotencia:** la respuesta se guarda en `IdempotencyKey` (scope `sales.create`, vigencia 24 h). Repetir la misma llave con el mismo body y usuario devuelve la venta original con el header `Idempotent-Replayed: true`, sin otra venta ni folio, incluso si las dos solicitudes llegan a la vez. La llave no distingue mayúsculas.
+- **Cancelación:** cambia el estado a `CANCELLED`, registra quién, cuándo y por qué, crea un movimiento `RETURN_IN` por renglón (`referenceType: 'SALE_CANCEL'`) y marca los pagos `PAID` como `REFUNDED`. Una venta nacida de una cotización se puede cancelar; la cotización conserva `CONVERTED`. No hay cancelación parcial.
+
+`SaleDetailDto`: `{ id, folio, status, customer, createdBy, quoteId, notes, subtotal, discount, tax, total, items[], payments[], cancelledAt, cancelledBy, cancelReason, createdAt, updatedAt }`; `customer`, `createdBy` y `cancelledBy` son `{ id, name }`; cada renglón incluye `product { id, barcode, name }` y `size { id, name } | null`. Los montos son strings con dos decimales y las cantidades con tres. `test/sales.e2e-spec.ts` cubre el contrato con PostgreSQL temporal.
+
+## Gastos operativos
+
+Registro y consulta de egresos. Cada gasto pertenece a una categoría del catálogo editable y puede marcarse como descontado de la caja física (`deductFromCash`), dato que usará el corte de caja. Sin token válido o con usuario inactivo: `401`; sin rol permitido: `403`.
+
+| Endpoint                             | Permiso          | Entrada / resultado                                                                                                                                                                               |
+| ------------------------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/expense-categories`       | ADMIN            | `name` (1–100). `201`: `{ id, name, isActive }`; repetido sin distinguir mayúsculas: `409`.                                                                                                       |
+| `GET /api/expense-categories`        | ADMIN o VENDEDOR | Query `includeInactive`. `200` por nombre; por defecto solo activas.                                                                                                                              |
+| `GET /api/expense-categories/:id`    | ADMIN o VENDEDOR | `200`; inexistente: `404`.                                                                                                                                                                        |
+| `PATCH /api/expense-categories/:id`  | ADMIN            | `name` y/o `isActive`. `200`; repetido: `409`; inexistente: `404`.                                                                                                                                |
+| `DELETE /api/expense-categories/:id` | ADMIN            | `204`; con gastos: `409` (desactivarla en su lugar); inexistente: `404`.                                                                                                                          |
+| `POST /api/expenses`                 | ADMIN o VENDEDOR | `concept` (1–255), `amount` (> 0, 2 decimales), `categoryId` (activa), opcionales `deductFromCash` (por defecto `false`), `spentAt` (por defecto ahora; no futura), `notes`. `201`: `ExpenseDto`. |
+| `GET /api/expenses`                  | ADMIN o VENDEDOR | Query `startDate`, `endDate` (sobre `spentAt`, inclusivos), `categoryId`, `createdById`, `deductFromCash`, `page`, `pageSize`. `200`: `{ data, total, page, pageSize, totalAmount }`.             |
+| `GET /api/expenses/:id`              | ADMIN o VENDEDOR | `200`: `ExpenseDto`; inexistente: `404`.                                                                                                                                                          |
+| `DELETE /api/expenses/:id`           | ADMIN            | `204`; incluido en un corte de caja: `409`; inexistente: `404`.                                                                                                                                   |
+
+`ExpenseDto`: `{ id, concept, amount, deductFromCash, spentAt, category: { id, name }, createdBy: { id, name }, notes, createdAt, updatedAt }`. El autor es siempre el usuario autenticado. `totalAmount` suma todo el filtro, no solo la página. La lista se ordena por `spentAt` descendente. No hay edición: un error de captura se corrige borrando (ADMIN) y registrando de nuevo. La migración `20261030120000_expenses` crea las categorías iniciales Servicios, Insumos y Otros. Un usuario con gastos registrados, o que canceló ventas, no se puede eliminar (`409`). `test/expenses.e2e-spec.ts` cubre el contrato con PostgreSQL temporal.
+
+## Cortes de caja
+
+Corte de caja de toda la tienda sin abrir turno: cada corte cubre todo lo pendiente desde el corte anterior. El servidor calcula ventas, reembolsos, gastos y lo esperado; el vendedor solo captura el conteo por denominaciones, ajustes (dinero que entró sin registrarse o que se usó para otra cosa) y el fondo que deja. `ADMIN` y `VENDEDOR` usan todos los endpoints; no hay edición ni borrado de cortes.
+
+| Endpoint                                 | Entrada / resultado                                                                                                                                                                                                               |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/cash-closures/current-summary` | Lo pendiente: `previousClosureId`, `periodStart`, `openingFloat`, `sales` por método, `refunds`, `expenses` y `expectedCash` antes de ajustes. No escribe nada.                                                                   |
+| `POST /api/cash-closures`                | `previousClosureId` (del resumen; `null` en el primer corte), `denominations`, `adjustments?` (`INCOME`/`WITHDRAWAL`, máx. 50), `floatLeft`, `notes?`. `201`: `CashClosureDto`. Resumen desactualizado o corte simultáneo: `409`. |
+| `GET /api/cash-closures`                 | Query `startDate`, `endDate` (sobre `closedAt`), `page`, `pageSize`. `200`: `{ data, total, page, pageSize }`, más recientes primero.                                                                                             |
+| `GET /api/cash-closures/:id`             | `200`: `CashClosureDto`; inexistente: `404`.                                                                                                                                                                                      |
+
+```
+esperado   = fondo inicial + ventas en efectivo − reembolsos en efectivo − gastos de caja + entradas − salidas
+contado    = Σ denominación × piezas      (1000, 500, 200, 100, 50, 20, 10, 5, 2, 1, 0.5)
+diferencia = contado − esperado           (positivo sobrante, negativo faltante)
+retirado   = contado − fondo dejado
+```
+
+- **Fondo:** `floatLeft` (≤ contado) se vuelve el `openingFloat` del siguiente corte; el primer corte empieza en `0`.
+- **Contar una sola vez:** cada pago, reembolso y gasto queda ligado al corte que lo contó (`Payment.cashClosureId`, `Payment.refundClosureId`, `Expense.cashClosureId`). Un corte toma solo lo que aún no tiene corte; una venta confirmada mientras se ejecuta el corte queda para el siguiente. Una venta cobrada y cancelada en el mismo periodo se compensa; si se cancela después, el reembolso sale en el corte en que se canceló.
+- **Gastos:** el corte liga todos los gastos pendientes; `expenses.cash` suma solo los `deductFromCash`. Un gasto ya incluido en un corte no se puede borrar (`409`). `GET /api/expenses` acepta `pendingClosure=true|false` y `cashClosureId`, y `ExpenseDto` expone `cashClosureId`.
+- **Historial previo:** pagos y gastos anteriores a esta función quedan pendientes, así que el primer corte los incluye todos.
+- Un usuario que hizo cortes no se puede eliminar (`409`).
+
+`test/cash-closures.e2e-spec.ts` cubre el contrato con PostgreSQL temporal, incluida una venta confirmada en otra conexión mientras el corte está en curso.
+
+## Dashboard
+
+Métricas para la pantalla principal. "Hoy", la semana (lunes a domingo) y el mes se calculan en la zona horaria del negocio (`BUSINESS_TIMEZONE`), no en UTC: una venta a las 23:30 hora local cuenta en ese día. Solo cuentan ventas `COMPLETED` (por `createdAt`); los gastos se agrupan por `spentAt`. `ADMIN` y `VENDEDOR` pueden consultar todo; la utilidad estimada solo la recibe `ADMIN`.
+
+| Endpoint                           | Query                                                                                                               | Resultado                                                                                                                                                                                                           |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/dashboard/summary`       | —                                                                                                                   | `date`, `timezone`, `salesToday` (`total`, `count`, `averageTicket`, `byMethod`), `inventory` (`activeProducts`, `lowStock`), `expensesToday` (`total`, `fromCash`), `estimatedProfitToday` (`null` para VENDEDOR). |
+| `GET /api/dashboard/top-products`  | `startDate`, `endDate` (por defecto inicio del mes local → ahora), `limit` (1–50, 10), `sortBy` (`units`/`revenue`) | `{ startDate, endDate, sortBy, data: [{ product: { id, barcode, name }, units, revenue, salesCount }] }`. `salesCount` cuenta ventas distintas.                                                                     |
+| `GET /api/dashboard/sales-history` | `period` (`week`/`month`, por defecto `week`)                                                                       | `{ period, timezone, days: [{ date, salesTotal, salesCount, expensesTotal }] }` con todos los días del periodo, incluidos futuros o sin movimiento.                                                                 |
+
+- **Stock bajo:** productos activos con `stockMinimo` y `stock ≤ stockMinimo`; sin mínimo no se cuentan.
+- **Utilidad estimada:** `netSales` (Σ total − impuesto) − `costOfGoods` − gastos del día. El costo sale de `SaleItem.unitCost`, una foto de `Product.cost` al registrar la venta (cambiar el costo después no altera ventas pasadas); ventas anteriores a la foto usan el costo actual. Si algún producto vendido no tiene costo cuenta como 0 y `costIncomplete` es `true`.
+- Las consultas comparan fechas con literales UTC explícitos, así que no dependen de la zona horaria de la sesión de PostgreSQL.
+
+`test/dashboard.e2e-spec.ts` cubre el contrato con PostgreSQL temporal, incluidas ventas a ambos lados de la medianoche local.
+
+## Configuración del negocio
+
+Identidad comercial y fiscal impresa en tickets. Existe un solo registro. `ADMIN` y `VENDEDOR` la consultan; solo `ADMIN` la guarda. Sin token válido: `401`; sin rol permitido: `403`.
+
+| Endpoint                   | Permiso          | Entrada / resultado                                                                                                             |
+| -------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/business-config` | ADMIN o VENDEDOR | `200`: `{ nombre, direccion, colonia, municipio, estado, telefono, rfc, mensajePie, updatedAt }`; antes de configurarla: `404`. |
+| `PUT /api/business-config` | ADMIN            | Los 8 campos obligatorios (reemplazo completo). `200`: misma forma. Faltante, vacío, inválido o campo desconocido: `400`.       |
+
+Reglas (todos se recortan): `nombre` 1–150; `direccion` 1–255; `colonia`, `municipio` y `estado` 1–100; `telefono` hasta 50 con dígitos y separadores (`espacio + - ( ) .`) y al menos 7 dígitos; `rfc` en mayúsculas con formato mexicano de 12 (moral) o 13 (física) caracteres, p. ej. `KAM210315ABC` o `XAXX010101000`; `mensajePie` 1–500 y admite saltos de línea. Las llaves JSON coinciden con el modelo `BusinessConfigModel` de la app; en la base las columnas están en inglés. `PUT` hace un upsert atómico sobre la llave fija, así que guardados simultáneos no crean un segundo registro. `test/business-config.e2e-spec.ts` cubre el contrato.
+
+## Proveedores
+
+Directorio de proveedores. `ADMIN` escribe; `ADMIN` y `VENDEDOR` leen. Sin token válido: `401`; sin rol permitido: `403`.
+
+| Endpoint                    | Entrada / resultado                                                                                                                        |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `POST /api/providers`       | `nombre`; opcionales `telefono`, `email`, `contacto`, `direccion`. `201`: `ProviderDto`; nombre repetido sin distinguir mayúsculas: `409`. |
+| `GET /api/providers`        | Query `search` (nombre, contacto, correo o teléfono) e `includeInactive`. `200` por nombre; por defecto solo activos.                      |
+| `GET /api/providers/:id`    | `200`: `ProviderDto`, incluso inactivo; inexistente: `404`.                                                                                |
+| `PATCH /api/providers/:id`  | Al menos un campo o `isActive`; `null` borra un opcional. `200`; inexistente: `404`; nombre repetido: `409`.                               |
+| `DELETE /api/providers/:id` | `204`; inexistente: `404`.                                                                                                                 |
+
+`ProviderDto`: `{ id, nombre, telefono, email, contacto, direccion, isActive, createdAt, updatedAt }`, con las llaves del modelo `ProviderModel` de la app (columnas en inglés en la base). Reglas (todo se recorta; opcionales vacíos quedan en `null`): `nombre` 1–150; `telefono` hasta 30 con dígitos y separadores y al menos 7 dígitos; `email` válido en minúsculas, hasta 150; `contacto` hasta 100; `direccion` hasta 255. `test/providers.e2e-spec.ts` cubre el contrato.
+
 ## Arquitectura Limpia y Modular (Clean Architecture)
 
-El módulo transaccional de cotizaciones y ventas (`src/quotes/`) implementa **Modular Clean Architecture (Ports & Adapters)** con cuatro capas concéntricas:
+Los módulos transaccionales de cotizaciones (`src/quotes/`) y ventas (`src/sales/`) implementan **Modular Clean Architecture (Ports & Adapters)** con cuatro capas concéntricas. Lo compartido vive en `src/common/`: value objects (`Money`, `Quantity`, `Folio`), `DomainException`, y los puertos `UnitOfWorkPort` y `FolioSequencePort` con sus adaptadores Prisma. `QuotesModule` importa `SalesModule`: pagar una cotización usa `RegisterSaleUseCase`, el mismo registro de venta (stock, folio, movimientos y pago) que la venta directa.
 
-1. **`domain/`**: Entidades y agregados puros (`QuoteAggregate`, `QuoteItem`, `SaleAggregate`), Value Objects (`Money`, `Quantity`, `Folio`), excepciones de negocio (`QuoteExpiredException`, `InsufficientStockException`) y eventos de dominio (`QuoteConvertedToSaleEvent`). Cero dependencias de NestJS o Prisma.
-2. **`application/`**: Casos de uso de responsabilidad única (`CreateQuoteUseCase`, `PayQuoteUseCase`, `SendQuoteUseCase`, `UpdateQuoteUseCase`, `DeleteQuoteUseCase`) y puertos límite (`QuoteRepositoryPort`, `SaleRepositoryPort`, `UnitOfWorkPort`, `EventPublisherPort`).
-3. **`infrastructure/`**: Adaptadores secundarios que implementan los puertos (`PrismaQuoteRepository`, `PrismaSaleRepository`, `PrismaUnitOfWorkAdapter` con retries serializables, y `NestEventEmitterAdapter`).
-4. **`presentation/`**: `QuotesController` y DTOs públicos de Swagger que delegan a los casos de uso y traducen errores de dominio mediante `handleDomainError`.
+1. **`domain/`**: Entidades y agregados puros (`QuoteAggregate`, `QuoteItem`; en ventas, `SaleAggregate` con la regla de cancelación), excepciones de negocio (`QuoteExpiredException`, `InsufficientStockException`) y eventos de dominio (`QuoteConvertedToSaleEvent`). Cero dependencias de NestJS o Prisma.
+2. **`application/`**: Casos de uso de responsabilidad única (`CreateQuoteUseCase`, `PayQuoteUseCase`, `SendQuoteUseCase`, `UpdateQuoteUseCase`, `DeleteQuoteUseCase`; en ventas `RegisterSaleUseCase`, `CreateSaleUseCase`, `CancelSaleUseCase`, `GetSaleUseCase`, `ListSalesUseCase`) y puertos límite (`QuoteRepositoryPort`, `EventPublisherPort`; en ventas `SaleRepositoryPort`, `InventoryQueryPort`, `SaleCatalogPort`, `SaleQueryPort`, `IdempotencyStorePort`).
+3. **`infrastructure/`**: Adaptadores secundarios que implementan los puertos (`PrismaQuoteRepository`, `PrismaUnitOfWorkAdapter` con traducción de errores de cotización, `NestEventEmitterAdapter`; en ventas `PrismaSaleRepository`, `PrismaInventoryQueryAdapter`, `PrismaSaleCatalogAdapter`, `PrismaSaleQueryAdapter` y `PrismaIdempotencyStore`).
+4. **`presentation/`**: `QuotesController` / `SalesController` y DTOs públicos de Swagger que delegan a los casos de uso y traducen errores de dominio mediante `handleDomainError` / `handleSaleError`.
+
+### Folios
+
+Cotizaciones y ventas nuevas reciben un folio consecutivo sin huecos: `C-000045` para cotizaciones y `V-000123` para ventas (seis dígitos con ceros a la izquierda; crece a siete o más al pasar de 999999). El número sale de `folio_counters` (`prefix` `C` o `V`) mediante un incremento atómico dentro de la misma transacción serializable que guarda el registro: si la operación falla, el número no se consume. Los registros anteriores conservan su folio aleatorio (`COT-AAAAMMDD-XXXXXX`, `VEN-AAAAMMDD-XXXXXX`) y siguen siendo válidos.
+
+Una colisión de folio (solo posible si el contador queda por detrás de los datos) responde `409` sin reintentar, porque el reintento reservaría el mismo número. Las transacciones que compiten por el contador se resuelven con los reintentos serializables, que esperan un tiempo aleatorio creciente entre intentos (máximo cinco). Si se agotan, cualquier escritura serializable de la API responde `409` con el mensaje `Conflicto de concurrencia, intente de nuevo` (antes, `500`). Medido sobre PostgreSQL local: 8 altas simultáneas se completan; con 16 simultáneas alrededor de una responde ese `409`.
 
 ### Eventos de Dominio y Extensibilidad
 

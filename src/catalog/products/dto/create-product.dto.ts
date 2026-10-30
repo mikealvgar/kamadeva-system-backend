@@ -22,14 +22,19 @@ const nullable = (_object: unknown, value: unknown): boolean =>
   value !== undefined && value !== null;
 
 export class CreateProductDto {
-  @ApiProperty({ maxLength: 64, example: 'AN-R-001' })
+  @ApiProperty({
+    maxLength: 64,
+    example: '7501234567890',
+    description:
+      'Identificador único del producto; se guarda sin espacios laterales y en mayúsculas',
+  })
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim().toUpperCase() : value,
   )
   @IsString()
   @IsNotEmpty()
   @MaxLength(64)
-  sku: string;
+  codigoBarras: string;
 
   @ApiProperty({ maxLength: 200, example: 'Anillo de plata' })
   @Transform(trim)
@@ -44,13 +49,6 @@ export class CreateProductDto {
   @MaxLength(500)
   descripcion?: string | null;
 
-  @ApiPropertyOptional({ type: String, nullable: true, maxLength: 64 })
-  @Transform(trim)
-  @ValidateIf(nullable)
-  @IsString()
-  @MaxLength(64)
-  codigoBarras?: string | null;
-
   @ApiPropertyOptional({ type: String, nullable: true, maxLength: 100 })
   @Transform(trim)
   @ValidateIf(nullable)
@@ -60,22 +58,16 @@ export class CreateProductDto {
 
   @ApiPropertyOptional({
     type: [String],
+    format: 'uuid',
     uniqueItems: true,
-    example: ['5', '6'],
+    description:
+      'Tallas activas del catálogo. En edición reemplaza la lista completa; [] la vacía',
   })
-  @Transform(({ value }: { value: unknown }) =>
-    Array.isArray(value)
-      ? value.map((item: unknown) =>
-          typeof item === 'string' ? item.trim() : item,
-        )
-      : value,
-  )
   @ValidateIf(optional)
   @IsArray()
   @ArrayUnique()
-  @IsString({ each: true })
-  @IsNotEmpty({ each: true })
-  tallas?: string[];
+  @IsUUID('all', { each: true })
+  tallaIds?: string[];
 
   @ApiPropertyOptional({
     type: Number,
@@ -90,13 +82,47 @@ export class CreateProductDto {
   @Max(9999999999.99)
   precioCompra?: number | null;
 
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    minimum: 0,
+    maximum: 99999999999.999,
+    multipleOf: 0.001,
+    description:
+      'Stock mínimo; el dashboard lo cuenta como bajo si stock ≤ mínimo. null = sin seguimiento',
+  })
+  @ValidateIf(nullable)
+  @IsNumber({ maxDecimalPlaces: 3 })
+  @Min(0)
+  @Max(99999999999.999)
+  stockMinimo?: number | null;
+
+  @ApiPropertyOptional({
+    minimum: 0,
+    maximum: 99999999999.999,
+    multipleOf: 0.001,
+    description:
+      'Existencia objetivo. En alta/edición crea un movimiento de inventario; solo ADMIN puede escribir productos',
+  })
+  @ValidateIf(optional)
+  @IsNumber({ maxDecimalPlaces: 3 })
+  @Min(0)
+  @Max(99999999999.999)
+  stock?: number;
+
   @ApiProperty({ minimum: 0.01, maximum: 9999999999.99, multipleOf: 0.01 })
   @IsNumber({ maxDecimalPlaces: 2 })
   @IsPositive()
   @Max(9999999999.99)
   precioVenta: number;
 
-  @ApiProperty({ format: 'uuid' })
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description: 'Opcional; null deja el producto sin categoría',
+  })
+  @ValidateIf(nullable)
   @IsUUID('4')
-  categoryId: string;
+  categoryId?: string | null;
 }

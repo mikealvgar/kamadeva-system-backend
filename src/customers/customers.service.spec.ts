@@ -205,7 +205,8 @@ describe('CustomersService', () => {
   it('propagates persistent initialization conflicts instead of starting without a default', async () => {
     prisma.$transaction.mockRejectedValue(failure('P2034'));
     await expect(service.onModuleInit()).rejects.toMatchObject({
-      code: 'P2034',
+      status: 409,
+      cause: { code: 'P2034' },
     });
     expect(prisma.$transaction).toHaveBeenCalledTimes(5);
   });

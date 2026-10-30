@@ -20,7 +20,12 @@ const customer = {
   createdAt: now,
   updatedAt: now,
 };
-const product = { id: 'product', sku: 'SKU', name: 'Producto', imageUrl: null };
+const product = {
+  id: 'product',
+  barcode: 'SKU',
+  name: 'Producto',
+  imageUrl: null,
+};
 function quote(overrides: Partial<QuoteRecord> = {}): QuoteRecord {
   return {
     id: 'quote',
@@ -39,6 +44,7 @@ function quote(overrides: Partial<QuoteRecord> = {}): QuoteRecord {
       {
         id: 'item',
         product,
+        size: { id: 'size', name: 'M' },
         quantity: decimal('2.5'),
         unitPrice: decimal('1250.50'),
         discount: decimal(100),
@@ -61,6 +67,8 @@ describe('QuotesService', () => {
   const tx = {
     customer: { findUnique: vi.fn() },
     product: { findMany: vi.fn() },
+    productSize: { findMany: vi.fn() },
+    folioCounter: { upsert: vi.fn() },
     quote: {
       findUnique: vi.fn(),
       findMany: vi.fn(),
@@ -92,15 +100,16 @@ describe('QuotesService', () => {
         operation(tx),
     );
     tx.customer.findUnique.mockResolvedValue(customer);
+    tx.productSize.findMany.mockResolvedValue([]);
+    tx.folioCounter.upsert.mockResolvedValue({ lastValue: 1 });
     tx.product.findMany.mockResolvedValue([
-      { ...product, price: decimal('1250.50') },
+      { ...product, price: decimal('1250.50'), cost: decimal('700.00') },
     ]);
     tx.quote.findUnique.mockResolvedValue(quote());
     tx.quote.findMany.mockResolvedValue([quote()]);
     tx.quote.create.mockResolvedValue(quote());
     tx.quote.update.mockResolvedValue(quote());
-    tx.sale.findUnique.mockResolvedValue(null);
-    tx.sale.create.mockResolvedValue({
+    const saleRecord = {
       ...quote(),
       id: 'sale',
       folio: 'VEN-20260920-ABCDEF',
@@ -109,7 +118,13 @@ describe('QuotesService', () => {
       items: [
         { id: 'sale-item', productId: 'product', quantity: decimal('2.5') },
       ],
-    });
+    };
+    // No sale exists for the quote yet; the stored sale is read back by id.
+    tx.sale.findUnique.mockImplementation(
+      ({ where }: { where: { id?: string } }) =>
+        Promise.resolve(where.id ? saleRecord : null),
+    );
+    tx.sale.create.mockResolvedValue(saleRecord);
     tx.inventoryMovement.groupBy.mockResolvedValue([
       { productId: 'product', _sum: { quantityChange: decimal(10) } },
     ]);
@@ -121,8 +136,14 @@ describe('QuotesService', () => {
       { ...input, notes: ' Entrega ', expiresAt: '2026-09-21T00:00:00Z' },
       'actor',
     );
+    expect(tx.folioCounter.upsert).toHaveBeenCalledWith({
+      where: { prefix: 'C' },
+      create: { prefix: 'C', lastValue: 1 },
+      update: { lastValue: { increment: 1 } },
+      select: { lastValue: true },
+    });
     expect(tx.quote.create.mock.calls[0]![0].data).toEqual({
-      folio: 'COT-20260920-ABCDEF',
+      folio: 'C-000001',
       status: 'DRAFT',
       customerId: 'customer',
       createdById: 'actor',
@@ -136,6 +157,7 @@ describe('QuotesService', () => {
         create: [
           {
             productId: 'product',
+            sizeId: null,
             quantity: decimal('2.5'),
             unitPrice: decimal('1250.50'),
             discount: decimal(100),
@@ -243,20 +265,24 @@ describe('QuotesService', () => {
   });
 
   it.each(['create', 'pay'] as const)(
-    'retries %s once with a new folio in a fresh transaction',
+    'maps a %s folio collision to 409 without retrying, since the counter rolls back',
     async (action) => {
       const create = action === 'create' ? tx.quote.create : tx.sale.create;
       create.mockRejectedValueOnce(dbError('P2002', ['folio']));
-      vi.mocked(randomUUID)
-        .mockReturnValueOnce('aaaaaa12-0000-4000-8000-000000000000')
-        .mockReturnValueOnce('bbbbbb12-0000-4000-8000-000000000000');
-      if (action === 'create') await service.create(input, 'actor');
-      else await service.pay('quote', payment, 'actor');
-      expect(prisma.$transaction).toHaveBeenCalledTimes(2);
-      expect(create.mock.calls.map((call) => call[0].data.folio)).toEqual([
-        `${action === 'create' ? 'COT' : 'VEN'}-20260920-AAAAAA`,
-        `${action === 'create' ? 'COT' : 'VEN'}-20260920-BBBBBB`,
-      ]);
+      const run =
+        action === 'create'
+          ? service.create(input, 'actor')
+          : service.pay('quote', payment, 'actor');
+      await expect(run).rejects.toMatchObject({
+        status: 409,
+        message: 'No se pudo generar un folio único',
+      });
+      expect(prisma.$transaction).toHaveBeenCalledOnce();
+      expect(tx.folioCounter.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { prefix: action === 'create' ? 'C' : 'V' },
+        }),
+      );
     },
   );
 
@@ -274,23 +300,27 @@ describe('QuotesService', () => {
           },
         }),
       );
-      await service.create(input, 'actor');
-      expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+      await expect(service.create(input, 'actor')).rejects.toMatchObject({
+        status: 409,
+        message: 'No se pudo generar un folio único',
+      });
+      expect(prisma.$transaction).toHaveBeenCalledOnce();
     },
   );
 
-  it('stops after a second folio collision and does not retry other unique constraints', async () => {
-    tx.quote.create.mockRejectedValue(dbError('P2002', ['folio']));
-    await expect(service.create(input, 'actor')).rejects.toMatchObject({
-      status: 409,
-    });
-    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
-    prisma.$transaction.mockClear();
+  it('maps other unique constraints on pay to an already-converted conflict', async () => {
     tx.sale.create.mockRejectedValue(dbError('P2002', ['quoteId']));
     await expect(service.pay('quote', payment, 'actor')).rejects.toMatchObject({
       status: 409,
+      message: 'La cotización ya fue convertida',
     });
-    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.$transaction).toHaveBeenCalledOnce();
+  });
+
+  it('issues folios from the counter value, growing past six digits', async () => {
+    tx.folioCounter.upsert.mockResolvedValueOnce({ lastValue: 1234567 });
+    await service.create(input, 'actor');
+    expect(tx.quote.create.mock.calls[0]![0].data.folio).toBe('C-1234567');
   });
 
   it('updates draft metadata without repricing and replaces all items when provided', async () => {
@@ -314,6 +344,7 @@ describe('QuotesService', () => {
         create: [
           {
             productId: 'product',
+            sizeId: null,
             quantity: decimal(3),
             unitPrice: decimal(10),
             discount: decimal(0),
@@ -427,7 +458,8 @@ describe('QuotesService', () => {
       expect(result).not.toHaveProperty('items');
       expect(result).not.toHaveProperty('createdById');
       expect(tx.sale.create.mock.calls[0]![0].data).toEqual({
-        folio: 'VEN-20260920-ABCDEF',
+        id: 'abcdef12-0000-4000-8000-000000000000',
+        folio: 'V-000001',
         status: 'COMPLETED',
         customerId: 'customer',
         quoteId: 'quote',
@@ -441,11 +473,14 @@ describe('QuotesService', () => {
           create: [
             {
               productId: 'product',
+              sizeId: 'size',
               quantity: decimal('2.5'),
               unitPrice: decimal('1250.50'),
               discount: decimal(100),
               tax: decimal(320),
               total: decimal('3346.25'),
+              // Cost snapshot taken when the sale is recorded.
+              unitCost: decimal('700.00'),
             },
           ],
         },

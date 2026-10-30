@@ -52,5 +52,15 @@ export function validateEnvironment(config: Record<string, unknown>) {
     throw new Error('BCRYPT_ROUNDS debe ser un entero entre 4 y 31');
   }
   validated.BCRYPT_ROUNDS = rounds;
+  const timezone =
+    config.BUSINESS_TIMEZONE === undefined
+      ? 'America/Mexico_City'
+      : String(config.BUSINESS_TIMEZONE).trim();
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: timezone });
+  } catch {
+    throw new Error('BUSINESS_TIMEZONE debe ser una zona horaria IANA válida');
+  }
+  validated.BUSINESS_TIMEZONE = timezone;
   return validated;
 }

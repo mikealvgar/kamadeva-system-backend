@@ -48,6 +48,11 @@ enum PaymentMethod {
   OTHER
 }
 
+enum CashAdjustmentType {
+  INCOME
+  WITHDRAWAL
+}
+
 enum IdempotencyStatus {
   PENDING
   COMPLETED
@@ -66,6 +71,10 @@ model User {
 
   quotes             Quote[]             @relation("QuoteCreatedBy")
   sales              Sale[]              @relation("SaleCreatedBy")
+  cancelledSales     Sale[]              @relation("SaleCancelledBy")
+  expenses           Expense[]
+  purchases          Purchase[]          @relation("PurchaseCreatedBy")
+  cashClosures       CashClosure[]       @relation("CashClosureClosedBy")
   payments           Payment[]           @relation("PaymentCreatedBy")
   inventoryMovements InventoryMovement[] @relation("InventoryMovementCreatedBy")
   idempotencyKeys    IdempotencyKey[]
@@ -135,22 +144,25 @@ model Category {
 
 model Product {
   id          String   @id @default(uuid()) @db.Uuid
-  sku         String   @unique
-  barcode     String?  @unique
+  // Product identifier (replaces the former SKU); stored upper-case.
+  barcode     String   @unique
   name        String
   description String?
   brand       String?
-  tallas      String[] @default([])
   imageUrl    String?
   price       Decimal  @db.Decimal(12, 2)
   cost        Decimal? @db.Decimal(12, 2)
+  // Low-stock threshold for the dashboard; null = not tracked.
+  minStock    Decimal? @db.Decimal(14, 3)
   isActive    Boolean  @default(true)
 
-  categoryId String   @db.Uuid
-  category   Category @relation(fields: [categoryId], references: [id])
+  categoryId String?   @db.Uuid
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: Restrict)
 
+  sizes              ProductSize[]
   quoteItems         QuoteItem[]
   saleItems          SaleItem[]
+  purchaseItems      PurchaseItem[]
   inventoryMovements InventoryMovement[]
 
   createdAt DateTime @default(now())
@@ -160,12 +172,52 @@ model Product {
   @@map("products")
 }
 
+model Size {
+  id        String  @id @default(uuid()) @db.Uuid
+  name      String  @unique
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  products   ProductSize[]
+  quoteItems QuoteItem[]
+  saleItems  SaleItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sortOrder, name])
+  @@map("sizes")
+}
+
+model ProductSize {
+  productId String  @db.Uuid
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  sizeId String @db.Uuid
+  size   Size   @relation(fields: [sizeId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  @@id([productId, sizeId])
+  @@index([sizeId])
+  @@map("product_sizes")
+}
+
+model FolioCounter {
+  prefix    String @id
+  lastValue Int    @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  @@map("folio_counters")
+}
+
 model Customer {
-  id       String  @id @default(uuid()) @db.Uuid
-  name     String
-  phone    String?
-  email    String?
-  isActive Boolean @default(true)
+  id        String  @id @default(uuid()) @db.Uuid
+  name      String
+  phone     String?
+  email     String?
+  isActive  Boolean @default(true)
   isDefault Boolean @default(false)
 
   quotes Quote[]
@@ -204,6 +256,50 @@ model InventoryMovement {
   @@index([referenceType, referenceId])
   @@index([saleItemId])
   @@map("inventory_movements")
+}
+
+/// A received supplier purchase. Its inventory movements are created atomically.
+model Purchase {
+  id String @id @default(uuid()) @db.Uuid
+
+  providerId String   @db.Uuid
+  provider   Provider @relation(fields: [providerId], references: [id], onDelete: Restrict)
+
+  receivedAt    DateTime @default(now())
+  supplierFolio String?
+  notes         String?
+  total         Decimal  @db.Decimal(12, 2)
+
+  createdById String @db.Uuid
+  createdBy   User   @relation("PurchaseCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  items     PurchaseItem[]
+  createdAt DateTime       @default(now())
+
+  @@index([providerId, receivedAt])
+  @@index([receivedAt])
+  @@map("purchases")
+}
+
+model PurchaseItem {
+  id String @id @default(uuid()) @db.Uuid
+
+  purchaseId String   @db.Uuid
+  purchase   Purchase @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+
+  productId String  @db.Uuid
+  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  position     Int
+  productName  String
+  barcode      String
+  quantity     Decimal @db.Decimal(14, 3)
+  unitCost     Decimal @db.Decimal(12, 2)
+  lineSubtotal Decimal @db.Decimal(12, 2)
+
+  @@unique([purchaseId, position])
+  @@index([productId])
+  @@map("purchase_items")
 }
 
 model Quote {
@@ -246,6 +342,9 @@ model QuoteItem {
   productId String  @db.Uuid
   product   Product @relation(fields: [productId], references: [id])
 
+  sizeId String? @db.Uuid
+  size   Size?   @relation(fields: [sizeId], references: [id], onDelete: Restrict)
+
   quantity  Decimal @db.Decimal(14, 3)
   unitPrice Decimal @db.Decimal(12, 2)
   discount  Decimal @default(0) @db.Decimal(12, 2)
@@ -254,6 +353,7 @@ model QuoteItem {
 
   createdAt DateTime @default(now())
 
+  @@index([sizeId])
   @@index([quoteId])
   @@index([productId])
   @@map("quote_items")
@@ -283,11 +383,17 @@ model Sale {
 
   notes String?
 
+  cancelledAt   DateTime?
+  cancelledById String?   @db.Uuid
+  cancelledBy   User?     @relation("SaleCancelledBy", fields: [cancelledById], references: [id])
+  cancelReason  String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([customerId])
   @@index([status])
+  @@index([createdAt])
   @@map("sales")
 }
 
@@ -300,16 +406,22 @@ model SaleItem {
   productId String  @db.Uuid
   product   Product @relation(fields: [productId], references: [id])
 
-  quantity  Decimal @db.Decimal(14, 3)
-  unitPrice Decimal @db.Decimal(12, 2)
-  discount  Decimal @default(0) @db.Decimal(12, 2)
-  tax       Decimal @default(0) @db.Decimal(12, 2)
-  total     Decimal @db.Decimal(12, 2)
+  sizeId String? @db.Uuid
+  size   Size?   @relation(fields: [sizeId], references: [id], onDelete: Restrict)
+
+  quantity  Decimal  @db.Decimal(14, 3)
+  unitPrice Decimal  @db.Decimal(12, 2)
+  discount  Decimal  @default(0) @db.Decimal(12, 2)
+  tax       Decimal  @default(0) @db.Decimal(12, 2)
+  total     Decimal  @db.Decimal(12, 2)
+  // Product.cost when sold; null for sales recorded before the snapshot.
+  unitCost  Decimal? @db.Decimal(12, 2)
 
   inventoryMovements InventoryMovement[]
 
   createdAt DateTime @default(now())
 
+  @@index([sizeId])
   @@index([saleId])
   @@index([productId])
   @@map("sale_items")
@@ -333,12 +445,20 @@ model Payment {
 
   idempotencyKeys IdempotencyKey[]
 
+  // Closure that counted the incoming money / the refund outflow.
+  cashClosureId   String?      @db.Uuid
+  cashClosure     CashClosure? @relation("CashClosurePayments", fields: [cashClosureId], references: [id], onDelete: Restrict)
+  refundClosureId String?      @db.Uuid
+  refundClosure   CashClosure? @relation("CashClosureRefunds", fields: [refundClosureId], references: [id], onDelete: Restrict)
+
   paidAt    DateTime?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
   @@index([saleId])
   @@index([status])
+  @@index([cashClosureId])
+  @@index([refundClosureId])
   @@map("payments")
 }
 
@@ -369,4 +489,146 @@ model IdempotencyKey {
   @@index([paymentId])
   @@index([expiresAt])
   @@map("idempotency_keys")
+}
+
+model ExpenseCategory {
+  id       String  @id @default(uuid()) @db.Uuid
+  name     String  @unique
+  isActive Boolean @default(true)
+
+  expenses Expense[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("expense_categories")
+}
+
+model Expense {
+  id             String  @id @default(uuid()) @db.Uuid
+  concept        String
+  amount         Decimal @db.Decimal(12, 2)
+  deductFromCash Boolean @default(false)
+  notes          String?
+
+  spentAt DateTime @default(now())
+
+  categoryId String          @db.Uuid
+  category   ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  createdById String @db.Uuid
+  createdBy   User   @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  cashClosureId String?      @db.Uuid
+  cashClosure   CashClosure? @relation(fields: [cashClosureId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([cashClosureId])
+  @@index([spentAt])
+  @@index([categoryId])
+  @@index([createdById])
+  @@map("expenses")
+}
+
+model CashClosure {
+  id String @id @default(uuid()) @db.Uuid
+
+  // Chain of closures; unique so two closures cannot follow the same one.
+  previousClosureId String?      @unique @db.Uuid
+  previousClosure   CashClosure? @relation("CashClosureChain", fields: [previousClosureId], references: [id], onDelete: Restrict)
+  nextClosure       CashClosure? @relation("CashClosureChain")
+
+  periodStart DateTime?
+  closedAt    DateTime  @default(now())
+
+  closedById String @db.Uuid
+  closedBy   User   @relation("CashClosureClosedBy", fields: [closedById], references: [id], onDelete: Restrict)
+
+  openingFloat   Decimal @db.Decimal(12, 2)
+  salesCount     Int
+  cashSales      Decimal @db.Decimal(12, 2)
+  cardSales      Decimal @db.Decimal(12, 2)
+  transferSales  Decimal @db.Decimal(12, 2)
+  otherSales     Decimal @db.Decimal(12, 2)
+  cashRefunds    Decimal @db.Decimal(12, 2)
+  totalRefunds   Decimal @db.Decimal(12, 2)
+  expensesCount  Int
+  cashExpenses   Decimal @db.Decimal(12, 2)
+  totalExpenses  Decimal @db.Decimal(12, 2)
+  adjustmentsIn  Decimal @db.Decimal(12, 2)
+  adjustmentsOut Decimal @db.Decimal(12, 2)
+  expectedCash   Decimal @db.Decimal(12, 2)
+  countedCash    Decimal @db.Decimal(12, 2)
+  difference     Decimal @db.Decimal(12, 2)
+  floatLeft      Decimal @db.Decimal(12, 2)
+  denominations  Json
+  notes          String?
+
+  adjustments CashClosureAdjustment[]
+  payments    Payment[]               @relation("CashClosurePayments")
+  refunds     Payment[]               @relation("CashClosureRefunds")
+  expenses    Expense[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([closedAt])
+  @@map("cash_closures")
+}
+
+model CashClosureAdjustment {
+  id String @id @default(uuid()) @db.Uuid
+
+  cashClosureId String      @db.Uuid
+  cashClosure   CashClosure @relation(fields: [cashClosureId], references: [id], onDelete: Cascade)
+
+  // Order in which the cashier entered it.
+  position    Int
+  type        CashAdjustmentType
+  amount      Decimal            @db.Decimal(12, 2)
+  description String
+
+  createdAt DateTime @default(now())
+
+  @@unique([cashClosureId, position])
+  @@map("cash_closure_adjustments")
+}
+
+/// Single-row business identity printed on tickets; always key = "default".
+/// Public API keeps the Spanish names (nombre, direccion, ...).
+model BusinessConfig {
+  key          String @id @default("default")
+  name         String
+  address      String
+  neighborhood String
+  municipality String
+  state        String
+  phone        String
+  taxId        String
+  ticketFooter String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("business_config")
+}
+
+/// Supplier directory. Public API keeps the Spanish names (nombre, telefono, ...).
+model Provider {
+  id          String  @id @default(uuid()) @db.Uuid
+  name        String  @unique
+  phone       String?
+  email       String?
+  contactName String?
+  address     String?
+  isActive    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  purchases Purchase[]
+
+  @@map("providers")
 }

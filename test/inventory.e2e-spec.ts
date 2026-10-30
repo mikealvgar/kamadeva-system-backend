@@ -65,7 +65,7 @@ describe('Inventory HTTP + PostgreSQL', () => {
       const product = await prisma.product.create({
         data: {
           name: 'Inventory test',
-          sku: randomUUID(),
+          barcode: randomUUID(),
           price: 1,
           categoryId,
         },
