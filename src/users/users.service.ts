@@ -4,18 +4,26 @@ import {
   Injectable,
   InternalServerErrorException,
   NotFoundException,
+  Optional,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import { serializableTransaction } from '../prisma/serializable-transaction.js';
 import { isRoleName, type RoleName } from '../roles/role-names.js';
 import type { ListUsersDto } from './dto/list-users.dto.js';
 import type { UserListPageDto } from './dto/user-list.dto.js';
+import { UserDto } from './dto/user.dto.js';
+import type { UpdateUserDto } from './dto/update-user.dto.js';
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly config?: ConfigService,
+  ) {}
 
   async getUserRoles(
     userId: string,
@@ -237,5 +245,156 @@ export class UsersService {
       },
       include: { rol: true },
     });
+  }
+
+  async getUser(userId: string): Promise<UserDto> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { rol: true },
+    });
+    if (!user) {
+      throw new NotFoundException('Usuario inexistente');
+    }
+    return this.toUserDto(user);
+  }
+
+  async updateUser(userId: string, dto: UpdateUserDto): Promise<UserDto> {
+    return serializableTransaction(this.prisma, async (tx) => {
+      const user = await this.requireUser(userId, tx);
+
+      const nombre = dto.nombre ?? dto.name;
+      const rawEmail = dto.correo ?? dto.email;
+      const email =
+        rawEmail !== undefined ? rawEmail.trim().toLowerCase() : undefined;
+      const rawTelefono =
+        dto.telefono !== undefined ? dto.telefono : dto.phone;
+      const telefono = rawTelefono !== undefined ? rawTelefono : undefined;
+      const activo = dto.activo !== undefined ? dto.activo : dto.isActive;
+      const password = dto.contrasena ?? dto.password;
+
+      if (email !== undefined && email !== user.email) {
+        const existing = await tx.user.findUnique({ where: { email } });
+        if (existing && existing.id !== userId) {
+          throw new ConflictException('Correo ya registrado');
+        }
+      }
+
+      let newRoleId: string | null | undefined = undefined;
+      if (dto.rol !== undefined) {
+        const role = await tx.role.findUnique({ where: { nombre: dto.rol } });
+        if (!role || !role.activo) {
+          throw new UnprocessableEntityException('Rol inactivo');
+        }
+        newRoleId = role.id;
+      } else if (dto.rolId !== undefined) {
+        if (dto.rolId === null) {
+          newRoleId = null;
+        } else {
+          const role = await tx.role.findUnique({ where: { id: dto.rolId } });
+          if (!role) {
+            throw new NotFoundException('Rol no encontrado');
+          }
+          if (!role.activo) {
+            throw new UnprocessableEntityException('Rol inactivo');
+          }
+          newRoleId = role.id;
+        }
+      }
+
+      const isCurrentActiveAdmin =
+        user.activo && user.rol?.nombre === 'ADMIN' && user.rol?.activo;
+
+      if (isCurrentActiveAdmin) {
+        if (activo === false) {
+          const activeAdmins = await this.countActiveAdmins(tx);
+          if (activeAdmins <= 1) {
+            throw new ConflictException(
+              'No se puede desactivar el último administrador',
+            );
+          }
+        }
+
+        if (newRoleId !== undefined && newRoleId !== user.rolId) {
+          let isStillAdmin = false;
+          if (newRoleId) {
+            const nextRole = await tx.role.findUnique({
+              where: { id: newRoleId },
+            });
+            if (nextRole?.nombre === 'ADMIN' && nextRole.activo) {
+              isStillAdmin = true;
+            }
+          }
+          if (!isStillAdmin) {
+            const activeAdmins = await this.countActiveAdmins(tx);
+            if (activeAdmins <= 1) {
+              throw new ConflictException(
+                'No se puede remover el último administrador',
+              );
+            }
+          }
+        }
+      }
+
+      const data: Prisma.UserUncheckedUpdateInput = {};
+      if (nombre !== undefined) data.nombre = nombre;
+      if (email !== undefined) data.email = email;
+      if (telefono !== undefined) data.telefono = telefono;
+      if (activo !== undefined) data.activo = activo;
+      if (password !== undefined) {
+        const rounds = this.config?.get<number>('BCRYPT_ROUNDS') ?? 12;
+        data.passwordHash = await bcrypt.hash(password, rounds);
+      }
+      if (newRoleId !== undefined) {
+        data.rolId = newRoleId;
+      }
+
+      if (Object.keys(data).length > 0) {
+        await tx.user.update({
+          where: { id: userId },
+          data,
+        });
+      }
+
+      const updated = await tx.user.findUniqueOrThrow({
+        where: { id: userId },
+        include: { rol: true },
+      });
+
+      return this.toUserDto(updated);
+    });
+  }
+
+  toUserDto(user: {
+    id: string;
+    nombre: string;
+    email: string;
+    telefono: string | null;
+    activo: boolean;
+    rolId?: string | null;
+    rol?: { id: string; nombre: string; activo?: boolean } | null;
+    fechaCreacion: Date | string;
+    fechaActualizacion?: Date | string;
+  }): UserDto {
+    const rolNombre =
+      user.rol?.activo && isRoleName(user.rol.nombre) ? user.rol.nombre : null;
+    const toIsoString = (d: Date | string | undefined) => {
+      if (!d) return new Date().toISOString();
+      return typeof d === 'string' ? d : d.toISOString();
+    };
+    return {
+      id: user.id,
+      nombre: user.nombre,
+      correo: user.email,
+      email: user.email,
+      telefono: user.telefono,
+      activo: user.activo,
+      rolId: user.rolId ?? user.rol?.id ?? null,
+      rol: rolNombre ?? (user.rol?.nombre ?? null),
+      roles: rolNombre ? [rolNombre] : [],
+      fechaCreacion: toIsoString(user.fechaCreacion),
+      fechaActualizacion: toIsoString(
+        user.fechaActualizacion ?? user.fechaCreacion,
+      ),
+    };
   }
 }

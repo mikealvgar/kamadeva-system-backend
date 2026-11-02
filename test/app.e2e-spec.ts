@@ -842,6 +842,130 @@ describe('Auth HTTP + PostgreSQL', () => {
       await prisma.category.delete({ where: { id: category.id } });
       await http().delete(target).set('Authorization', auth).expect(204);
     });
+    it('gets a user by id with admin authorization and returns 401/403/400/404 on invalid calls', async () => {
+      const admin = await register();
+      const seller = await register();
+      const auth = `Bearer ${admin.tokenAcceso}`;
+      const target = `/api/usuarios/${seller.usuario.id}`;
+
+      await http().get(target).expect(401);
+      await http()
+        .get(target)
+        .set('Authorization', `Bearer ${seller.tokenAcceso}`)
+        .expect(403);
+      await http()
+        .get('/api/usuarios/invalid')
+        .set('Authorization', auth)
+        .expect(400);
+      await http()
+        .get(`/api/usuarios/${randomUUID()}`)
+        .set('Authorization', auth)
+        .expect(404);
+
+      const res = await http()
+        .get(target)
+        .set('Authorization', auth)
+        .expect(200);
+
+      expect(res.body).toMatchObject({
+        id: seller.usuario.id,
+        nombre: seller.usuario.nombre,
+        correo: seller.usuario.correo,
+        activo: true,
+        roles: ['VENDEDOR'],
+      });
+      expect(res.body.contrasena).toBeUndefined();
+      expect(res.body.passwordHash).toBeUndefined();
+    });
+    it('patches user details, password, role, and protects the last admin', async () => {
+      const admin = await register();
+      const seller = await register();
+      const auth = `Bearer ${admin.tokenAcceso}`;
+      const target = `/api/usuarios/${seller.usuario.id}`;
+
+      // 401 and 403 checks
+      await http().patch(target).send({ nombre: 'X' }).expect(401);
+      await http()
+        .patch(target)
+        .set('Authorization', `Bearer ${seller.tokenAcceso}`)
+        .send({ nombre: 'X' })
+        .expect(403);
+
+      // 400 and 404 checks
+      await http()
+        .patch('/api/usuarios/invalid')
+        .set('Authorization', auth)
+        .send({ nombre: 'X' })
+        .expect(400);
+      await http()
+        .patch(`/api/usuarios/${randomUUID()}`)
+        .set('Authorization', auth)
+        .send({ nombre: 'X' })
+        .expect(404);
+
+      // Update name and phone
+      const res1 = await http()
+        .patch(target)
+        .set('Authorization', auth)
+        .send({ nombre: 'Vendedor Modificado', telefono: '8111223344' })
+        .expect(200);
+      expect(res1.body.nombre).toBe('Vendedor Modificado');
+      expect(res1.body.telefono).toBe('8111223344');
+
+      // Reject duplicate email
+      await http()
+        .patch(target)
+        .set('Authorization', auth)
+        .send({ correo: admin.usuario.correo })
+        .expect(409);
+
+      // Update password and test login with new password
+      await http()
+        .patch(target)
+        .set('Authorization', auth)
+        .send({ contrasena: 'NuevaClaveSegura123!' })
+        .expect(200);
+      await post('login', {
+        email: seller.usuario.correo,
+        password: 'NuevaClaveSegura123!',
+      }).expect(200);
+
+      // Protect last admin from deactivation
+      await http()
+        .patch(`/api/usuarios/${admin.usuario.id}`)
+        .set('Authorization', auth)
+        .send({ activo: false })
+        .expect(409);
+
+      // Protect last admin from demotion
+      const sellerRole = await prisma.role.findUniqueOrThrow({
+        where: { nombre: 'VENDEDOR' },
+      });
+      await http()
+        .patch(`/api/usuarios/${admin.usuario.id}`)
+        .set('Authorization', auth)
+        .send({ rolId: sellerRole.id })
+        .expect(409);
+
+      // Promote seller to admin
+      const adminRole = await prisma.role.findUniqueOrThrow({
+        where: { nombre: 'ADMIN' },
+      });
+      const res2 = await http()
+        .patch(target)
+        .set('Authorization', auth)
+        .send({ rolId: adminRole.id })
+        .expect(200);
+      expect(res2.body.roles).toEqual(['ADMIN']);
+
+      // Now original admin can be deactivated because second admin exists
+      const res3 = await http()
+        .patch(`/api/usuarios/${admin.usuario.id}`)
+        .set('Authorization', auth)
+        .send({ activo: false })
+        .expect(200);
+      expect(res3.body.activo).toBe(false);
+    });
     it('documents all management contracts in Swagger', async () => {
       const response = await http().get('/api/docs-json').expect(200);
       for (const [path, method, statuses] of [
@@ -860,6 +984,16 @@ describe('Auth HTTP + PostgreSQL', () => {
           '/api/usuarios/{usuarioId}/roles/{nombreRol}',
           'delete',
           ['204', '400', '401', '403', '404', '409'],
+        ],
+        [
+          '/api/usuarios/{usuarioId}',
+          'get',
+          ['200', '400', '401', '403', '404'],
+        ],
+        [
+          '/api/usuarios/{usuarioId}',
+          'patch',
+          ['200', '400', '401', '403', '404', '409', '422'],
         ],
         [
           '/api/usuarios/{usuarioId}',

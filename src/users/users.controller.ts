@@ -7,6 +7,7 @@ import {
   Param,
   ParseEnumPipe,
   ParseUUIDPipe,
+  Patch,
   Put,
   Req,
   Query,
@@ -33,6 +34,8 @@ import { SetUserRolesDto } from './dto/set-user-roles.dto.js';
 import { UserRolesDto } from './dto/user-roles.dto.js';
 import { ListUsersDto } from './dto/list-users.dto.js';
 import { UserListPageDto } from './dto/user-list.dto.js';
+import { UserDto } from './dto/user.dto.js';
+import { UpdateUserDto } from './dto/update-user.dto.js';
 import { UsersService } from './users.service.js';
 
 @ApiTags('usuarios')
@@ -56,6 +59,30 @@ export class UsersController {
   @ApiOkResponse({ type: UserListPageDto })
   list(@Query() query: ListUsersDto): Promise<UserListPageDto> {
     return this.users.listUsers(query);
+  }
+
+  @Get(':usuarioId')
+  @ApiParam({ name: 'usuarioId', format: 'uuid' })
+  @ApiOkResponse({ type: UserDto })
+  getUser(
+    @Param('usuarioId', new ParseUUIDPipe({ version: '4' })) usuarioId: string,
+  ): Promise<UserDto> {
+    return this.users.getUser(usuarioId);
+  }
+
+  @Patch(':usuarioId')
+  @ApiParam({ name: 'usuarioId', format: 'uuid' })
+  @ApiOkResponse({ type: UserDto })
+  @ApiConflictResponse({
+    description:
+      'Correo ya registrado o no se puede remover/desactivar el último administrador',
+  })
+  @ApiUnprocessableEntityResponse({ description: 'Rol inactivo' })
+  updateUser(
+    @Param('usuarioId', new ParseUUIDPipe({ version: '4' })) usuarioId: string,
+    @Body() dto: UpdateUserDto,
+  ): Promise<UserDto> {
+    return this.users.updateUser(usuarioId, dto);
   }
 
   @Get(':usuarioId/roles')

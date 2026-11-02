@@ -1,6 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import * as bcrypt from 'bcrypt';
 import { UsersService } from './users.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+
+vi.mock('bcrypt', () => ({
+  hash: vi.fn(async () => 'hashed-password'),
+  compare: vi.fn(),
+}));
 
 describe('UsersService', () => {
   let service: UsersService;
@@ -287,5 +293,250 @@ describe('UsersService.deleteUser', () => {
       where: { canceladoPorId: 'target' },
     });
     expect(tx.user.delete).not.toHaveBeenCalled();
+  });
+});
+
+describe('UsersService.getUser', () => {
+  const seller = { id: 'seller-role', nombre: 'VENDEDOR', descripcion: null, activo: true };
+  const user = {
+    id: 'user-1',
+    nombre: 'Juan Perez',
+    email: 'juan@kamadeva.com',
+    telefono: '8112345678',
+    activo: true,
+    rolId: seller.id,
+    rol: seller,
+    fechaCreacion: new Date('2026-01-01T00:00:00.000Z'),
+    fechaActualizacion: new Date('2026-01-02T00:00:00.000Z'),
+  };
+  const prisma = { user: { findUnique: vi.fn() } };
+  const service = new UsersService(prisma as unknown as PrismaService);
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it('returns mapped user when user exists', async () => {
+    prisma.user.findUnique.mockResolvedValue(user);
+    const result = await service.getUser('user-1');
+    expect(result).toEqual({
+      id: 'user-1',
+      nombre: 'Juan Perez',
+      correo: 'juan@kamadeva.com',
+      email: 'juan@kamadeva.com',
+      telefono: '8112345678',
+      activo: true,
+      rolId: seller.id,
+      rol: 'VENDEDOR',
+      roles: ['VENDEDOR'],
+      fechaCreacion: '2026-01-01T00:00:00.000Z',
+      fechaActualizacion: '2026-01-02T00:00:00.000Z',
+    });
+  });
+
+  it('throws 404 when user is not found', async () => {
+    prisma.user.findUnique.mockResolvedValue(null);
+    await expect(service.getUser('non-existent')).rejects.toMatchObject({
+      status: 404,
+      message: 'Usuario inexistente',
+    });
+  });
+});
+
+describe('UsersService.updateUser', () => {
+  const admin = { id: 'admin-role', nombre: 'ADMIN', descripcion: null, activo: true };
+  const seller = { id: 'seller-role', nombre: 'VENDEDOR', descripcion: null, activo: true };
+  const user = {
+    id: 'user-1',
+    nombre: 'Juan Perez',
+    email: 'juan@kamadeva.com',
+    telefono: '8112345678',
+    activo: true,
+    rolId: seller.id,
+    rol: seller,
+    fechaCreacion: new Date('2026-01-01T00:00:00.000Z'),
+    fechaActualizacion: new Date('2026-01-02T00:00:00.000Z'),
+  };
+  const tx = {
+    user: {
+      findUnique: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
+      count: vi.fn(),
+      update: vi.fn(),
+    },
+    role: { findUnique: vi.fn() },
+  };
+  const prisma = { $transaction: vi.fn() };
+  const service = new UsersService(prisma as unknown as PrismaService);
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    prisma.$transaction.mockImplementation(
+      (fn: (client: typeof tx) => unknown) => fn(tx),
+    );
+    tx.user.findUnique.mockResolvedValue(user);
+    tx.user.findUniqueOrThrow.mockResolvedValue(user);
+    tx.user.count.mockResolvedValue(2);
+    tx.role.findUnique.mockResolvedValue(seller);
+  });
+
+  it('updates basic fields successfully', async () => {
+    const updatedUser = {
+      ...user,
+      nombre: 'Juan Actualizado',
+      telefono: '8199999999',
+    };
+    tx.user.findUniqueOrThrow.mockResolvedValue(updatedUser);
+
+    const result = await service.updateUser('user-1', {
+      nombre: 'Juan Actualizado',
+      telefono: '8199999999',
+    });
+
+    expect(tx.user.update).toHaveBeenCalledWith({
+      where: { id: 'user-1' },
+      data: {
+        nombre: 'Juan Actualizado',
+        telefono: '8199999999',
+      },
+    });
+    expect(result.nombre).toBe('Juan Actualizado');
+    expect(result.telefono).toBe('8199999999');
+  });
+
+  it('updates email when unique', async () => {
+    tx.user.findUnique
+      .mockResolvedValueOnce(user) // requireUser
+      .mockResolvedValueOnce(null); // conflict check
+    tx.user.findUniqueOrThrow.mockResolvedValue({
+      ...user,
+      email: 'nuevo@kamadeva.com',
+    });
+
+    const result = await service.updateUser('user-1', {
+      correo: 'nuevo@kamadeva.com',
+    });
+    expect(tx.user.update).toHaveBeenCalledWith({
+      where: { id: 'user-1' },
+      data: { email: 'nuevo@kamadeva.com' },
+    });
+    expect(result.correo).toBe('nuevo@kamadeva.com');
+  });
+
+  it('throws 409 when email is already taken by another user', async () => {
+    tx.user.findUnique
+      .mockResolvedValueOnce(user) // requireUser
+      .mockResolvedValueOnce({ id: 'other-user', email: 'taken@kamadeva.com' }); // conflict check
+
+    await expect(
+      service.updateUser('user-1', { correo: 'taken@kamadeva.com' }),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: 'Correo ya registrado',
+    });
+    expect(tx.user.update).not.toHaveBeenCalled();
+  });
+
+  it('hashes password when provided', async () => {
+    await service.updateUser('user-1', {
+      contrasena: 'NuevaPassword123!',
+    });
+    expect(bcrypt.hash).toHaveBeenCalledWith('NuevaPassword123!', 12);
+    expect(tx.user.update).toHaveBeenCalledWith({
+      where: { id: 'user-1' },
+      data: { passwordHash: 'hashed-password' },
+    });
+  });
+
+  it('throws 404 if user to update does not exist', async () => {
+    tx.user.findUnique.mockResolvedValue(null);
+    await expect(
+      service.updateUser('missing', { nombre: 'Test' }),
+    ).rejects.toMatchObject({
+      status: 404,
+      message: 'Usuario inexistente',
+    });
+  });
+
+  it('throws 409 when deactivating the last active ADMIN', async () => {
+    tx.user.findUnique.mockResolvedValue({
+      ...user,
+      rolId: admin.id,
+      rol: admin,
+      activo: true,
+    });
+    tx.user.count.mockResolvedValue(1);
+
+    await expect(
+      service.updateUser('user-1', { activo: false }),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: 'No se puede desactivar el último administrador',
+    });
+    expect(tx.user.update).not.toHaveBeenCalled();
+  });
+
+  it('throws 409 when changing role away from ADMIN for the last active ADMIN', async () => {
+    tx.user.findUnique.mockResolvedValue({
+      ...user,
+      rolId: admin.id,
+      rol: admin,
+      activo: true,
+    });
+    tx.role.findUnique.mockResolvedValue(seller);
+    tx.user.count.mockResolvedValue(1);
+
+    await expect(
+      service.updateUser('user-1', { rolId: seller.id }),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: 'No se puede remover el último administrador',
+    });
+    expect(tx.user.update).not.toHaveBeenCalled();
+  });
+
+  it('allows deactivating an admin if another active admin exists', async () => {
+    tx.user.findUnique.mockResolvedValue({
+      ...user,
+      rolId: admin.id,
+      rol: admin,
+      activo: true,
+    });
+    tx.user.count.mockResolvedValue(2);
+    tx.user.findUniqueOrThrow.mockResolvedValue({
+      ...user,
+      rolId: admin.id,
+      rol: admin,
+      activo: false,
+    });
+
+    const result = await service.updateUser('user-1', { activo: false });
+    expect(tx.user.update).toHaveBeenCalledWith({
+      where: { id: 'user-1' },
+      data: { activo: false },
+    });
+    expect(result.activo).toBe(false);
+  });
+
+  it('throws 422 if role is inactive', async () => {
+    tx.role.findUnique.mockResolvedValue({ ...seller, activo: false });
+    await expect(
+      service.updateUser('user-1', { rol: 'VENDEDOR' }),
+    ).rejects.toMatchObject({
+      status: 422,
+      message: 'Rol inactivo',
+    });
+    expect(tx.user.update).not.toHaveBeenCalled();
+  });
+
+  it('throws 404 if roleId does not exist', async () => {
+    tx.role.findUnique.mockResolvedValue(null);
+    await expect(
+      service.updateUser('user-1', { rolId: '00000000-0000-0000-0000-000000000000' }),
+    ).rejects.toMatchObject({
+      status: 404,
+      message: 'Rol no encontrado',
+    });
+    expect(tx.user.update).not.toHaveBeenCalled();
   });
 });
