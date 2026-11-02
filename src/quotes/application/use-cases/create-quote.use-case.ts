@@ -52,6 +52,27 @@ function parseFutureDate(value?: string): Date | undefined {
   return date;
 }
 
+let quoteCreationQueue: Promise<unknown> = Promise.resolve();
+
+async function withQuoteCreationLock<T>(fn: () => Promise<T>): Promise<T> {
+  const previous = quoteCreationQueue;
+  let resolveLock: () => void;
+  const current = new Promise<void>((r) => {
+    resolveLock = r;
+  });
+  quoteCreationQueue = current;
+  try {
+    await previous;
+  } catch {
+    // Ignore error from previous operation
+  }
+  try {
+    return await fn();
+  } finally {
+    resolveLock!();
+  }
+}
+
 @Injectable()
 export class CreateQuoteUseCase {
   constructor(
@@ -66,10 +87,11 @@ export class CreateQuoteUseCase {
   ) {}
 
   async execute(command: CreateQuoteCommand): Promise<QuoteAggregate> {
-    const expiresAt = parseFutureDate(command.expiresAt);
+    return withQuoteCreationLock(async () => {
+      const expiresAt = parseFutureDate(command.expiresAt);
 
-    const quote = await this.unitOfWork.execute(async (tx) => {
-      await this.quoteRepo.requireCustomerExists(command.customerId, tx);
+      const quote = await this.unitOfWork.execute(async (tx) => {
+        await this.quoteRepo.requireCustomerExists(command.customerId, tx);
 
       const productIds = [
         ...new Set(command.items.map((item) => item.productId)),
@@ -123,5 +145,6 @@ export class CreateQuoteUseCase {
     );
 
     return quote;
+    });
   }
 }

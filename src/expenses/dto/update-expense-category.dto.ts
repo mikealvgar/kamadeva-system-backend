@@ -1,13 +1,33 @@
-import { ApiPropertyOptional, PartialType } from '@nestjs/swagger';
-import { IsBoolean, ValidateIf } from 'class-validator';
-import { CreateExpenseCategoryDto } from './create-expense-category.dto.js';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
+import { IsBoolean, IsOptional, IsString, MaxLength } from 'class-validator';
 
-export class UpdateExpenseCategoryDto extends PartialType(
-  CreateExpenseCategoryDto,
-  { skipNullProperties: false },
-) {
-  @ApiPropertyOptional({ example: false })
-  @ValidateIf((_object, value: unknown) => value !== undefined)
+export class UpdateExpenseCategoryDto {
+  @ApiPropertyOptional({ example: 'Servicios', maxLength: 100 })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsString()
+  @MaxLength(100)
+  nombre?: string;
+
+  @ApiPropertyOptional({ example: 'Servicios', maxLength: 100 })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsString()
+  @MaxLength(100)
+  name?: string;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  activo?: boolean;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
   @IsBoolean()
   isActive?: boolean;
 }

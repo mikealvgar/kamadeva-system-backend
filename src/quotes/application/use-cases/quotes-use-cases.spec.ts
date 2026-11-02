@@ -5,7 +5,6 @@ import {
   CustomerNotFoundException,
   ProductNotFoundException,
   InvalidQuoteStateException,
-  InvalidSizeSelectionException,
 } from '../../domain/exceptions/quote-exceptions.js';
 import type {
   QuoteQueryFilter,
@@ -216,31 +215,24 @@ describe('Application Layer: Quote Use Cases', () => {
     );
   });
 
-  it.each([
-    ['missing size for sized product', { productId: 'prod-2', quantity: 1 }],
-    [
-      'size not offered by product',
-      { productId: 'prod-2', sizeId: 'size-xl', quantity: 1 },
-    ],
-    [
-      'size for product without sizes',
-      { productId: 'prod-1', sizeId: 'size-m', quantity: 1 },
-    ],
-  ])('CreateQuoteUseCase rejects %s', async (_label, item) => {
+  it('CreateQuoteUseCase accepts items with or without size', async () => {
     const useCase = new CreateQuoteUseCase(repo, uow, events, folios);
-    await expect(
-      useCase.execute({
-        customerId: 'cust-1',
-        actorId: 'user-1',
-        items: [item],
-      }),
-    ).rejects.toThrow(InvalidSizeSelectionException);
-    expect(repo.quotes.size).toBe(0);
-    expect(events.events).toHaveLength(0);
-    expect(folios.counters.size).toBe(0);
+    const quote = await useCase.execute({
+      customerId: 'cust-1',
+      actorId: 'user-1',
+      items: [
+        { productId: 'prod-2', quantity: 1 },
+        { productId: 'prod-2', sizeId: 'size-xl', quantity: 1 },
+        { productId: 'prod-1', sizeId: 'size-m', quantity: 1 },
+      ],
+    });
+    expect(quote.items).toHaveLength(3);
+    expect(quote.items[0].sizeId).toBeNull();
+    expect(quote.items[1].sizeId).toBe('size-xl');
+    expect(quote.items[2].sizeId).toBe('size-m');
   });
 
-  it('UpdateQuoteUseCase validates and keeps the selected size', async () => {
+  it('UpdateQuoteUseCase updates items and keeps the selected size', async () => {
     const createUC = new CreateQuoteUseCase(repo, uow, events, folios);
     const updateUC = new UpdateQuoteUseCase(repo, uow);
     const quote = await createUC.execute({
@@ -248,12 +240,6 @@ describe('Application Layer: Quote Use Cases', () => {
       actorId: 'user-1',
       items: [{ productId: 'prod-1', quantity: 1 }],
     });
-
-    await expect(
-      updateUC.execute(quote.id, {
-        items: [{ productId: 'prod-2', quantity: 1 }],
-      }),
-    ).rejects.toThrow(InvalidSizeSelectionException);
 
     const updated = await updateUC.execute(quote.id, {
       items: [{ productId: 'prod-2', sizeId: 'size-g', quantity: 2 }],

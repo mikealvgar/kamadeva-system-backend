@@ -21,10 +21,6 @@ const METHODS: PaymentMethod[] = ['CASH', 'CARD', 'TRANSFER', 'OTHER'];
 const money = (value: Prisma.Decimal | null | undefined) =>
   (value ?? ZERO).toFixed(2);
 
-/**
- * Timestamp columns hold UTC without a zone; compare against an explicit UTC
- * literal so results do not depend on the PostgreSQL session TimeZone.
- */
 const utc = (instant: Date) =>
   Prisma.sql`(${instant.toISOString()}::timestamptz AT TIME ZONE 'UTC')`;
 
@@ -47,8 +43,8 @@ export class DashboardService {
     const today = dayRange(now, this.timeZone);
     const inRange = { gte: today.start, lt: today.end };
     const completedToday: Prisma.SaleWhereInput = {
-      status: 'COMPLETED',
-      createdAt: inRange,
+      estado: 'COMPLETED',
+      fechaCreacion: inRange,
     };
     const [sales, byMethod, expenses, cashExpenses, activeProducts, lowStock] =
       await Promise.all([
@@ -57,28 +53,28 @@ export class DashboardService {
           _sum: { total: true },
           _count: { _all: true },
         }),
-        this.prisma.payment.groupBy({
-          by: ['method'],
-          where: { sale: completedToday },
-          _sum: { amount: true },
+        this.prisma.sale.groupBy({
+          by: ['metodoPago'],
+          where: completedToday,
+          _sum: { total: true },
         }),
         this.prisma.expense.aggregate({
-          where: { spentAt: inRange },
-          _sum: { amount: true },
+          where: { fechaGasto: inRange },
+          _sum: { monto: true },
         }),
         this.prisma.expense.aggregate({
-          where: { spentAt: inRange, deductFromCash: true },
-          _sum: { amount: true },
+          where: { fechaGasto: inRange, descontarDeCaja: true },
+          _sum: { monto: true },
         }),
-        this.prisma.product.count({ where: { isActive: true } }),
+        this.prisma.product.count({ where: { activo: true } }),
         this.lowStockCount(),
       ]);
     const salesTotal = sales._sum.total ?? ZERO;
     const count = sales._count._all;
     const methods = new Map(
-      byMethod.map((row) => [row.method, row._sum.amount ?? ZERO]),
+      byMethod.map((row) => [row.metodoPago, row._sum.total ?? ZERO]),
     );
-    const expensesTotal = expenses._sum.amount ?? ZERO;
+    const expensesTotal = expenses._sum.monto ?? ZERO;
     return {
       date: today.days[0]!,
       timezone: this.timeZone,
@@ -95,7 +91,7 @@ export class DashboardService {
       inventory: { activeProducts, lowStock },
       expensesToday: {
         total: money(expensesTotal),
-        fromCash: money(cashExpenses._sum.amount),
+        fromCash: money(cashExpenses._sum.monto),
       },
       estimatedProfitToday: includeProfit
         ? await this.profit(completedToday, expensesTotal)
@@ -123,39 +119,48 @@ export class DashboardService {
         : Prisma.sql`revenue DESC, units DESC`;
     const rows = await this.prisma.$queryRaw<
       Array<{
-        productId: string;
+        productoId: string;
         units: Prisma.Decimal;
         revenue: Prisma.Decimal;
         salesCount: number;
       }>
     >`
-      SELECT si."productId",
-             SUM(si.quantity) AS units,
+      SELECT si."productoId",
+             SUM(si.cantidad) AS units,
              SUM(si.total) AS revenue,
-             COUNT(DISTINCT si."saleId")::int AS "salesCount"
+             COUNT(DISTINCT si."ventaId")::int AS "salesCount"
       FROM sale_items si
-      JOIN sales s ON s.id = si."saleId"
-      WHERE s.status = 'COMPLETED'
-        AND s."createdAt" >= ${utc(startDate)}
-        AND s."createdAt" <= ${utc(endDate)}
-      GROUP BY si."productId"
-      ORDER BY ${order}, si."productId"
+      JOIN sales s ON s.id = si."ventaId"
+      WHERE s.estado = 'COMPLETED'
+        AND s."fechaCreacion" >= ${utc(startDate)}
+        AND s."fechaCreacion" <= ${utc(endDate)}
+      GROUP BY si."productoId"
+      ORDER BY ${order}, si."productoId"
       LIMIT ${query.limit ?? 10}`;
     const products = await this.prisma.product.findMany({
-      where: { id: { in: rows.map(({ productId }) => productId) } },
-      select: { id: true, barcode: true, name: true },
+      where: { id: { in: rows.map(({ productoId }) => productoId) } },
+      select: { id: true, codigoBarras: true, nombre: true },
     });
     const byId = new Map(products.map((product) => [product.id, product]));
     return {
       startDate: startDate.toISOString(),
       endDate: endDate.toISOString(),
       sortBy,
-      data: rows.map((row) => ({
-        product: byId.get(row.productId)!,
-        units: new Prisma.Decimal(row.units).toFixed(3),
-        revenue: money(new Prisma.Decimal(row.revenue)),
-        salesCount: row.salesCount,
-      })),
+      data: rows.map((row) => {
+        const prod = byId.get(row.productoId);
+        return {
+          product: {
+            id: prod?.id ?? row.productoId,
+            barcode: prod?.codigoBarras ?? '',
+            codigoBarras: prod?.codigoBarras ?? '',
+            name: prod?.nombre ?? '',
+            nombre: prod?.nombre ?? '',
+          },
+          units: new Prisma.Decimal(row.units).toFixed(3),
+          revenue: money(new Prisma.Decimal(row.revenue)),
+          salesCount: row.salesCount,
+        };
+      }),
     };
   }
 
@@ -173,19 +178,19 @@ export class DashboardService {
       this.prisma.$queryRaw<
         Array<{ day: string; total: Prisma.Decimal; count: number }>
       >`
-        SELECT ${day(Prisma.sql`"createdAt"`)} AS day,
+        SELECT ${day(Prisma.sql`"fechaCreacion"`)} AS day,
                SUM(total) AS total,
                COUNT(*)::int AS count
         FROM sales
-        WHERE status = 'COMPLETED'
-          AND "createdAt" >= ${utc(range.start)}
-          AND "createdAt" < ${utc(range.end)}
+        WHERE estado = 'COMPLETED'
+          AND "fechaCreacion" >= ${utc(range.start)}
+          AND "fechaCreacion" < ${utc(range.end)}
         GROUP BY 1`,
       this.prisma.$queryRaw<Array<{ day: string; total: Prisma.Decimal }>>`
-        SELECT ${day(Prisma.sql`"spentAt"`)} AS day, SUM(amount) AS total
+        SELECT ${day(Prisma.sql`"fechaGasto"`)} AS day, SUM(monto) AS total
         FROM expenses
-        WHERE "spentAt" >= ${utc(range.start)}
-          AND "spentAt" < ${utc(range.end)}
+        WHERE "fechaGasto" >= ${utc(range.start)}
+          AND "fechaGasto" < ${utc(range.end)}
         GROUP BY 1`,
     ]);
     const salesByDay = new Map(sales.map((row) => [row.day, row]));
@@ -206,29 +211,27 @@ export class DashboardService {
     };
   }
 
-  /** Net sales minus cost of goods (snapshot, else current cost) minus expenses. */
   private async profit(
     completedToday: Prisma.SaleWhereInput,
     expenses: Prisma.Decimal,
   ): Promise<EstimatedProfitDto> {
     const items = await this.prisma.saleItem.findMany({
-      where: { sale: completedToday },
+      where: { venta: completedToday },
       select: {
-        quantity: true,
+        cantidad: true,
         total: true,
-        tax: true,
-        unitCost: true,
-        product: { select: { cost: true } },
+        costoUnitario: true,
+        producto: { select: { precioCompra: true } },
       },
     });
     let netSales = ZERO;
     let costOfGoods = ZERO;
     let costIncomplete = false;
     for (const item of items) {
-      netSales = netSales.plus(item.total.minus(item.tax));
-      const cost = item.unitCost ?? item.product.cost;
+      netSales = netSales.plus(item.total);
+      const cost = item.costoUnitario ?? item.producto.precioCompra;
       if (cost === null) costIncomplete = true;
-      else costOfGoods = costOfGoods.plus(cost.times(item.quantity));
+      else costOfGoods = costOfGoods.plus(cost.times(item.cantidad));
     }
     costOfGoods = costOfGoods.toDecimalPlaces(2);
     return {
@@ -242,20 +245,20 @@ export class DashboardService {
 
   private async lowStockCount(): Promise<number> {
     const tracked = await this.prisma.product.findMany({
-      where: { isActive: true, minStock: { not: null } },
-      select: { id: true, minStock: true },
+      where: { activo: true, existenciaMinima: { not: null } },
+      select: { id: true, existenciaMinima: true },
     });
     if (tracked.length === 0) return 0;
     const stock = await this.prisma.inventoryMovement.groupBy({
-      by: ['productId'],
-      where: { productId: { in: tracked.map(({ id }) => id) } },
-      _sum: { quantityChange: true },
+      by: ['productoId'],
+      where: { productoId: { in: tracked.map(({ id }) => id) } },
+      _sum: { cambioExistencias: true },
     });
     const byProduct = new Map(
-      stock.map((row) => [row.productId, row._sum.quantityChange ?? ZERO]),
+      stock.map((row) => [row.productoId, row._sum.cambioExistencias ?? ZERO]),
     );
     return tracked.filter((product) =>
-      (byProduct.get(product.id) ?? ZERO).lessThanOrEqualTo(product.minStock!),
+      (byProduct.get(product.id) ?? ZERO).lessThanOrEqualTo(product.existenciaMinima!),
     ).length;
   }
 

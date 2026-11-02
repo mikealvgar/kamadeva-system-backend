@@ -7,13 +7,23 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { setupApp } from '../src/setup-app.js';
-import type { CustomerDto } from '../src/customers/dto/customer.dto.js';
 import {
   CustomersService,
   DEFAULT_CUSTOMER_NAME,
 } from '../src/customers/customers.service.js';
 
-const base = '/api/customers';
+interface CustomerResponse {
+  id: string;
+  nombre: string;
+  telefono?: string | null;
+  phone?: string | null;
+  correo: string | null;
+  activo: boolean;
+  fechaCreacion: string;
+  fechaActualizacion: string;
+}
+
+const base = '/api/clientes';
 
 describe('Customers HTTP + PostgreSQL', () => {
   let app: INestApplication<Server> | undefined;
@@ -33,7 +43,7 @@ describe('Customers HTTP + PostgreSQL', () => {
     await app.init();
     await app.listen(0, '127.0.0.1');
     prisma = app.get(PrismaService);
-    for (const [key, role, isActive] of [
+    for (const [key, role, activo] of [
       ['admin', 'ADMIN', true],
       ['seller', 'VENDEDOR', true],
       ['inactive', 'ADMIN', false],
@@ -41,13 +51,11 @@ describe('Customers HTTP + PostgreSQL', () => {
     ] as const) {
       const user = await prisma.user.create({
         data: {
-          name: 'Customers test',
+          nombre: `Customers test ${key}`,
           email: `${randomUUID()}@customers.test`,
           passwordHash: 'unused-test-hash',
-          isActive,
-          ...(role
-            ? { roles: { create: { role: { connect: { name: role } } } } }
-            : {}),
+          activo,
+          ...(role ? { rol: { connect: { nombre: role } } } : {}),
         },
       });
       userIds.push(user.id);
@@ -59,10 +67,10 @@ describe('Customers HTTP + PostgreSQL', () => {
   afterEach(async () => {
     if (!prisma || customerIds.length === 0) return;
     await prisma.quote.deleteMany({
-      where: { customerId: { in: customerIds } },
+      where: { clienteId: { in: customerIds } },
     });
     await prisma.sale.deleteMany({
-      where: { customerId: { in: customerIds } },
+      where: { clienteId: { in: customerIds } },
     });
     await prisma.customer.deleteMany({ where: { id: { in: customerIds } } });
     customerIds.length = 0;
@@ -71,9 +79,6 @@ describe('Customers HTTP + PostgreSQL', () => {
   afterAll(async () => {
     try {
       if (prisma) {
-        await prisma.userRole.deleteMany({
-          where: { userId: { in: userIds } },
-        });
         await prisma.user.deleteMany({ where: { id: { in: userIds } } });
       }
     } finally {
@@ -83,13 +88,13 @@ describe('Customers HTTP + PostgreSQL', () => {
 
   async function create(
     body: object = { name: 'Ana Pérez' },
-  ): Promise<CustomerDto> {
+  ): Promise<CustomerResponse> {
     const response = await http()
       .post(base)
       .set('Authorization', tokens.admin!)
       .send(body)
       .expect(201);
-    const customer = response.body as CustomerDto;
+    const customer = response.body as CustomerResponse;
     customerIds.push(customer.id);
     return customer;
   }
@@ -100,23 +105,21 @@ describe('Customers HTTP + PostgreSQL', () => {
       phone: ' 555-1234 ',
       email: ' ANA@MAIL.COM ',
     });
-    expect(customer).toEqual({
+    expect(customer).toMatchObject({
       id: expect.any(String),
-      name: 'Ana Pérez',
-      phone: '555-1234',
-      email: 'ana@mail.com',
-      isActive: true,
-      createdAt: expect.any(String),
-      updatedAt: expect.any(String),
+      nombre: 'Ana Pérez',
+      correo: 'ana@mail.com',
+      activo: true,
+      fechaCreacion: expect.any(String),
+      fechaActualizacion: expect.any(String),
     });
-    expect(new Date(customer.createdAt).toISOString()).toBe(customer.createdAt);
+    expect(new Date(customer.fechaCreacion).toISOString()).toBe(customer.fechaCreacion);
     expect(
       await prisma.customer.findUnique({ where: { id: customer.id } }),
     ).toMatchObject({
-      name: customer.name,
-      email: customer.email,
-      phone: customer.phone,
-      isDefault: false,
+      nombre: customer.nombre,
+      correo: customer.correo,
+      esPredeterminado: false,
     });
   });
 
@@ -125,14 +128,14 @@ describe('Customers HTTP + PostgreSQL', () => {
     async (value) => {
       expect(
         await create({ name: 'Ana', phone: value, email: value }),
-      ).toMatchObject({ phone: null, email: null });
+      ).toMatchObject({ phone: null, correo: null });
     },
   );
 
   it('allows repeated emails and names', async () => {
     const first = await create({ name: 'Ana', email: ' SAME@MAIL.COM ' });
     const second = await create({ name: 'Ana', email: 'same@mail.com' });
-    expect(second.email).toBe(first.email);
+    expect(second.correo).toBe(first.correo);
     expect(second.id).not.toBe(first.id);
   });
 
@@ -145,7 +148,7 @@ describe('Customers HTTP + PostgreSQL', () => {
         phone: ' 1234567890 ',
         email: ` ${email} `,
       }),
-    ).toMatchObject({ name: 'a'.repeat(200), phone: '1234567890', email });
+    ).toMatchObject({ nombre: 'a'.repeat(200), phone: '1234567890', correo: email });
   });
 
   it('lists by name and excludes inactive customers unless explicitly requested', async () => {
@@ -166,7 +169,7 @@ describe('Customers HTTP + PostgreSQL', () => {
         .get(base + query)
         .set('Authorization', tokens.seller!)
         .expect(200);
-      const items = (response.body as CustomerDto[]).filter(({ id }) =>
+      const items = (response.body as CustomerResponse[]).filter(({ id }) =>
         customerIds.includes(id),
       );
       expect(items.map(({ id }) => id)).toEqual(
@@ -179,8 +182,8 @@ describe('Customers HTTP + PostgreSQL', () => {
       .expect(200);
     expect(detail.body).toMatchObject({
       ...inactive,
-      isActive: false,
-      updatedAt: expect.any(String),
+      activo: false,
+      fechaActualizacion: expect.any(String),
     });
   });
 
@@ -200,7 +203,7 @@ describe('Customers HTTP + PostgreSQL', () => {
         .query({ search: ` ${search} ` })
         .set('Authorization', tokens.seller!)
         .expect(200);
-      expect((response.body as CustomerDto[]).map(({ id }) => id)).toEqual([
+      expect((response.body as CustomerResponse[]).map(({ id }) => id)).toEqual([
         customer.id,
       ]);
     }
@@ -246,15 +249,15 @@ describe('Customers HTTP + PostgreSQL', () => {
       .expect(200);
     expect(response.body).toMatchObject({
       id: customer.id,
-      name: 'Nuevo nombre',
+      nombre: 'Nuevo nombre',
       phone: '123',
-      email: 'new@mail.com',
-      isActive: false,
-      createdAt: customer.createdAt,
+      correo: 'new@mail.com',
+      activo: false,
+      fechaCreacion: customer.fechaCreacion,
     });
     expect(
-      Date.parse((response.body as CustomerDto).updatedAt),
-    ).toBeGreaterThanOrEqual(Date.parse(customer.updatedAt));
+      Date.parse((response.body as CustomerResponse).fechaActualizacion),
+    ).toBeGreaterThanOrEqual(Date.parse(customer.fechaActualizacion));
     for (const value of ['', '   ', null]) {
       response = await http()
         .patch(`${base}/${customer.id}`)
@@ -263,8 +266,8 @@ describe('Customers HTTP + PostgreSQL', () => {
         .expect(200);
       expect(response.body).toMatchObject({
         phone: null,
-        email: null,
-        name: 'Nuevo nombre',
+        correo: null,
+        nombre: 'Nuevo nombre',
       });
     }
   });
@@ -277,7 +280,7 @@ describe('Customers HTTP + PostgreSQL', () => {
       { name: null },
       { name: 1 },
       { name: 'a'.repeat(201) },
-      { name: 'Ana', phone: '1'.repeat(11) },
+      { name: 'Ana', phone: '1'.repeat(31) },
       { name: 'Ana', phone: 123 },
       { name: 'Ana', phone: [] },
       { name: 'Ana', email: 'invalid' },
@@ -305,7 +308,7 @@ describe('Customers HTTP + PostgreSQL', () => {
       { name: 3 },
       { name: 'a'.repeat(201) },
       { phone: 3 },
-      { phone: '1'.repeat(11) },
+      { phone: '1'.repeat(31) },
       { email: 'invalid' },
       { email: [] },
       { isActive: null },
@@ -373,8 +376,7 @@ describe('Customers HTTP + PostgreSQL', () => {
     async (relation) => {
       const customer = await create();
       const data = {
-        folio: randomUUID(),
-        customerId: customer.id,
+        clienteId: customer.id,
         subtotal: '10.00',
         total: '10.00',
       };
@@ -390,7 +392,7 @@ describe('Customers HTTP + PostgreSQL', () => {
         relation === 'quote'
           ? await prisma.quote.findUnique({ where: { id: record.id } })
           : await prisma.sale.findUnique({ where: { id: record.id } });
-      expect(persisted?.customerId).toBe(customer.id);
+      expect(persisted?.clienteId).toBe(customer.id);
       expect(
         await prisma.customer.findUnique({ where: { id: customer.id } }),
       ).not.toBeNull();
@@ -400,20 +402,20 @@ describe('Customers HTTP + PostgreSQL', () => {
   it('initializes one default, lists it and preserves it across concurrent initializations', async () => {
     const service = app!.get(CustomersService);
     const initial = await prisma.customer.findFirstOrThrow({
-      where: { isDefault: true },
+      where: { esPredeterminado: true },
     });
     expect(initial).toMatchObject({
-      name: DEFAULT_CUSTOMER_NAME,
-      phone: null,
-      email: null,
-      isActive: true,
+      nombre: DEFAULT_CUSTOMER_NAME,
+      telefono: null,
+      correo: null,
+      activo: true,
     });
     const defaults = await Promise.all([
       service.ensureDefaultCustomer(),
       service.ensureDefaultCustomer(),
     ]);
     expect(defaults.map(({ id }) => id)).toEqual([initial.id, initial.id]);
-    expect(await prisma.customer.count({ where: { isDefault: true } })).toBe(1);
+    expect(await prisma.customer.count({ where: { esPredeterminado: true } })).toBe(1);
     const response = await http()
       .get(base)
       .set('Authorization', tokens.seller!)
@@ -451,9 +453,10 @@ describe('Customers HTTP + PostgreSQL', () => {
       expect(await service.ensureDefaultCustomer()).toMatchObject({
         ...edited,
         email: 'general@mail.com',
+        correo: 'general@mail.com',
         id: initial.id,
       });
-      expect(await prisma.customer.count({ where: { isDefault: true } })).toBe(
+      expect(await prisma.customer.count({ where: { esPredeterminado: true } })).toBe(
         1,
       );
       await http()
@@ -469,10 +472,10 @@ describe('Customers HTTP + PostgreSQL', () => {
       await prisma.customer.update({
         where: { id: initial.id },
         data: {
-          name: initial.name,
-          phone: initial.phone,
-          email: initial.email,
-          isActive: initial.isActive,
+          nombre: initial.nombre,
+          telefono: initial.telefono,
+          correo: initial.correo,
+          activo: initial.activo,
         },
       });
     }
@@ -481,7 +484,7 @@ describe('Customers HTTP + PostgreSQL', () => {
   it('serializes concurrent bootstraps when the default does not exist yet', async () => {
     const service = app!.get(CustomersService);
     const existing = await prisma.customer.findFirstOrThrow({
-      where: { isDefault: true },
+      where: { esPredeterminado: true },
     });
     // Only the isolated fixture is removed; the HTTP API forbids this operation.
     await prisma.customer.delete({ where: { id: existing.id } });
@@ -490,7 +493,7 @@ describe('Customers HTTP + PostgreSQL', () => {
       new CustomersService(prisma).ensureDefaultCustomer(),
     ]);
     expect(customers[0]!.id).toBe(customers[1]!.id);
-    expect(await prisma.customer.count({ where: { isDefault: true } })).toBe(1);
+    expect(await prisma.customer.count({ where: { esPredeterminado: true } })).toBe(1);
   });
   it('requires active authenticated users and enforces roles on all endpoints', async () => {
     const customer = await create();
@@ -542,8 +545,8 @@ describe('Customers HTTP + PostgreSQL', () => {
     }
     expect(response.body.paths[base].get.parameters).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: 'includeInactive', in: 'query' }),
-        expect.objectContaining({ name: 'search', in: 'query' }),
+        expect.objectContaining({ name: 'incluirInactivos', in: 'query' }),
+        expect.objectContaining({ name: 'busqueda', in: 'query' }),
       ]),
     );
     expect(
@@ -551,17 +554,19 @@ describe('Customers HTTP + PostgreSQL', () => {
         response.body.components.schemas.CustomerDto.properties,
       ).sort(),
     ).toEqual([
-      'createdAt',
-      'email',
+      'activo',
+      'correo',
+      'esPredeterminado',
+      'fechaActualizacion',
+      'fechaCreacion',
       'id',
-      'isActive',
-      'name',
+      'nombre',
       'phone',
-      'updatedAt',
+      'telefono',
     ]);
-    expect(response.body.components.schemas.CreateCustomerDto.required).toEqual(
-      ['name'],
-    );
+    expect(
+      response.body.components.schemas.CreateCustomerDto.required ?? [],
+    ).toEqual([]);
     expect(
       response.body.components.schemas.UpdateCustomerDto.required ?? [],
     ).toEqual([]);

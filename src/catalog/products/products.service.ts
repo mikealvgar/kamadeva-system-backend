@@ -20,22 +20,20 @@ import {
 
 const productSelect = {
   id: true,
-  name: true,
-  description: true,
-  barcode: true,
-  brand: true,
-  sizes: {
-    orderBy: [{ size: { sortOrder: 'asc' } }, { size: { name: 'asc' } }],
-    select: { size: { select: { id: true, name: true } } },
-  },
-  cost: true,
-  minStock: true,
-  price: true,
+  nombre: true,
+  descripcion: true,
+  codigoBarras: true,
+  marcaId: true,
+  marca: { select: { id: true, descripcion: true } },
+  precioCompra: true,
+  existenciaMinima: true,
+  precioVenta: true,
   imageUrl: true,
-  isActive: true,
-  createdAt: true,
-  updatedAt: true,
-  category: { select: { id: true, name: true, slug: true } },
+  activo: true,
+  fechaCreacion: true,
+  fechaActualizacion: true,
+  categoriaId: true,
+  categoria: { select: { id: true, descripcion: true } },
 } satisfies Prisma.ProductSelect;
 type ProductRecord = Prisma.ProductGetPayload<{ select: typeof productSelect }>;
 
@@ -47,26 +45,51 @@ export class ProductsService {
   ) {}
 
   async create(dto: CreateProductDto, actorId: string): Promise<ProductDto> {
-    if (dto.categoryId) await this.requireCategory(dto.categoryId);
-    await this.requireActiveSizes(dto.tallaIds);
+    const categoryId = dto.categoriaId ?? dto.categoryId;
+    if (categoryId) await this.requireCategory(categoryId);
+
+    let marcaId = dto.marcaId;
+    if (!marcaId && dto.marca) {
+      const brandName = dto.marca.trim().toUpperCase();
+      const brand = await this.prisma.brand.findUnique({
+        where: { descripcion: brandName },
+      });
+      if (brand) {
+        marcaId = brand.id;
+      } else {
+        const createdBrand = await this.prisma.brand.create({
+          data: { descripcion: brandName },
+        });
+        marcaId = createdBrand.id;
+      }
+    }
+
     try {
-      const data = {
-        name: dto.articulo.trim(),
-        description: dto.descripcion?.trim() || null,
-        barcode: dto.codigoBarras.trim().toUpperCase(),
-        brand: dto.marca?.trim() || null,
-        sizes: {
-          create: (dto.tallaIds ?? []).map((sizeId) => ({ sizeId })),
-        },
-        cost:
+      const nombre = (dto.nombre ?? dto.articulo ?? '').trim();
+      if (!nombre) {
+        throw new BadRequestException('El nombre o artículo es obligatorio');
+      }
+
+      const data: Prisma.ProductUncheckedCreateInput = {
+        nombre,
+        descripcion: (dto.descripcion ?? dto.description)?.trim() || null,
+        codigoBarras: dto.codigoBarras.trim().toUpperCase(),
+        marcaId: marcaId ?? null,
+        precioCompra:
           dto.precioCompra == null
             ? null
             : new Prisma.Decimal(dto.precioCompra),
-        price: new Prisma.Decimal(dto.precioVenta),
-        minStock:
-          dto.stockMinimo == null ? null : new Prisma.Decimal(dto.stockMinimo),
-        categoryId: dto.categoryId ?? null,
-      } satisfies Prisma.ProductUncheckedCreateInput;
+        precioVenta: new Prisma.Decimal(dto.precioVenta),
+        existenciaMinima:
+          dto.existenciaMinima != null
+            ? new Prisma.Decimal(dto.existenciaMinima)
+            : dto.stockMinimo != null
+              ? new Prisma.Decimal(dto.stockMinimo)
+              : null,
+        categoriaId: categoryId ?? null,
+        activo: dto.activo ?? dto.isActive ?? true,
+      };
+
       const initialStock = new Prisma.Decimal(dto.stock ?? 0);
       const product = initialStock.isZero()
         ? await this.prisma.product.create({ data, select: productSelect })
@@ -81,7 +104,7 @@ export class ProductsService {
               initialStock,
               actorId,
               'PRODUCT_INITIAL_STOCK',
-              created.cost,
+              created.precioCompra,
               'Existencia inicial al registrar producto',
             );
             return created;
@@ -94,16 +117,17 @@ export class ProductsService {
 
   async findAll(query: ListProductsDto = {}): Promise<ProductDto[]> {
     const where: Prisma.ProductWhereInput = {};
-    if (query.includeInactive !== 'true') where.isActive = true;
-    if (query.categoryId) where.categoryId = query.categoryId;
-    else if (query.sinCategoria === 'true') where.categoryId = null;
+    if (query.includeInactive !== 'true') where.activo = true;
+    const catId = query.categoryId;
+    if (catId) where.categoriaId = catId;
+    else if (query.sinCategoria === 'true') where.categoriaId = null;
     if (query.search) {
       const filter = { contains: query.search, mode: 'insensitive' } as const;
-      where.OR = [{ name: filter }, { barcode: filter }];
+      where.OR = [{ nombre: filter }, { codigoBarras: filter }];
     }
     const products = await this.prisma.product.findMany({
       where,
-      orderBy: { name: 'asc' },
+      orderBy: { nombre: 'asc' },
       select: productSelect,
     });
     return this.withStock(products);
@@ -121,24 +145,28 @@ export class ProductsService {
   async movements(id: string): Promise<InventoryMovementDto[]> {
     await this.requireProduct(id);
     const movements = await this.prisma.inventoryMovement.findMany({
-      where: { productId: id },
-      orderBy: { createdAt: 'desc' },
+      where: { productoId: id },
+      orderBy: { fechaCreacion: 'desc' },
       select: {
         id: true,
-        type: true,
-        quantityChange: true,
-        unitCost: true,
-        referenceType: true,
-        referenceId: true,
-        notes: true,
-        createdAt: true,
+        tipo: true,
+        cambioExistencias: true,
+        costoUnitario: true,
+        tipoReferencia: true,
+        referenciaId: true,
+        notas: true,
+        fechaCreacion: true,
       },
     });
     return movements.map((movement) => ({
-      ...movement,
-      quantityChange: movement.quantityChange.toFixed(3),
-      unitCost: movement.unitCost?.toFixed(2) ?? null,
-      createdAt: movement.createdAt.toISOString(),
+      id: movement.id,
+      type: movement.tipo,
+      quantityChange: movement.cambioExistencias.toFixed(3),
+      unitCost: movement.costoUnitario?.toFixed(2) ?? null,
+      referenceType: movement.tipoReferencia,
+      referenceId: movement.referenciaId,
+      notes: movement.notas,
+      createdAt: movement.fechaCreacion.toISOString(),
     }));
   }
 
@@ -150,30 +178,64 @@ export class ProductsService {
     if (Object.values(dto).every((value) => value === undefined))
       throw new BadRequestException('Debe enviar al menos un campo');
     await this.requireProduct(id);
-    if (dto.categoryId) await this.requireCategory(dto.categoryId);
-    await this.requireActiveSizes(dto.tallaIds);
+    const categoryId = dto.categoriaId ?? dto.categoryId;
+    if (categoryId) await this.requireCategory(categoryId);
+
     const data: Prisma.ProductUncheckedUpdateInput = {};
-    if (dto.articulo !== undefined) data.name = dto.articulo.trim();
-    if (dto.descripcion !== undefined)
-      data.description = dto.descripcion?.trim() || null;
-    if (dto.codigoBarras !== undefined)
-      data.barcode = dto.codigoBarras.trim().toUpperCase();
-    if (dto.marca !== undefined) data.brand = dto.marca?.trim() || null;
-    if (dto.tallaIds !== undefined)
-      data.sizes = {
-        deleteMany: {},
-        create: dto.tallaIds.map((sizeId) => ({ sizeId })),
-      };
+    const nombre = dto.nombre !== undefined ? dto.nombre : dto.articulo;
+    if (nombre !== undefined) {
+      if (typeof nombre !== 'string' || !nombre.trim()) {
+        throw new BadRequestException('El nombre o artículo es obligatorio');
+      }
+      data.nombre = nombre.trim();
+    }
+    const desc = dto.descripcion !== undefined ? dto.descripcion : dto.description;
+    if (desc !== undefined) data.descripcion = desc?.trim() || null;
+    if (dto.codigoBarras !== undefined) {
+      if (typeof dto.codigoBarras !== 'string' || !dto.codigoBarras.trim()) {
+        throw new BadRequestException('El código de barras es obligatorio');
+      }
+      data.codigoBarras = dto.codigoBarras.trim().toUpperCase();
+    }
+
+    if (dto.marcaId !== undefined) {
+      data.marcaId = dto.marcaId;
+    } else if (dto.marca !== undefined) {
+      if (dto.marca && dto.marca.trim()) {
+        const brandName = dto.marca.trim().toUpperCase();
+        const brand = await this.prisma.brand.findUnique({
+          where: { descripcion: brandName },
+        });
+        if (brand) {
+          data.marcaId = brand.id;
+        } else {
+          const createdBrand = await this.prisma.brand.create({
+            data: { descripcion: brandName },
+          });
+          data.marcaId = createdBrand.id;
+        }
+      } else {
+        data.marcaId = null;
+      }
+    }
+
     if (dto.precioCompra !== undefined)
-      data.cost =
+      data.precioCompra =
         dto.precioCompra === null ? null : new Prisma.Decimal(dto.precioCompra);
-    if (dto.precioVenta !== undefined)
-      data.price = new Prisma.Decimal(dto.precioVenta);
-    if (dto.stockMinimo !== undefined)
-      data.minStock =
-        dto.stockMinimo === null ? null : new Prisma.Decimal(dto.stockMinimo);
-    if (dto.categoryId !== undefined) data.categoryId = dto.categoryId;
-    if (dto.isActive !== undefined) data.isActive = dto.isActive;
+    if (dto.precioVenta !== undefined) {
+      if (dto.precioVenta === null || typeof dto.precioVenta !== 'number') {
+        throw new BadRequestException('El precio de venta es obligatorio');
+      }
+      data.precioVenta = new Prisma.Decimal(dto.precioVenta);
+    }
+    const minStock = dto.existenciaMinima ?? dto.stockMinimo;
+    if (minStock !== undefined)
+      data.existenciaMinima =
+        minStock === null ? null : new Prisma.Decimal(minStock);
+    if (categoryId !== undefined) data.categoriaId = categoryId;
+    const activo = dto.activo ?? dto.isActive;
+    if (activo !== undefined) data.activo = activo;
+
     const targetStock = dto.stock;
     try {
       const product =
@@ -191,11 +253,11 @@ export class ProductsService {
               if (!existing)
                 throw new NotFoundException('Producto inexistente');
               const aggregate = await tx.inventoryMovement.aggregate({
-                where: { productId: id },
-                _sum: { quantityChange: true },
+                where: { productoId: id },
+                _sum: { cambioExistencias: true },
               });
               const currentStock =
-                aggregate._sum.quantityChange ?? new Prisma.Decimal(0);
+                aggregate._sum.cambioExistencias ?? new Prisma.Decimal(0);
               const delta = new Prisma.Decimal(targetStock).minus(currentStock);
               const updated = await tx.product.update({
                 where: { id },
@@ -209,7 +271,7 @@ export class ProductsService {
                   delta,
                   actorId,
                   'PRODUCT_STOCK_EDIT',
-                  updated.cost,
+                  updated.precioCompra,
                   'Existencia actualizada desde producto',
                 );
               return updated;
@@ -222,7 +284,6 @@ export class ProductsService {
 
   async delete(id: string): Promise<void> {
     try {
-      // Required quote, sale and movement relations use database RESTRICT, including races.
       await this.prisma.product.delete({ where: { id }, select: { id: true } });
     } catch (error) {
       this.rethrow(error);
@@ -258,15 +319,6 @@ export class ProductsService {
       throw new NotFoundException('Categoría inexistente');
   }
 
-  private async requireActiveSizes(ids: string[] | undefined): Promise<void> {
-    if (!ids?.length) return;
-    const count = await this.prisma.size.count({
-      where: { id: { in: ids }, isActive: true },
-    });
-    if (count !== ids.length)
-      throw new BadRequestException('Talla inexistente o inactiva');
-  }
-
   private async requireProduct(id: string): Promise<void> {
     if (
       !(await this.prisma.product.findUnique({
@@ -280,54 +332,65 @@ export class ProductsService {
   private async withStock(products: ProductRecord[]): Promise<ProductDto[]> {
     if (products.length === 0) return [];
     const totals = await this.prisma.inventoryMovement.groupBy({
-      by: ['productId'],
-      where: { productId: { in: products.map(({ id }) => id) } },
-      _sum: { quantityChange: true },
+      by: ['productoId'],
+      where: { productoId: { in: products.map(({ id }) => id) } },
+      _sum: { cambioExistencias: true },
     });
     const stocks = new Map(
       totals.map((total) => [
-        total.productId,
-        total._sum.quantityChange?.toFixed(3) ?? '0.000',
+        total.productoId,
+        total._sum.cambioExistencias?.toFixed(3) ?? '0.000',
       ]),
     );
     return products.map((product) => ({
       id: product.id,
-      articulo: product.name,
-      descripcion: product.description,
-      codigoBarras: product.barcode,
-      marca: product.brand,
-      tallas: product.sizes.map(({ size }) => size),
-      precioCompra: product.cost?.toFixed(2) ?? null,
-      precioVenta: product.price.toFixed(2),
+      nombre: product.nombre,
+      articulo: product.nombre,
+      name: product.nombre,
+      descripcion: product.descripcion,
+      description: product.descripcion,
+      codigoBarras: product.codigoBarras,
+      barcode: product.codigoBarras,
+      marca: product.marca,
+      brand: product.marca?.descripcion ?? null,
+      marcaId: product.marcaId,
+      tallas: [],
+      precioCompra: product.precioCompra?.toFixed(2) ?? null,
+      precioVenta: product.precioVenta.toFixed(2),
       stock: stocks.get(product.id) ?? '0.000',
-      stockMinimo: product.minStock?.toFixed(3) ?? null,
+      existenciaMinima: product.existenciaMinima?.toFixed(3) ?? null,
+      stockMinimo: product.existenciaMinima?.toFixed(3) ?? null,
       imageUrl: product.imageUrl,
-      isActive: product.isActive,
-      categoria: product.category,
-      createdAt: product.createdAt.toISOString(),
-      updatedAt: product.updatedAt.toISOString(),
+      activo: product.activo,
+      isActive: product.activo,
+      categoria: product.categoria,
+      categoriaId: product.categoriaId,
+      fechaCreacion: product.fechaCreacion.toISOString(),
+      fechaActualizacion: product.fechaActualizacion.toISOString(),
+      createdAt: product.fechaCreacion.toISOString(),
+      updatedAt: product.fechaActualizacion.toISOString(),
     }));
   }
 
   private async writeStockMovement(
     tx: Prisma.TransactionClient,
-    productId: string,
-    quantityChange: Prisma.Decimal,
+    productoId: string,
+    cambioExistencias: Prisma.Decimal,
     actorId: string,
-    referenceType: string,
-    unitCost: Prisma.Decimal | null,
-    notes: string,
+    tipoReferencia: string,
+    costoUnitario: Prisma.Decimal | null,
+    notas: string,
   ): Promise<void> {
     await tx.inventoryMovement.create({
       data: {
-        productId,
-        type: quantityChange.isNegative() ? 'ADJUSTMENT_OUT' : 'ADJUSTMENT_IN',
-        quantityChange,
-        unitCost,
-        referenceType,
-        referenceId: productId,
-        createdById: actorId,
-        notes,
+        productoId,
+        tipo: cambioExistencias.isNegative() ? 'ADJUSTMENT_OUT' : 'ADJUSTMENT_IN',
+        cambioExistencias,
+        costoUnitario,
+        tipoReferencia,
+        referenciaId: productoId,
+        creadoPorId: actorId,
+        notas,
       },
     });
   }
@@ -339,12 +402,6 @@ export class ProductsService {
       if (error.code === 'P2025')
         throw new NotFoundException('Producto inexistente');
       if (error.code === 'P2003') {
-        // A size deleted between validation and write.
-        if (
-          categoryReference &&
-          JSON.stringify(error.meta ?? {}).includes('size')
-        )
-          throw new BadRequestException('Talla inexistente o inactiva');
         if (categoryReference)
           throw new NotFoundException('Categoría inexistente');
         throw new ConflictException('El producto tiene registros asociados');

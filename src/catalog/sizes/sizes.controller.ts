@@ -33,13 +33,13 @@ import { SizeDto } from './dto/size.dto.js';
 import { UpdateSizeDto } from './dto/update-size.dto.js';
 import { SizesService } from './sizes.service.js';
 
-@ApiTags('catalog/sizes')
+@ApiTags('catalogo/tallas')
 @ApiBearerAuth()
 @ApiUnauthorizedResponse({ description: 'Token inválido o usuario inactivo' })
 @ApiForbiddenResponse({ description: 'Permisos insuficientes' })
 @ApiBadRequestResponse({ description: 'Datos, query o UUID inválidos' })
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Controller('catalog/sizes')
+@Controller('catalogo/tallas')
 export class SizesController {
   constructor(private readonly sizes: SizesService) {}
 

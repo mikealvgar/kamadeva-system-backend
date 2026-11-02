@@ -1,9 +1,17 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
   PaymentMethod,
-  PaymentStatus,
   SaleStatus,
 } from '../../generated/prisma/client.js';
+
+export const PaymentStatus = {
+  PENDING: 'PENDING',
+  PAID: 'PAID',
+  FAILED: 'FAILED',
+  CANCELLED: 'CANCELLED',
+  REFUNDED: 'REFUNDED',
+} as const;
+export type PaymentStatus = (typeof PaymentStatus)[keyof typeof PaymentStatus];
 
 export class SaleRefDto {
   @ApiProperty({ format: 'uuid' }) id: string;

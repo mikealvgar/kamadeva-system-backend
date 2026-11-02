@@ -18,32 +18,42 @@ describe('UsersService', () => {
     await service.findByEmail(' TEST@EXAMPLE.COM ');
     expect(prisma.user.findUnique).toHaveBeenCalledWith({
       where: { email: 'test@example.com' },
-      include: { roles: { include: { role: true } } },
+      include: { rol: true },
     });
   });
+
   it('normalizes user creation without returning only a bare record', async () => {
     await service.create({
-      name: ' Test ',
+      nombre: ' Test ',
       email: ' TEST@EXAMPLE.COM ',
       passwordHash: 'hash',
+      rolId: 'role-123',
     });
     expect(prisma.user.create).toHaveBeenCalledWith({
-      data: { name: 'Test', email: 'test@example.com', passwordHash: 'hash' },
-      include: { roles: { include: { role: true } } },
+      data: {
+        id: undefined,
+        nombre: 'Test',
+        email: 'test@example.com',
+        passwordHash: 'hash',
+        telefono: null,
+        rolId: 'role-123',
+        activo: true,
+      },
+      include: { rol: true },
     });
   });
 });
 
 describe('UsersService role management', () => {
-  const admin = { id: 'admin-role', name: 'ADMIN', isActive: true };
-  const seller = { id: 'seller-role', name: 'VENDEDOR', isActive: true };
+  const admin = { id: 'admin-role', nombre: 'ADMIN', descripcion: null, activo: true };
+  const seller = { id: 'seller-role', nombre: 'VENDEDOR', descripcion: null, activo: true };
   const tx = {
-    user: { findUnique: vi.fn(), count: vi.fn() },
-    role: { findMany: vi.fn() },
-    userRole: { deleteMany: vi.fn(), createMany: vi.fn() },
+    user: { findUnique: vi.fn(), count: vi.fn(), update: vi.fn() },
+    role: { findUnique: vi.fn(), findMany: vi.fn() },
   };
   const prisma = { $transaction: vi.fn() };
   const service = new UsersService(prisma as unknown as PrismaService);
+
   beforeEach(() => {
     vi.resetAllMocks();
     prisma.$transaction.mockImplementation(
@@ -51,53 +61,65 @@ describe('UsersService role management', () => {
     );
     tx.user.findUnique.mockResolvedValue({
       id: 'user',
-      isActive: true,
-      roles: [{ role: admin }],
+      activo: true,
+      rol: admin,
     });
     tx.user.count.mockResolvedValue(2);
+    tx.role.findUnique.mockResolvedValue(seller);
     tx.role.findMany.mockResolvedValue([seller]);
+    tx.user.update.mockResolvedValue({
+      id: 'user',
+      activo: true,
+      rolId: seller.id,
+    });
   });
+
   it('replaces all roles atomically and returns fresh public roles', async () => {
     tx.user.findUnique
       .mockResolvedValueOnce({
         id: 'user',
-        isActive: true,
-        roles: [{ role: admin }],
+        activo: true,
+        rol: admin,
       })
       .mockResolvedValueOnce({
         id: 'user',
-        isActive: true,
-        roles: [{ role: seller }],
+        activo: true,
+        rol: seller,
       });
+
     expect(await service.setUserRoles('user', ['VENDEDOR'])).toEqual({
-      userId: 'user',
+      usuarioId: 'user',
       roles: ['VENDEDOR'],
     });
-    expect(tx.userRole.deleteMany).toHaveBeenCalledWith({
-      where: { userId: 'user' },
+    expect(tx.role.findUnique).toHaveBeenCalledWith({
+      where: { nombre: 'VENDEDOR' },
     });
-    expect(tx.userRole.createMany).toHaveBeenCalledWith({
-      data: [{ userId: 'user', roleId: seller.id }],
-      skipDuplicates: true,
+    expect(tx.user.update).toHaveBeenCalledWith({
+      where: { id: 'user' },
+      data: { rolId: seller.id },
     });
     expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
       isolationLevel: 'Serializable',
     });
   });
+
   it('returns 404 before mutations for a missing user', async () => {
     tx.user.findUnique.mockResolvedValue(null);
     await expect(
       service.setUserRoles('missing', ['VENDEDOR']),
     ).rejects.toMatchObject({ status: 404 });
-    expect(tx.userRole.deleteMany).not.toHaveBeenCalled();
+    expect(tx.user.update).not.toHaveBeenCalled();
   });
+
   it('returns 422 before mutations for an inactive role', async () => {
-    tx.role.findMany.mockResolvedValue([{ ...seller, isActive: false }]);
+    tx.role.findUnique.mockResolvedValue({ ...seller, activo: false });
+    tx.role.findMany.mockResolvedValue([{ ...seller, activo: false }]);
     await expect(
       service.setUserRoles('user', ['VENDEDOR']),
     ).rejects.toMatchObject({ status: 422 });
-    expect(tx.userRole.deleteMany).not.toHaveBeenCalled();
+    expect(tx.user.update).not.toHaveBeenCalled();
   });
+
   it.each(['set', 'delete'])(
     'protects the last active ADMIN on %s',
     async (operation) => {
@@ -110,55 +132,61 @@ describe('UsersService role management', () => {
         status: 409,
         message: 'No se puede remover el último administrador',
       });
-      expect(tx.userRole.deleteMany).not.toHaveBeenCalled();
+      expect(tx.user.update).not.toHaveBeenCalled();
     },
   );
+
   it('allows repeated assignments retaining the last ADMIN', async () => {
+    tx.role.findUnique.mockResolvedValue(admin);
     tx.role.findMany.mockResolvedValue([admin]);
     tx.user.count.mockResolvedValue(1);
     for (let i = 0; i < 2; i++) {
       expect(await service.setUserRoles('user', ['ADMIN'])).toEqual({
-        userId: 'user',
+        usuarioId: 'user',
         roles: ['ADMIN'],
       });
     }
     expect(tx.user.count).not.toHaveBeenCalled();
   });
+
   it('allows deletion of an unassigned role repeatedly', async () => {
-    for (let i = 0; i < 2; i++)
+    tx.role.findUnique.mockResolvedValue(seller);
+    for (let i = 0; i < 2; i++) {
       await expect(
         service.removeUserRole('user', 'VENDEDOR'),
       ).resolves.toBeUndefined();
+    }
   });
+
   it('does not count an inactive target as an active ADMIN', async () => {
     tx.user.findUnique.mockResolvedValue({
       id: 'user',
-      isActive: false,
-      roles: [{ role: admin }],
+      activo: false,
+      rol: admin,
     });
+    tx.role.findUnique.mockResolvedValue(seller);
     await service.removeUserRole('user', 'ADMIN');
     expect(tx.user.count).not.toHaveBeenCalled();
   });
 });
 
 describe('UsersService.deleteUser', () => {
-  const admin = { id: 'admin-role', name: 'ADMIN', isActive: true };
-  const seller = { id: 'seller-role', name: 'VENDEDOR', isActive: true };
+  const admin = { id: 'admin-role', nombre: 'ADMIN', descripcion: null, activo: true };
+  const seller = { id: 'seller-role', nombre: 'VENDEDOR', descripcion: null, activo: true };
   const tx = {
     user: { findUnique: vi.fn(), count: vi.fn(), delete: vi.fn() },
     quote: { count: vi.fn() },
     sale: { count: vi.fn() },
-    payment: { count: vi.fn() },
     inventoryMovement: { count: vi.fn() },
     expense: { count: vi.fn() },
     cashClosure: { count: vi.fn() },
     purchase: { count: vi.fn() },
     refreshToken: { deleteMany: vi.fn() },
-    userRole: { deleteMany: vi.fn() },
     idempotencyKey: { updateMany: vi.fn() },
   };
   const prisma = { $transaction: vi.fn() };
   const service = new UsersService(prisma as unknown as PrismaService);
+
   beforeEach(() => {
     vi.resetAllMocks();
     prisma.$transaction.mockImplementation(
@@ -166,31 +194,28 @@ describe('UsersService.deleteUser', () => {
     );
     tx.user.findUnique.mockResolvedValue({
       id: 'target',
-      isActive: true,
-      roles: [{ role: seller }],
+      activo: true,
+      rol: seller,
     });
     tx.user.count.mockResolvedValue(2);
     tx.quote.count.mockResolvedValue(0);
     tx.sale.count.mockResolvedValue(0);
-    tx.payment.count.mockResolvedValue(0);
     tx.inventoryMovement.count.mockResolvedValue(0);
     tx.expense.count.mockResolvedValue(0);
     tx.cashClosure.count.mockResolvedValue(0);
     tx.purchase.count.mockResolvedValue(0);
   });
+
   it('deletes sessions, assignments and user in one transaction', async () => {
     await expect(
       service.deleteUser('target', 'requester'),
     ).resolves.toBeUndefined();
     expect(tx.refreshToken.deleteMany).toHaveBeenCalledWith({
-      where: { userId: 'target' },
-    });
-    expect(tx.userRole.deleteMany).toHaveBeenCalledWith({
-      where: { userId: 'target' },
+      where: { usuarioId: 'target' },
     });
     expect(tx.idempotencyKey.updateMany).toHaveBeenCalledWith({
-      where: { userId: 'target' },
-      data: { userId: null },
+      where: { usuarioId: 'target' },
+      data: { usuarioId: null },
     });
     expect(tx.user.delete).toHaveBeenCalledWith({
       where: { id: 'target' },
@@ -199,6 +224,7 @@ describe('UsersService.deleteUser', () => {
       isolationLevel: 'Serializable',
     });
   });
+
   it('returns 404 before mutations for a missing user', async () => {
     tx.user.findUnique.mockResolvedValue(null);
     await expect(
@@ -206,17 +232,19 @@ describe('UsersService.deleteUser', () => {
     ).rejects.toMatchObject({ status: 404 });
     expect(tx.user.delete).not.toHaveBeenCalled();
   });
+
   it('returns 400 for self-deletion without touching the database', async () => {
     await expect(service.deleteUser('same', 'same')).rejects.toMatchObject({
       status: 400,
     });
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
+
   it('returns 409 for the last active ADMIN', async () => {
     tx.user.findUnique.mockResolvedValue({
       id: 'target',
-      isActive: true,
-      roles: [{ role: admin }],
+      activo: true,
+      rol: admin,
     });
     tx.user.count.mockResolvedValue(1);
     await expect(
@@ -227,10 +255,10 @@ describe('UsersService.deleteUser', () => {
     });
     expect(tx.user.delete).not.toHaveBeenCalled();
   });
+
   it.each([
     ['quote'],
     ['sale'],
-    ['payment'],
     ['inventoryMovement'],
     ['expense'],
     ['cashClosure'],
@@ -246,16 +274,17 @@ describe('UsersService.deleteUser', () => {
     expect(tx.user.delete).not.toHaveBeenCalled();
     expect(tx.refreshToken.deleteMany).not.toHaveBeenCalled();
   });
+
   it('returns 409 when the user cancelled sales, keeping who cancelled', async () => {
     tx.sale.count.mockImplementation(
-      ({ where }: { where: { cancelledById?: string } }) =>
-        Promise.resolve(where.cancelledById ? 1 : 0),
+      ({ where }: { where: { canceladoPorId?: string; creadoPorId?: string } }) =>
+        Promise.resolve(where.canceladoPorId ? 1 : 0),
     );
     await expect(
       service.deleteUser('target', 'requester'),
     ).rejects.toMatchObject({ status: 409 });
     expect(tx.sale.count).toHaveBeenCalledWith({
-      where: { cancelledById: 'target' },
+      where: { canceladoPorId: 'target' },
     });
     expect(tx.user.delete).not.toHaveBeenCalled();
   });

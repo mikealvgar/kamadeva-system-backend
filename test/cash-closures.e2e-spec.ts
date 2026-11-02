@@ -8,18 +8,68 @@ import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { Prisma } from '../src/generated/prisma/client.js';
 import { setupApp } from '../src/setup-app.js';
-import type {
-  CashClosureDto,
-  CashClosurePageDto,
-  CashClosureSummaryDto,
-} from '../src/cash-closures/dto/cash-closure.dto.js';
 import type { SaleDetailDto } from '../src/sales/dto/sale.dto.js';
-import type {
-  ExpenseDto,
-  ExpensePageDto,
-} from '../src/expenses/dto/expense.dto.js';
 
-const base = '/api/cash-closures';
+interface CashClosureSummaryResponse {
+  corteAnteriorId: string | null;
+  inicioPeriodo: string | null;
+  fechaGeneracion: string;
+  fondoInicial: string;
+  sales: {
+    count: number;
+    cash: string;
+    card: string;
+    transfer: string;
+    other: string;
+    total: string;
+  };
+  refunds: { cash: string; total: string };
+  expenses: { count: number; cash: string; total: string };
+  efectivoEsperado: string;
+}
+
+interface CashClosureResponse {
+  id: string;
+  corteAnteriorId: string | null;
+  inicioPeriodo: string | null;
+  fechaCierre: string;
+  cerradoPor: { id: string; nombre: string };
+  fondoInicial: string;
+  sales: {
+    count: number;
+    cash: string;
+    card: string;
+    transfer: string;
+    other: string;
+    total: string;
+  };
+  refunds: { cash: string; total: string };
+  expenses: { count: number; cash: string; total: string };
+  ajustes: Array<{
+    id: string;
+    tipo: 'INCOME' | 'WITHDRAWAL';
+    monto: string;
+    descripcion: string;
+  }>;
+  ajustesEntrada: string;
+  ajustesSalida: string;
+  efectivoEsperado: string;
+  denominaciones: Record<string, number>;
+  efectivoContado: string;
+  diferencia: string;
+  fondoDejado: string;
+  efectivoRetirado: string;
+  notas: string | null;
+}
+
+interface CashClosurePageResponse {
+  datos: CashClosureResponse[];
+  total: number;
+  pagina: number;
+  limite: number;
+}
+
+const base = '/api/cortes-caja';
 
 describe('Cash closures HTTP + PostgreSQL', () => {
   let app: INestApplication<Server> | undefined;
@@ -48,11 +98,11 @@ describe('Cash closures HTTP + PostgreSQL', () => {
     ] as const) {
       const user = await prisma.user.create({
         data: {
-          name: `Closures ${key}`,
+          nombre: `Closures ${key}`,
           email: `${randomUUID()}@closures.test`,
           passwordHash: 'unused-test-hash',
           ...(role
-            ? { roles: { create: { role: { connect: { name: role } } } } }
+            ? { rol: { connect: { nombre: role } } }
             : {}),
         },
       });
@@ -62,20 +112,31 @@ describe('Cash closures HTTP + PostgreSQL', () => {
     }
     categoryId = (
       await prisma.category.create({
-        data: { name: 'Cortes', slug: `closures-${randomUUID()}` },
+        data: { descripcion: `Closures ${randomUUID().slice(0, 8)}` },
       })
     ).id;
     productId = (
       await prisma.product.create({
-        data: { barcode: randomUUID(), name: 'Pieza', price: '50.00', categoryId },
+        data: {
+          codigoBarras: randomUUID().slice(0, 20),
+          nombre: 'Pieza',
+          precioVenta: '50.00',
+          precioCompra: '25.00',
+          categoriaId: categoryId,
+        },
       })
     ).id;
     await prisma.inventoryMovement.create({
-      data: { productId, type: 'PURCHASE_IN', quantityChange: 1000 },
+      data: {
+        productoId: productId,
+        tipo: 'ADJUSTMENT_IN',
+        cambioExistencias: 1000,
+        costoUnitario: '25.00',
+      },
     });
     expenseCategoryId = (
       await prisma.expenseCategory.create({
-        data: { name: `Cortes ${randomUUID().slice(0, 8)}` },
+        data: { nombre: `Cortes ${randomUUID().slice(0, 8)}` },
       })
     ).id;
   });
@@ -91,53 +152,49 @@ describe('Cash closures HTTP + PostgreSQL', () => {
       if (prisma) {
         const userIds = Object.values(users);
         const closures = await prisma.cashClosure.findMany({
-          where: { closedById: { in: userIds } },
+          where: { cerradoPorId: { in: userIds } },
           select: { id: true },
         });
         const closureIds = closures.map(({ id }) => id);
         // Unlink first so rows from other suites are left as they were.
-        await prisma.payment.updateMany({
-          where: { cashClosureId: { in: closureIds } },
-          data: { cashClosureId: null },
-        });
-        await prisma.payment.updateMany({
-          where: { refundClosureId: { in: closureIds } },
-          data: { refundClosureId: null },
+        await prisma.sale.updateMany({
+          where: { corteCajaId: { in: closureIds } },
+          data: { corteCajaId: null },
         });
         await prisma.expense.updateMany({
-          where: { cashClosureId: { in: closureIds } },
-          data: { cashClosureId: null },
+          where: { corteCajaId: { in: closureIds } },
+          data: { corteCajaId: null },
+        });
+        await prisma.cashClosureAdjustment.deleteMany({
+          where: { corteCajaId: { in: closureIds } },
         });
         // Delete the chain newest first (previousClosureId is RESTRICT).
         const ordered = await prisma.cashClosure.findMany({
           where: { id: { in: closureIds } },
-          orderBy: { closedAt: 'desc' },
+          orderBy: { fechaCierre: 'desc' },
           select: { id: true },
         });
         for (const { id } of ordered)
           await prisma.cashClosure.delete({ where: { id } });
         const sales = await prisma.sale.findMany({
-          where: { createdById: { in: userIds } },
+          where: { creadoPorId: { in: userIds } },
           select: { id: true },
         });
         const saleIds = sales.map(({ id }) => id);
-        await prisma.inventoryMovement.deleteMany({ where: { productId } });
+        await prisma.inventoryMovement.deleteMany({ where: { productoId: productId } });
         await prisma.idempotencyKey.deleteMany({
-          where: { userId: { in: userIds } },
+          where: { usuarioId: { in: userIds } },
         });
-        await prisma.payment.deleteMany({ where: { saleId: { in: saleIds } } });
+        await prisma.saleItem.deleteMany({ where: { ventaId: { in: saleIds } } });
         await prisma.sale.deleteMany({ where: { id: { in: saleIds } } });
         await prisma.expense.deleteMany({
-          where: { createdById: { in: userIds } },
+          where: { creadoPorId: { in: userIds } },
         });
         await prisma.expenseCategory.deleteMany({
           where: { id: expenseCategoryId },
         });
-        await prisma.product.deleteMany({ where: { categoryId } });
+        await prisma.product.deleteMany({ where: { categoriaId: categoryId } });
         await prisma.category.deleteMany({ where: { id: categoryId } });
-        await prisma.userRole.deleteMany({
-          where: { userId: { in: userIds } },
-        });
         await prisma.user.deleteMany({ where: { id: { in: userIds } } });
       }
     } finally {
@@ -145,28 +202,28 @@ describe('Cash closures HTTP + PostgreSQL', () => {
     }
   });
 
-  async function summary(): Promise<CashClosureSummaryDto> {
+  async function summary(): Promise<CashClosureSummaryResponse> {
     return (
       await http()
-        .get(`${base}/current-summary`)
+        .get(`${base}/resumen-actual`)
         .set('Authorization', tokens.seller)
         .expect(200)
-    ).body as CashClosureSummaryDto;
+    ).body as CashClosureSummaryResponse;
   }
 
   const close = (body: object, token: string = tokens.seller) =>
     http().post(base).set('Authorization', token).send(body);
 
   /** Closure counting `float` in $1 coins and leaving it all as float. */
-  async function baseline(float: number): Promise<CashClosureDto> {
-    const { previousClosureId } = await summary();
+  async function baseline(float: number): Promise<CashClosureResponse> {
+    const sum = await summary();
     return (
       await close({
-        previousClosureId,
+        previousClosureId: sum.corteAnteriorId,
         denominations: { '1': float },
         floatLeft: float,
       }).expect(201)
-    ).body as CashClosureDto;
+    ).body as CashClosureResponse;
   }
 
   async function sell(
@@ -175,7 +232,7 @@ describe('Cash closures HTTP + PostgreSQL', () => {
   ): Promise<SaleDetailDto> {
     return (
       await http()
-        .post('/api/sales')
+        .post('/api/ventas')
         .set('Authorization', tokens.seller)
         .set('Idempotency-Key', randomUUID())
         .send({
@@ -188,7 +245,7 @@ describe('Cash closures HTTP + PostgreSQL', () => {
 
   const cancel = (saleId: string) =>
     http()
-      .post(`/api/sales/${saleId}/cancel`)
+      .post(`/api/ventas/${saleId}/cancelar`)
       .set('Authorization', tokens.seller)
       .send({ reason: 'Prueba' })
       .expect(200);
@@ -196,10 +253,10 @@ describe('Cash closures HTTP + PostgreSQL', () => {
   async function expense(
     amount: number,
     deductFromCash: boolean,
-  ): Promise<ExpenseDto> {
+  ): Promise<{ id: string }> {
     return (
       await http()
-        .post('/api/expenses')
+        .post('/api/gastos')
         .set('Authorization', tokens.seller)
         .send({
           concept: 'Gasto',
@@ -208,7 +265,7 @@ describe('Cash closures HTTP + PostgreSQL', () => {
           deductFromCash,
         })
         .expect(201)
-    ).body as ExpenseDto;
+    ).body as { id: string };
   }
 
   it('closes with the full formula computed by the server', async () => {
@@ -222,10 +279,10 @@ describe('Cash closures HTTP + PostgreSQL', () => {
 
     const pending = await summary();
     expect(pending).toEqual({
-      previousClosureId: opening.id,
-      periodStart: opening.closedAt,
-      generatedAt: expect.any(String),
-      openingFloat: '500.00',
+      corteAnteriorId: opening.id,
+      inicioPeriodo: opening.fechaCierre,
+      fechaGeneracion: expect.any(String),
+      fondoInicial: '500.00',
       sales: {
         count: 3,
         cash: '150.00',
@@ -237,7 +294,7 @@ describe('Cash closures HTTP + PostgreSQL', () => {
       refunds: { cash: '50.00', total: '50.00' },
       expenses: { count: 2, cash: '30.00', total: '50.00' },
       // 500 + 150 − 50 − 30
-      expectedCash: '570.00',
+      efectivoEsperado: '570.00',
     });
 
     const response = await close({
@@ -250,36 +307,36 @@ describe('Cash closures HTTP + PostgreSQL', () => {
       floatLeft: 300,
       notes: ' Faltaron 5 pesos ',
     }).expect(201);
-    const closure = response.body as CashClosureDto;
+    const closure = response.body as CashClosureResponse;
     expect(closure).toEqual({
       id: expect.any(String),
-      previousClosureId: opening.id,
-      periodStart: opening.closedAt,
-      closedAt: expect.any(String),
-      closedBy: { id: users.seller, name: 'Closures seller' },
-      openingFloat: '500.00',
+      corteAnteriorId: opening.id,
+      inicioPeriodo: opening.fechaCierre,
+      fechaCierre: expect.any(String),
+      cerradoPor: { id: users.seller, nombre: 'Closures seller' },
+      fondoInicial: '500.00',
       sales: pending.sales,
       refunds: pending.refunds,
       expenses: pending.expenses,
-      adjustments: [
+      ajustes: [
         {
           id: expect.any(String),
-          type: 'INCOME',
-          amount: '10.00',
-          description: 'Venta no registrada',
+          tipo: 'INCOME',
+          monto: '10.00',
+          descripcion: 'Venta no registrada',
         },
         {
           id: expect.any(String),
-          type: 'WITHDRAWAL',
-          amount: '5.00',
-          description: 'Pago a mensajero',
+          tipo: 'WITHDRAWAL',
+          monto: '5.00',
+          descripcion: 'Pago a mensajero',
         },
       ],
-      adjustmentsIn: '10.00',
-      adjustmentsOut: '5.00',
+      ajustesEntrada: '10.00',
+      ajustesSalida: '5.00',
       // 570 + 10 − 5
-      expectedCash: '575.00',
-      denominations: {
+      efectivoEsperado: '575.00',
+      denominaciones: {
         '1000': 0,
         '500': 1,
         '200': 0,
@@ -292,11 +349,11 @@ describe('Cash closures HTTP + PostgreSQL', () => {
         '1': 0,
         '0.5': 0,
       },
-      countedCash: '570.00',
-      difference: '-5.00',
-      floatLeft: '300.00',
-      cashWithdrawn: '270.00',
-      notes: 'Faltaron 5 pesos',
+      efectivoContado: '570.00',
+      diferencia: '-5.00',
+      fondoDejado: '300.00',
+      efectivoRetirado: '270.00',
+      notas: 'Faltaron 5 pesos',
     });
     await http()
       .get(`${base}/${closure.id}`)
@@ -305,12 +362,12 @@ describe('Cash closures HTTP + PostgreSQL', () => {
 
     // Everything was counted once: nothing is pending and the float carries over.
     expect(await summary()).toMatchObject({
-      previousClosureId: closure.id,
-      openingFloat: '300.00',
+      corteAnteriorId: closure.id,
+      fondoInicial: '300.00',
       sales: { count: 0, total: '0.00' },
       refunds: { total: '0.00' },
       expenses: { count: 0 },
-      expectedCash: '300.00',
+      efectivoEsperado: '300.00',
     });
   });
 
@@ -324,20 +381,19 @@ describe('Cash closures HTTP + PostgreSQL', () => {
     expect(next).toMatchObject({
       sales: { count: 1, cash: '50.00' },
       refunds: { cash: '100.00' },
-      expectedCash: '-50.00',
+      efectivoEsperado: '-50.00',
     });
-    const payment = await prisma.payment.findFirstOrThrow({
-      where: { saleId: earlier.id },
+    const sale = await prisma.sale.findUniqueOrThrow({
+      where: { id: earlier.id },
     });
-    expect(payment).toMatchObject({
-      status: 'REFUNDED',
-      cashClosureId: first.id,
-      refundClosureId: null,
+    expect(sale).toMatchObject({
+      estado: 'CANCELLED',
+      corteCajaId: first.id,
     });
   });
 
   it('counts a sale committed while the closure is running exactly once', async () => {
-    const { previousClosureId } = await summary();
+    const { corteAnteriorId } = await summary();
     const transaction = prisma.$transaction.bind(prisma);
     let injected = false;
     const spy = vi.spyOn(prisma, '$transaction').mockImplementation((async (
@@ -359,11 +415,11 @@ describe('Cash closures HTTP + PostgreSQL', () => {
         }) as never);
         return operation(tx);
       }, options)) as typeof prisma.$transaction);
-    let closure: CashClosureDto;
+    let closure: CashClosureResponse;
     try {
       closure = (
-        await close({ previousClosureId, denominations: {}, floatLeft: 0 })
-      ).body as CashClosureDto;
+        await close({ previousClosureId: corteAnteriorId, denominations: {}, floatLeft: 0 })
+      ).body as CashClosureResponse;
     } finally {
       spy.mockRestore();
     }
@@ -375,8 +431,8 @@ describe('Cash closures HTTP + PostgreSQL', () => {
   });
 
   it('returns 409 for a stale summary and accepts only one of two concurrent closures', async () => {
-    const { previousClosureId } = await summary();
-    const body = { previousClosureId, denominations: {}, floatLeft: 0 };
+    const { corteAnteriorId } = await summary();
+    const body = { previousClosureId: corteAnteriorId, denominations: {}, floatLeft: 0 };
     const responses = await Promise.all([close(body), close(body)]);
     expect(responses.map(({ status }) => status).sort()).toEqual([201, 409]);
     const conflict = responses.find(({ status }) => status === 409)!;
@@ -396,37 +452,37 @@ describe('Cash closures HTTP + PostgreSQL', () => {
     const list = async (query: Record<string, string>) =>
       (
         await http()
-          .get('/api/expenses')
+          .get('/api/gastos')
           .query(query)
           .set('Authorization', tokens.seller)
           .expect(200)
-      ).body as ExpensePageDto;
-    const inClosure = await list({ cashClosureId: closure.id });
-    expect(inClosure.data.map(({ id }) => id)).toEqual([counted.id]);
-    expect(inClosure.data[0]!.cashClosureId).toBe(closure.id);
+      ).body as { datos: Array<{ id: string; corteCajaId: string | null }> };
+    const inClosure = await list({ corteCajaId: closure.id });
+    expect(inClosure.datos.map(({ id }) => id)).toEqual([counted.id]);
+    expect(inClosure.datos[0]!.corteCajaId).toBe(closure.id);
     const open = await list({
-      pendingClosure: 'true',
+      cortePendiente: 'true',
       createdById: users.seller,
     });
-    expect(open.data.map(({ id }) => id)).toEqual([pending.id]);
+    expect(open.datos.map(({ id }) => id)).toEqual([pending.id]);
 
     const blocked = await http()
-      .delete(`/api/expenses/${counted.id}`)
+      .delete(`/api/gastos/${counted.id}`)
       .set('Authorization', tokens.admin)
       .expect(409);
     expect(blocked.body.message).toBe(
       'El gasto ya está incluido en un corte de caja y no puede eliminarse',
     );
     await http()
-      .delete(`/api/expenses/${pending.id}`)
+      .delete(`/api/gastos/${pending.id}`)
       .set('Authorization', tokens.admin)
       .expect(204);
   });
 
   it('validates the cashier input without writing', async () => {
-    const { previousClosureId } = await summary();
+    const { corteAnteriorId } = await summary();
     const valid = {
-      previousClosureId,
+      previousClosureId: corteAnteriorId,
       denominations: { '100': 1 },
       floatLeft: 0,
     };
@@ -476,22 +532,22 @@ describe('Cash closures HTTP + PostgreSQL', () => {
     const page = (
       await http()
         .get(base)
-        .query({ startDate: first.closedAt, pageSize: 1 })
+        .query({ startDate: first.fechaCierre, pageSize: 1 })
         .set('Authorization', tokens.seller)
         .expect(200)
-    ).body as CashClosurePageDto;
-    expect(page).toMatchObject({ total: 2, page: 1, pageSize: 1 });
-    expect(page.data.map(({ id }) => id)).toEqual([second.id]);
+    ).body as CashClosurePageResponse;
+    expect(page).toMatchObject({ total: 2, pagina: 1, limite: 1 });
+    expect(page.datos.map(({ id }) => id)).toEqual([second.id]);
     const only = (
       await http()
         .get(base)
-        .query({ startDate: first.closedAt, endDate: first.closedAt })
+        .query({ startDate: first.fechaCierre, endDate: first.fechaCierre })
         .set('Authorization', tokens.seller)
         .expect(200)
-    ).body as CashClosurePageDto;
-    expect(only.data.map(({ id }) => id)).toEqual([first.id]);
+    ).body as CashClosurePageResponse;
+    expect(only.datos.map(({ id }) => id)).toEqual([first.id]);
     for (const query of [
-      { startDate: second.closedAt, endDate: first.closedAt },
+      { startDate: second.fechaCierre, endDate: first.fechaCierre },
       { page: 0 },
       { pageSize: 101 },
       { unknown: 1 },
@@ -513,10 +569,10 @@ describe('Cash closures HTTP + PostgreSQL', () => {
   });
 
   it('requires authentication and a role, and protects users with closures', async () => {
-    await http().get(`${base}/current-summary`).expect(401);
+    await http().get(`${base}/resumen-actual`).expect(401);
     await http().post(base).send({}).expect(401);
     await http()
-      .get(`${base}/current-summary`)
+      .get(`${base}/resumen-actual`)
       .set('Authorization', tokens.noRole)
       .expect(403);
     await close(
@@ -524,7 +580,7 @@ describe('Cash closures HTTP + PostgreSQL', () => {
       tokens.noRole,
     ).expect(403);
     await http()
-      .delete(`/api/users/${users.seller}`)
+      .delete(`/api/usuarios/${users.seller}`)
       .set('Authorization', tokens.admin)
       .expect(409);
   });

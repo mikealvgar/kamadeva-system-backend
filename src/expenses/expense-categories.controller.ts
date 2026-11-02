@@ -33,13 +33,13 @@ import { ListExpenseCategoriesDto } from './dto/list-expense-categories.dto.js';
 import { UpdateExpenseCategoryDto } from './dto/update-expense-category.dto.js';
 import { ExpenseCategoriesService } from './expense-categories.service.js';
 
-@ApiTags('expense-categories')
+@ApiTags('categorias-gastos')
 @ApiBearerAuth()
 @ApiUnauthorizedResponse({ description: 'Token inválido o usuario inactivo' })
 @ApiForbiddenResponse({ description: 'Permisos insuficientes' })
 @ApiBadRequestResponse({ description: 'Datos, query o UUID inválidos' })
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Controller('expense-categories')
+@Controller('categorias-gastos')
 export class ExpenseCategoriesController {
   constructor(private readonly categories: ExpenseCategoriesService) {}
 

@@ -2,22 +2,28 @@ import { ApiProperty } from '@nestjs/swagger';
 
 export class SizeDto {
   @ApiProperty({ format: 'uuid' })
-  id: string;
+  id!: string;
 
   @ApiProperty({ example: 'M' })
-  name: string;
+  nombre!: string;
 
-  @ApiProperty({ example: 20 })
-  sortOrder: number;
+  @ApiProperty({ example: 'M', required: false })
+  name?: string;
 
   @ApiProperty({ example: true })
-  isActive: boolean;
+  activo!: boolean;
+
+  @ApiProperty({ example: true, required: false })
+  isActive?: boolean;
 }
 
 export class SizeRefDto {
   @ApiProperty({ format: 'uuid' })
-  id: string;
+  id!: string;
 
   @ApiProperty({ example: 'M' })
-  name: string;
+  nombre!: string;
+
+  @ApiProperty({ example: 'M', required: false })
+  name?: string;
 }

@@ -3,7 +3,9 @@ import {
   IsByteLength,
   IsEmail,
   IsNotEmpty,
+  IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   MinLength,
 } from 'class-validator';
@@ -19,7 +21,7 @@ export class RegisterDto {
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim() : value,
   )
-  name: string;
+  name!: string;
 
   @ApiProperty({
     example: 'juan@kamadeva.com',
@@ -29,7 +31,7 @@ export class RegisterDto {
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim().toLowerCase() : value,
   )
-  email: string;
+  email!: string;
 
   @ApiProperty({
     example: 'Password123!',
@@ -38,5 +40,25 @@ export class RegisterDto {
   @IsString()
   @MinLength(8)
   @IsByteLength(0, 72)
-  password: string;
+  password!: string;
+
+  @ApiProperty({
+    example: '8112345678',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  telefono?: string;
+
+  @ApiProperty({
+    format: 'uuid',
+    required: false,
+  })
+  @IsOptional()
+  @IsUUID()
+  rolId?: string;
 }

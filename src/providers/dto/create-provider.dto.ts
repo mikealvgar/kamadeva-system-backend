@@ -3,6 +3,7 @@ import { Transform } from 'class-transformer';
 import {
   IsEmail,
   IsNotEmpty,
+  IsOptional,
   IsString,
   Matches,
   MaxLength,
@@ -10,7 +11,6 @@ import {
 } from 'class-validator';
 import { PHONE_PATTERN } from '../../common/validation/patterns.js';
 
-/** Trim; blank optional values become null. */
 const optionalText = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() || null : value;
 const present = (_object: unknown, value: unknown): boolean =>
@@ -24,7 +24,7 @@ export class CreateProviderDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(150)
-  nombre: string;
+  nombre!: string;
 
   @ApiPropertyOptional({
     type: String,
@@ -51,7 +51,33 @@ export class CreateProviderDto {
   @ValidateIf(present)
   @IsEmail()
   @MaxLength(150)
+  correo?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    format: 'email',
+    maxLength: 150,
+  })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toLowerCase() || null : value,
+  )
+  @ValidateIf(present)
+  @IsEmail()
+  @MaxLength(150)
   email?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    maxLength: 100,
+    example: 'Laura Gómez',
+  })
+  @Transform(optionalText)
+  @ValidateIf(present)
+  @IsString()
+  @MaxLength(100)
+  nombreContacto?: string | null;
 
   @ApiPropertyOptional({
     type: String,
@@ -71,4 +97,8 @@ export class CreateProviderDto {
   @IsString()
   @MaxLength(255)
   direccion?: string | null;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  activo?: boolean;
 }

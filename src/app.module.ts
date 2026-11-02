@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { PrismaModule } from './prisma/prisma.module.js';
@@ -21,6 +22,7 @@ import { DashboardModule } from './dashboard/dashboard.module.js';
 import { BusinessConfigModule } from './business-config/business-config.module.js';
 import { ProvidersModule } from './providers/providers.module.js';
 import { PurchasesModule } from './purchases/purchases.module.js';
+import { MaintenanceModule } from './maintenance/maintenance.module.js';
 
 @Module({
   imports: [
@@ -29,6 +31,7 @@ import { PurchasesModule } from './purchases/purchases.module.js';
       validate: validateEnvironment,
     }),
     EventEmitterModule.forRoot(),
+    ScheduleModule.forRoot(),
     PrismaModule,
     UsersModule,
     AuthModule,
@@ -46,6 +49,7 @@ import { PurchasesModule } from './purchases/purchases.module.js';
     BusinessConfigModule,
     ProvidersModule,
     PurchasesModule,
+    MaintenanceModule,
   ],
   controllers: [AppController],
   providers: [AppService],

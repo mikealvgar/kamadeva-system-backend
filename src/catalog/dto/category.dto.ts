@@ -2,17 +2,23 @@ import { ApiProperty } from '@nestjs/swagger';
 
 export class CategoryDto {
   @ApiProperty({ format: 'uuid' })
-  id: string;
+  id!: string;
 
-  @ApiProperty({ example: 'Anillos' })
-  name: string;
+  @ApiProperty({ example: 'ANILLOS' })
+  descripcion!: string;
 
-  @ApiProperty({ example: 'anillos' })
-  slug: string;
-
-  @ApiProperty({ type: String, nullable: true })
-  description: string | null;
+  @ApiProperty({ example: 'ANILLOS', required: false })
+  name?: string;
 
   @ApiProperty({ example: true })
-  isActive: boolean;
+  activo!: boolean;
+
+  @ApiProperty({ example: true, required: false })
+  isActive?: boolean;
+
+  @ApiProperty({ format: 'date-time', required: false })
+  fechaCreacion?: string;
+
+  @ApiProperty({ format: 'date-time', required: false })
+  fechaActualizacion?: string;
 }

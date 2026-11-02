@@ -7,8 +7,7 @@ const d = (value: string | number) => new Prisma.Decimal(value);
 
 describe('DashboardService', () => {
   const prisma = {
-    sale: { aggregate: vi.fn() },
-    payment: { groupBy: vi.fn() },
+    sale: { aggregate: vi.fn(), groupBy: vi.fn() },
     expense: { aggregate: vi.fn() },
     product: { count: vi.fn(), findMany: vi.fn() },
     inventoryMovement: { groupBy: vi.fn() },
@@ -28,51 +27,48 @@ describe('DashboardService', () => {
       _sum: { total: d('1000.00') },
       _count: { _all: 3 },
     });
-    prisma.payment.groupBy.mockResolvedValue([
-      { method: 'CASH', _sum: { amount: d('700.00') } },
-      { method: 'CARD', _sum: { amount: d('300.00') } },
+    prisma.sale.groupBy.mockResolvedValue([
+      { metodoPago: 'CASH', _sum: { total: d('700.00') } },
+      { metodoPago: 'CARD', _sum: { total: d('300.00') } },
     ]);
     prisma.expense.aggregate.mockImplementation(
-      ({ where }: { where: { deductFromCash?: boolean } }) =>
+      ({ where }: { where: { descontarDeCaja?: boolean } }) =>
         Promise.resolve({
-          _sum: { amount: where.deductFromCash ? d(50) : d(80) },
+          _sum: { monto: where.descontarDeCaja ? d(50) : d(80) },
         }),
     );
     prisma.product.count.mockResolvedValue(4);
     prisma.product.findMany.mockResolvedValue([
-      { id: 'a', minStock: d(5) },
-      { id: 'b', minStock: d(5) },
-      { id: 'c', minStock: d(0) },
+      { id: 'a', existenciaMinima: d(5) },
+      { id: 'b', existenciaMinima: d(5) },
+      { id: 'c', existenciaMinima: d(0) },
     ]);
     prisma.inventoryMovement.groupBy.mockResolvedValue([
-      { productId: 'a', _sum: { quantityChange: d(5) } }, // equal → low
-      { productId: 'b', _sum: { quantityChange: d('5.001') } },
+      { productoId: 'a', _sum: { cambioExistencias: d(5) } }, // equal → low
+      { productoId: 'b', _sum: { cambioExistencias: d('5.001') } },
       // c has no movements: 0 ≤ 0 → low
     ]);
     prisma.saleItem.findMany.mockResolvedValue([
       // Snapshot wins over current cost.
       {
-        quantity: d(2),
+        cantidad: d(2),
         total: d('580.00'),
-        tax: d('80.00'),
-        unitCost: d('100.00'),
-        product: { cost: d('999.00') },
+        costoUnitario: d('100.00'),
+        producto: { precioCompra: d('999.00') },
       },
       // No snapshot: falls back to current cost.
       {
-        quantity: d('1.5'),
+        cantidad: d('1.5'),
         total: d('300.00'),
-        tax: d(0),
-        unitCost: null,
-        product: { cost: d('40.00') },
+        costoUnitario: null,
+        producto: { precioCompra: d('40.00') },
       },
       // No cost at all.
       {
-        quantity: d(1),
+        cantidad: d(1),
         total: d('120.00'),
-        tax: d(0),
-        unitCost: null,
-        product: { cost: null },
+        costoUnitario: null,
+        producto: { precioCompra: null },
       },
     ]);
   });
@@ -96,11 +92,10 @@ describe('DashboardService', () => {
       inventory: { activeProducts: 4, lowStock: 2 },
       expensesToday: { total: '80.00', fromCash: '50.00' },
       estimatedProfitToday: {
-        netSales: '920.00',
-        // 2 × 100 + 1.5 × 40 + 0
+        netSales: '1000.00',
         costOfGoods: '260.00',
         expenses: '80.00',
-        profit: '580.00',
+        profit: '660.00',
         costIncomplete: true,
       },
     });
@@ -110,11 +105,11 @@ describe('DashboardService', () => {
     };
     expect(prisma.sale.aggregate).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { status: 'COMPLETED', createdAt: range },
+        where: { estado: 'COMPLETED', fechaCreacion: range },
       }),
     );
     expect(prisma.expense.aggregate).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { spentAt: range } }),
+      expect.objectContaining({ where: { fechaGasto: range } }),
     );
   });
 
@@ -129,7 +124,7 @@ describe('DashboardService', () => {
       _sum: { total: null },
       _count: { _all: 0 },
     });
-    prisma.payment.groupBy.mockResolvedValue([]);
+    prisma.sale.groupBy.mockResolvedValue([]);
     prisma.product.findMany.mockResolvedValue([]);
     const result = await service.summary(false, now);
     expect(result.salesToday).toMatchObject({

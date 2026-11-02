@@ -2,11 +2,17 @@ import { ApiProperty } from '@nestjs/swagger';
 
 export class ExpenseCategoryDto {
   @ApiProperty({ format: 'uuid' })
-  id: string;
+  id!: string;
 
   @ApiProperty({ example: 'Servicios' })
-  name: string;
+  nombre!: string;
+
+  @ApiProperty({ example: 'Servicios', required: false })
+  name?: string;
 
   @ApiProperty({ example: true })
-  isActive: boolean;
+  activo!: boolean;
+
+  @ApiProperty({ example: true, required: false })
+  isActive?: boolean;
 }

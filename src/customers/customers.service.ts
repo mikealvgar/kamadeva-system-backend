@@ -13,15 +13,16 @@ import type { CreateCustomerDto } from './dto/create-customer.dto.js';
 import type { UpdateCustomerDto } from './dto/update-customer.dto.js';
 import type { ListCustomersDto } from './dto/list-customers.dto.js';
 
-export const DEFAULT_CUSTOMER_NAME = 'Cliente default';
+export const DEFAULT_CUSTOMER_NAME = 'PÚBLICO EN GENERAL';
 const customerSelect = {
   id: true,
-  name: true,
-  phone: true,
-  email: true,
-  isActive: true,
-  createdAt: true,
-  updatedAt: true,
+  nombre: true,
+  telefono: true,
+  correo: true,
+  activo: true,
+  esPredeterminado: true,
+  fechaCreacion: true,
+  fechaActualizacion: true,
 } satisfies Prisma.CustomerSelect;
 type PublicCustomer = Prisma.CustomerGetPayload<{
   select: typeof customerSelect;
@@ -35,33 +36,31 @@ export class CustomersService implements OnModuleInit {
     await this.ensureDefaultCustomer();
   }
 
-  /** Also available to the future sales module when no customer is supplied. */
   async ensureDefaultCustomer(): Promise<CustomerDto> {
     const customer = await serializableTransaction(this.prisma, async (tx) => {
-      // Persist identity across edits; serializable retries prevent concurrent defaults.
       const defaultCustomer = await tx.customer.findFirst({
-        where: { isDefault: true },
+        where: { esPredeterminado: true },
         select: customerSelect,
       });
       if (defaultCustomer) return defaultCustomer;
       const existing = await tx.customer.findFirst({
-        where: { name: DEFAULT_CUSTOMER_NAME },
-        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        where: { nombre: DEFAULT_CUSTOMER_NAME },
+        orderBy: [{ fechaCreacion: 'asc' }, { id: 'asc' }],
         select: customerSelect,
       });
       if (existing)
         return tx.customer.update({
           where: { id: existing.id },
-          data: { isDefault: true },
+          data: { esPredeterminado: true },
           select: customerSelect,
         });
       return tx.customer.create({
         data: {
-          name: DEFAULT_CUSTOMER_NAME,
-          phone: null,
-          email: null,
-          isActive: true,
-          isDefault: true,
+          nombre: DEFAULT_CUSTOMER_NAME,
+          telefono: null,
+          correo: null,
+          activo: true,
+          esPredeterminado: true,
         },
         select: customerSelect,
       });
@@ -70,14 +69,20 @@ export class CustomersService implements OnModuleInit {
   }
 
   async create(dto: CreateCustomerDto): Promise<CustomerDto> {
-    const name = dto.name.trim();
+    const rawNombre = dto.nombre ?? dto.name;
+    if (!rawNombre || !rawNombre.trim()) {
+      throw new BadRequestException('El nombre del cliente es obligatorio');
+    }
+    const nombre = rawNombre.trim();
+    const telefono = (dto.telefono ?? dto.phone)?.trim() || null;
+    const correo = (dto.correo ?? dto.email)?.trim().toLowerCase() || null;
     try {
       return this.toDto(
         await this.prisma.customer.create({
           data: {
-            name,
-            phone: dto.phone?.trim() || null,
-            email: dto.email?.trim().toLowerCase() || null,
+            nombre,
+            telefono,
+            correo,
           },
           select: customerSelect,
         }),
@@ -90,20 +95,20 @@ export class CustomersService implements OnModuleInit {
   async findAll(query: ListCustomersDto = {}): Promise<CustomerDto[]> {
     const search = query.search?.trim();
     const where: Prisma.CustomerWhereInput = {
-      ...(query.includeInactive === 'true' ? {} : { isActive: true }),
+      ...(query.includeInactive === 'true' ? {} : { activo: true }),
       ...(search
         ? {
             OR: [
-              { name: { contains: search, mode: 'insensitive' as const } },
-              { email: { contains: search, mode: 'insensitive' as const } },
-              { phone: { contains: search, mode: 'insensitive' as const } },
+              { nombre: { contains: search, mode: 'insensitive' as const } },
+              { correo: { contains: search, mode: 'insensitive' as const } },
+              { telefono: { contains: search, mode: 'insensitive' as const } },
             ],
           }
         : {}),
     };
     const customers = await this.prisma.customer.findMany({
       where,
-      orderBy: { name: 'asc' },
+      orderBy: { nombre: 'asc' },
       select: customerSelect,
     });
     return customers.map((customer) => this.toDto(customer));
@@ -123,11 +128,25 @@ export class CustomersService implements OnModuleInit {
       throw new BadRequestException('Debe enviar al menos un campo');
     }
     const data: Prisma.CustomerUpdateInput = {};
-    if (dto.name !== undefined) data.name = dto.name.trim();
-    if (dto.phone !== undefined) data.phone = dto.phone?.trim() || null;
-    if (dto.email !== undefined)
-      data.email = dto.email?.trim().toLowerCase() || null;
-    if (dto.isActive !== undefined) data.isActive = dto.isActive;
+    const nombre = dto.nombre !== undefined ? dto.nombre : dto.name;
+    if (nombre !== undefined) {
+      if (typeof nombre !== 'string' || !nombre.trim()) {
+        throw new BadRequestException('El nombre del cliente no puede estar vacío');
+      }
+      data.nombre = nombre.trim();
+    }
+    const telefono = dto.telefono !== undefined ? dto.telefono : dto.phone;
+    if (telefono !== undefined) data.telefono = telefono?.trim() || null;
+    const correo = dto.correo !== undefined ? dto.correo : dto.email;
+    if (correo !== undefined)
+      data.correo = correo?.trim().toLowerCase() || null;
+    const activo = dto.activo !== undefined ? dto.activo : dto.isActive;
+    if (activo !== undefined) {
+      if (typeof activo !== 'boolean') {
+        throw new BadRequestException('El estado activo debe ser un valor booleano');
+      }
+      data.activo = activo;
+    }
     try {
       return this.toDto(
         await this.prisma.customer.update({
@@ -144,14 +163,13 @@ export class CustomersService implements OnModuleInit {
   async delete(id: string): Promise<void> {
     const customer = await this.prisma.customer.findUnique({
       where: { id },
-      select: { isDefault: true },
+      select: { esPredeterminado: true },
     });
     if (!customer) throw new NotFoundException('Cliente inexistente');
-    if (customer.isDefault) {
+    if (customer.esPredeterminado) {
       throw new ConflictException('No se puede eliminar el cliente default');
     }
     try {
-      // Both foreign keys use RESTRICT, including concurrent quote/sale inserts.
       await this.prisma.customer.delete({
         where: { id },
         select: { id: true },
@@ -164,12 +182,19 @@ export class CustomersService implements OnModuleInit {
   private toDto(customer: PublicCustomer): CustomerDto {
     return {
       id: customer.id,
-      name: customer.name,
-      phone: customer.phone,
-      email: customer.email,
-      isActive: customer.isActive,
-      createdAt: customer.createdAt.toISOString(),
-      updatedAt: customer.updatedAt.toISOString(),
+      nombre: customer.nombre,
+      name: customer.nombre,
+      telefono: customer.telefono,
+      phone: customer.telefono,
+      correo: customer.correo,
+      email: customer.correo,
+      activo: customer.activo,
+      isActive: customer.activo,
+      esPredeterminado: customer.esPredeterminado,
+      fechaCreacion: customer.fechaCreacion.toISOString(),
+      fechaActualizacion: customer.fechaActualizacion.toISOString(),
+      createdAt: customer.fechaCreacion.toISOString(),
+      updatedAt: customer.fechaActualizacion.toISOString(),
     };
   }
 

@@ -15,23 +15,23 @@ import type { PurchaseDto, PurchasePageDto } from './dto/purchase.dto.js';
 
 const purchaseSelect = {
   id: true,
-  provider: { select: { id: true, name: true } },
-  receivedAt: true,
-  supplierFolio: true,
-  notes: true,
+  proveedor: { select: { id: true, nombre: true } },
+  fechaRecepcion: true,
+  folioProveedor: true,
+  notas: true,
   total: true,
-  createdById: true,
-  createdAt: true,
+  creadoPorId: true,
+  fechaCreacion: true,
   items: {
-    orderBy: { position: 'asc' },
+    orderBy: { posicion: 'asc' },
     select: {
       id: true,
-      productId: true,
-      productName: true,
-      barcode: true,
-      quantity: true,
-      unitCost: true,
-      lineSubtotal: true,
+      productoId: true,
+      nombreProducto: true,
+      codigoBarras: true,
+      cantidad: true,
+      costoUnitario: true,
+      subtotalRenglon: true,
     },
   },
 } satisfies Prisma.PurchaseSelect;
@@ -44,26 +44,26 @@ function toDto(purchase: PurchaseRecord): PurchaseDto {
   return {
     id: purchase.id,
     proveedor: {
-      id: purchase.provider.id,
-      nombre: purchase.provider.name,
+      id: purchase.proveedor.id,
+      nombre: purchase.proveedor.nombre,
     },
-    fechaRecepcion: purchase.receivedAt.toISOString(),
-    folioProveedor: purchase.supplierFolio,
-    notas: purchase.notes,
+    fechaRecepcion: purchase.fechaRecepcion.toISOString(),
+    folioProveedor: purchase.folioProveedor,
+    notas: purchase.notas,
     total: purchase.total.toFixed(2),
     productos: purchase.items.map((item) => ({
       id: item.id,
       producto: {
-        id: item.productId,
-        articulo: item.productName,
-        codigoBarras: item.barcode,
+        id: item.productoId,
+        articulo: item.nombreProducto,
+        codigoBarras: item.codigoBarras,
       },
-      cantidad: item.quantity.toFixed(3),
-      costoUnitario: item.unitCost.toFixed(2),
-      subtotal: item.lineSubtotal.toFixed(2),
+      cantidad: item.cantidad.toFixed(3),
+      costoUnitario: item.costoUnitario.toFixed(2),
+      subtotal: item.subtotalRenglon.toFixed(2),
     })),
-    creadoPorId: purchase.createdById,
-    createdAt: purchase.createdAt.toISOString(),
+    creadoPorId: purchase.creadoPorId,
+    createdAt: purchase.fechaCreacion.toISOString(),
   };
 }
 
@@ -72,7 +72,7 @@ export class PurchasesService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreatePurchaseDto, actorId: string): Promise<PurchaseDto> {
-    const receivedAt = dto.fechaRecepcion
+    const fechaRecepcion = dto.fechaRecepcion
       ? new Date(dto.fechaRecepcion)
       : new Date();
     const productIds = dto.productos.map(({ productoId }) => productoId);
@@ -83,20 +83,20 @@ export class PurchasesService {
         async (tx) => {
           const provider = await tx.provider.findUnique({
             where: { id: dto.proveedorId },
-            select: { id: true, isActive: true },
+            select: { id: true, activo: true },
           });
           if (!provider) throw new NotFoundException('Proveedor inexistente');
-          if (!provider.isActive)
+          if (!provider.activo)
             throw new ConflictException('El proveedor está inactivo');
 
           const products = await tx.product.findMany({
             where: { id: { in: productIds } },
             select: {
               id: true,
-              name: true,
-              barcode: true,
-              cost: true,
-              isActive: true,
+              nombre: true,
+              codigoBarras: true,
+              precioCompra: true,
+              activo: true,
             },
           });
           if (products.length !== productIds.length)
@@ -105,50 +105,50 @@ export class PurchasesService {
           const byId = new Map(
             products.map((product) => [product.id, product]),
           );
-          const lines = dto.productos.map((input, position) => {
+          const lines = dto.productos.map((input, posicion) => {
             const product = byId.get(input.productoId)!;
-            if (!product.isActive)
+            if (!product.activo)
               throw new ConflictException(
-                `El producto ${product.barcode} está inactivo`,
+                `El producto ${product.codigoBarras} está inactivo`,
               );
-            if (product.cost === null)
+            if (product.precioCompra === null)
               throw new BadRequestException(
-                `Configura el precio de compra del producto ${product.barcode} antes de registrarlo`,
+                `Configura el precio de compra del producto ${product.codigoBarras} antes de registrarlo`,
               );
 
             const quantity = new Quantity(input.cantidad);
-            const unitCost = new Money(product.cost);
+            const unitCost = new Money(product.precioCompra);
             const lineSubtotal = unitCost.times(quantity);
             return {
-              position,
+              posicion,
               product,
-              quantity: quantity.toDecimal(),
-              unitCost: unitCost.toDecimal(),
-              lineSubtotal: lineSubtotal.toDecimal(),
+              cantidad: quantity.toDecimal(),
+              costoUnitario: unitCost.toDecimal(),
+              subtotalRenglon: lineSubtotal.toDecimal(),
             };
           });
           const total = lines.reduce(
-            (sum, line) => sum.plus(new Money(line.lineSubtotal)),
+            (sum, line) => sum.plus(new Money(line.subtotalRenglon)),
             Money.zero(),
           );
 
           const created = await tx.purchase.create({
             data: {
-              provider: { connect: { id: provider.id } },
-              createdBy: { connect: { id: actorId } },
-              receivedAt,
-              supplierFolio: dto.folioProveedor?.trim() || null,
-              notes: dto.notas?.trim() || null,
+              proveedorId: provider.id,
+              creadoPorId: actorId,
+              fechaRecepcion,
+              folioProveedor: dto.folioProveedor?.trim() || null,
+              notas: dto.notas?.trim() || null,
               total: total.toDecimal(),
               items: {
                 create: lines.map((line) => ({
-                  position: line.position,
-                  product: { connect: { id: line.product.id } },
-                  productName: line.product.name,
-                  barcode: line.product.barcode,
-                  quantity: line.quantity,
-                  unitCost: line.unitCost,
-                  lineSubtotal: line.lineSubtotal,
+                  posicion: line.posicion,
+                  productoId: line.product.id,
+                  nombreProducto: line.product.nombre,
+                  codigoBarras: line.product.codigoBarras,
+                  cantidad: line.cantidad,
+                  costoUnitario: line.costoUnitario,
+                  subtotalRenglon: line.subtotalRenglon,
                 })),
               },
             },
@@ -157,15 +157,15 @@ export class PurchasesService {
 
           await tx.inventoryMovement.createMany({
             data: lines.map((line) => ({
-              productId: line.product.id,
-              type: 'PURCHASE_IN',
-              quantityChange: line.quantity,
-              unitCost: line.unitCost,
-              referenceType: 'PURCHASE',
-              referenceId: created.id,
-              createdById: actorId,
-              notes: created.supplierFolio
-                ? `Compra recibida: ${created.supplierFolio}`
+              productoId: line.product.id,
+              tipo: 'PURCHASE_IN',
+              cambioExistencias: line.cantidad,
+              costoUnitario: line.costoUnitario,
+              tipoReferencia: 'PURCHASE',
+              referenciaId: created.id,
+              creadoPorId: actorId,
+              notas: created.folioProveedor
+                ? `Compra recibida: ${created.folioProveedor}`
                 : 'Compra recibida de proveedor',
             })),
           });
@@ -191,9 +191,9 @@ export class PurchasesService {
     const pagina = query.pagina ?? 1;
     const limite = query.limite ?? 50;
     const where: Prisma.PurchaseWhereInput = {};
-    if (query.proveedorId) where.providerId = query.proveedorId;
+    if (query.proveedorId) where.proveedorId = query.proveedorId;
     if (query.fechaInicio || query.fechaFin) {
-      where.receivedAt = {
+      where.fechaRecepcion = {
         ...(query.fechaInicio ? { gte: new Date(query.fechaInicio) } : {}),
         ...(query.fechaFin ? { lte: new Date(query.fechaFin) } : {}),
       };
@@ -201,14 +201,14 @@ export class PurchasesService {
     const [records, total] = await Promise.all([
       this.prisma.purchase.findMany({
         where,
-        orderBy: [{ receivedAt: 'desc' }, { id: 'desc' }],
+        orderBy: [{ fechaRecepcion: 'desc' }, { id: 'desc' }],
         skip: (pagina - 1) * limite,
         take: limite,
         select: purchaseSelect,
       }),
       this.prisma.purchase.count({ where }),
     ]);
-    return { items: records.map(toDto), pagina, limite, total };
+    return { datos: records.map(toDto), pagina, limite, total };
   }
 
   async findById(id: string): Promise<PurchaseDto> {

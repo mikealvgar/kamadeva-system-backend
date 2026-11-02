@@ -22,21 +22,17 @@ export class PrismaSaleCatalogAdapter implements SaleCatalogPort {
       where: { id: { in: productIds } },
       select: {
         id: true,
-        price: true,
-        isActive: true,
-        sizes: {
-          where: { size: { isActive: true } },
-          select: { sizeId: true },
-        },
+        precioVenta: true,
+        activo: true,
       },
     });
     return new Map(
       products.map((product) => [
         product.id,
         {
-          price: product.price,
-          isActive: product.isActive,
-          activeSizeIds: new Set(product.sizes.map(({ sizeId }) => sizeId)),
+          price: product.precioVenta,
+          isActive: product.activo,
+          activeSizeIds: new Set<string>(),
         },
       ]),
     );

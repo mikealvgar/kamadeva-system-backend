@@ -6,11 +6,11 @@ export class RoleDto {
   id!: string;
 
   @ApiProperty({ enum: ROLE_NAMES })
-  name!: string;
+  nombre!: string;
 
   @ApiProperty({ type: String, nullable: true })
-  description!: string | null;
+  descripcion!: string | null;
 
   @ApiProperty()
-  isActive!: boolean;
+  activo!: boolean;
 }

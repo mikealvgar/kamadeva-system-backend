@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { Money } from '../../common/domain/money.js';
+import { Folio } from '../../common/domain/folio.js';
 import type { SaleRepositoryPort } from '../application/ports/sale-repository.port.js';
 import {
   PaymentRecord,
@@ -12,42 +13,31 @@ import {
 const cancellationSelect = {
   id: true,
   folio: true,
-  status: true,
-  customerId: true,
-  quoteId: true,
-  createdById: true,
-  notes: true,
+  estado: true,
+  clienteId: true,
+  cotizacionId: true,
+  creadoPorId: true,
+  notas: true,
   subtotal: true,
-  discount: true,
-  tax: true,
+  descuento: true,
   total: true,
-  cancelledAt: true,
-  cancelledById: true,
-  cancelReason: true,
-  createdAt: true,
-  updatedAt: true,
+  metodoPago: true,
+  fechaPago: true,
+  fechaCancelacion: true,
+  canceladoPorId: true,
+  motivoCancelacion: true,
+  fechaCreacion: true,
+  fechaActualizacion: true,
   items: {
-    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    orderBy: [{ fechaCreacion: 'asc' }, { id: 'asc' }],
     select: {
       id: true,
-      productId: true,
-      sizeId: true,
-      quantity: true,
-      unitPrice: true,
-      discount: true,
-      tax: true,
+      productoId: true,
+      tallaId: true,
+      cantidad: true,
+      precioUnitario: true,
+      descuento: true,
       total: true,
-    },
-  },
-  payments: {
-    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-    select: {
-      id: true,
-      amount: true,
-      method: true,
-      status: true,
-      paidAt: true,
-      createdById: true,
     },
   },
 } satisfies Prisma.SaleSelect;
@@ -61,71 +51,57 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
     tx?: Prisma.TransactionClient,
   ): Promise<void> {
     const client = tx ?? this.prisma;
-    // Snapshot current costs so later cost edits do not rewrite past profit.
     const products = await client.product.findMany({
       where: {
         id: { in: [...new Set(sale.items.map((item) => item.productId))] },
       },
-      select: { id: true, cost: true },
+      select: { id: true, precioCompra: true },
     });
-    const costs = new Map(products.map(({ id, cost }) => [id, cost]));
+    const costs = new Map(products.map(({ id, precioCompra }) => [id, precioCompra]));
+
     const created = await client.sale.create({
       data: {
         id: sale.id,
-        folio: sale.folio.toString(),
-        status: sale.status,
-        customerId: sale.customerId,
-        quoteId: sale.quoteId,
-        createdById: sale.createdById,
-        notes: sale.notes,
+        estado: sale.status,
+        metodoPago: sale.payment?.method ?? 'CASH',
+        fechaPago: sale.payment?.paidAt ?? new Date(),
+        clienteId: sale.customerId,
+        cotizacionId: sale.quoteId,
+        creadoPorId: sale.createdById,
+        notas: sale.notes,
         subtotal: sale.subtotal.toDecimal(),
-        discount: sale.discount.toDecimal(),
-        tax: sale.tax.toDecimal(),
+        descuento: sale.discount.toDecimal(),
         total: sale.total.toDecimal(),
         items: {
           create: sale.items.map((item) => ({
-            productId: item.productId,
-            sizeId: item.sizeId,
-            quantity: item.quantity.toDecimal(),
-            unitPrice: item.unitPrice.toDecimal(),
-            discount: item.discount.toDecimal(),
-            tax: item.tax.toDecimal(),
+            id: item.id,
+            productoId: item.productId,
+            tallaId: item.sizeId,
+            cantidad: item.quantity.toDecimal(),
+            precioUnitario: item.unitPrice.toDecimal(),
+            descuento: item.discount.toDecimal(),
             total: item.total.toDecimal(),
-            unitCost: costs.get(item.productId) ?? null,
+            costoUnitario: costs.get(item.productId) ?? null,
           })),
         },
       },
       select: {
         id: true,
-        items: { select: { id: true, productId: true, quantity: true } },
+        items: { select: { id: true, productoId: true, cantidad: true } },
       },
     });
 
     await client.inventoryMovement.createMany({
       data: created.items.map((item) => ({
-        type: 'SALE_OUT',
-        quantityChange: item.quantity.negated(),
-        productId: item.productId,
-        saleItemId: item.id,
-        referenceType: 'SALE',
-        referenceId: created.id,
-        createdById: sale.createdById,
+        tipo: 'SALE_OUT',
+        cambioExistencias: item.cantidad.negated(),
+        productoId: item.productoId,
+        renglonVentaId: item.id,
+        tipoReferencia: 'SALE',
+        referenciaId: created.id,
+        creadoPorId: sale.createdById,
       })),
     });
-
-    if (sale.payment) {
-      await client.payment.create({
-        data: {
-          saleId: created.id,
-          method: sale.payment.method,
-          amount: sale.payment.amount.toDecimal(),
-          status: sale.payment.status,
-          createdById: sale.payment.createdById,
-          paidAt: sale.payment.paidAt,
-        },
-        select: { id: true },
-      });
-    }
   }
 
   async existsForQuote(
@@ -133,7 +109,7 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
     tx?: Prisma.TransactionClient,
   ): Promise<boolean> {
     const sale = await (tx ?? this.prisma).sale.findUnique({
-      where: { quoteId },
+      where: { cotizacionId: quoteId },
       select: { id: true },
     });
     return sale !== null;
@@ -148,53 +124,56 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
       select: cancellationSelect,
     });
     if (!record) return null;
+    const folioStr =
+      typeof record.folio === 'number'
+        ? Folio.fromSequence('V', record.folio).toString()
+        : String(record.folio);
     return new SaleAggregate({
       id: record.id,
-      folio: record.folio,
-      status: record.status,
-      customerId: record.customerId,
-      quoteId: record.quoteId,
-      createdById: record.createdById,
-      notes: record.notes,
+      folio: folioStr,
+      status: record.estado,
+      customerId: record.clienteId,
+      quoteId: record.cotizacionId,
+      createdById: record.creadoPorId,
+      notes: record.notas,
       subtotal: new Money(record.subtotal),
-      discount: new Money(record.discount),
-      tax: new Money(record.tax),
+      discount: new Money(record.descuento),
+      tax: Money.zero(),
       total: new Money(record.total),
       items: record.items.map(
         (item) =>
           new SaleItem({
             id: item.id,
-            productId: item.productId,
-            sizeId: item.sizeId,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            discount: item.discount,
-            tax: item.tax,
+            productId: item.productoId,
+            sizeId: item.tallaId,
+            quantity: item.cantidad,
+            unitPrice: item.precioUnitario,
+            discount: item.descuento,
+            tax: 0,
             total: item.total,
           }),
       ),
-      payments: record.payments.map(
-        (payment) =>
-          new PaymentRecord({
-            id: payment.id,
-            saleId: record.id,
-            amount: payment.amount.toFixed(2),
-            method: payment.method,
-            status: payment.status,
-            paidAt: payment.paidAt,
-            createdById: payment.createdById,
-          }),
-      ),
+      payments: [
+        new PaymentRecord({
+          id: record.id,
+          saleId: record.id,
+          amount: record.total.toFixed(2),
+          method: record.metodoPago,
+          status: record.estado === 'CANCELLED' ? 'CANCELLED' : record.estado === 'REFUNDED' ? 'REFUNDED' : 'PAID',
+          paidAt: record.fechaPago,
+          createdById: record.creadoPorId,
+        }),
+      ],
       cancellation:
-        record.cancelledAt && record.cancelledById
+        record.fechaCancelacion && record.canceladoPorId
           ? {
-              cancelledAt: record.cancelledAt,
-              cancelledById: record.cancelledById,
-              reason: record.cancelReason ?? '',
+              cancelledAt: record.fechaCancelacion,
+              cancelledById: record.canceladoPorId,
+              reason: record.motivoCancelacion ?? '',
             }
           : null,
-      createdAt: record.createdAt,
-      updatedAt: record.updatedAt,
+      createdAt: record.fechaCreacion,
+      updatedAt: record.fechaActualizacion,
     });
   }
 
@@ -208,28 +187,24 @@ export class PrismaSaleRepository implements SaleRepositoryPort {
     await client.sale.update({
       where: { id: sale.id },
       data: {
-        status: sale.status,
-        cancelledAt: cancellation.cancelledAt,
-        cancelledById: cancellation.cancelledById,
-        cancelReason: cancellation.reason,
+        estado: sale.status,
+        fechaCancelacion: cancellation.cancelledAt,
+        canceladoPorId: cancellation.cancelledById,
+        motivoCancelacion: cancellation.reason,
       },
       select: { id: true },
     });
     await client.inventoryMovement.createMany({
       data: sale.items.map((item) => ({
-        type: 'RETURN_IN',
-        quantityChange: item.quantity.toDecimal(),
-        productId: item.productId,
-        saleItemId: item.id,
-        referenceType: 'SALE_CANCEL',
-        referenceId: sale.id,
-        createdById: cancellation.cancelledById,
-        notes: cancellation.reason,
+        tipo: 'RETURN_IN',
+        cambioExistencias: item.quantity.toDecimal(),
+        productoId: item.productId,
+        renglonVentaId: item.id,
+        tipoReferencia: 'SALE_CANCEL',
+        referenciaId: sale.id,
+        creadoPorId: cancellation.cancelledById,
+        notas: cancellation.reason,
       })),
-    });
-    await client.payment.updateMany({
-      where: { saleId: sale.id, status: 'PAID' },
-      data: { status: 'REFUNDED' },
     });
   }
 }

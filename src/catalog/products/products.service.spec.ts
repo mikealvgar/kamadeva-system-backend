@@ -13,7 +13,7 @@ describe('ProductsService', () => {
       delete: vi.fn(),
     },
     category: { findUnique: vi.fn() },
-    size: { count: vi.fn() },
+    brand: { findUnique: vi.fn() },
     inventoryMovement: {
       groupBy: vi.fn(),
       findMany: vi.fn(),
@@ -29,19 +29,20 @@ describe('ProductsService', () => {
   const date = new Date('2026-09-13T00:00:00Z');
   const product = {
     id: 'product',
-    name: 'Anillo',
-    description: null,
-    barcode: 'SKU',
-    brand: null,
-    sizes: [] as Array<{ size: { id: string; name: string } }>,
-    cost: null,
-    minStock: null as Prisma.Decimal | null,
-    price: new Prisma.Decimal('0.10'),
+    nombre: 'Anillo',
+    descripcion: null,
+    codigoBarras: 'SKU',
+    marcaId: null,
+    marca: null,
+    precioCompra: null,
+    existenciaMinima: null as Prisma.Decimal | null,
+    precioVenta: new Prisma.Decimal('0.10'),
     imageUrl: null,
-    isActive: true,
-    category: { id: 'category', name: 'Anillos', slug: 'anillos' },
-    createdAt: date,
-    updatedAt: date,
+    activo: true,
+    categoriaId: 'category',
+    categoria: { id: 'category', descripcion: 'ANILLOS' },
+    fechaCreacion: date,
+    fechaActualizacion: date,
   };
   const dto = {
     codigoBarras: ' sku ',
@@ -65,13 +66,10 @@ describe('ProductsService', () => {
     prisma.product.findUnique.mockResolvedValue(product);
     prisma.product.findMany.mockResolvedValue([product]);
     prisma.category.findUnique.mockResolvedValue({ id: 'category' });
-    prisma.size.count.mockImplementation(
-      ({ where }: { where: { id: { in: string[] } } }) =>
-        Promise.resolve(where.id.in.length),
-    );
+    prisma.brand.findUnique.mockResolvedValue(null);
     prisma.inventoryMovement.groupBy.mockResolvedValue([]);
     prisma.inventoryMovement.aggregate.mockResolvedValue({
-      _sum: { quantityChange: null },
+      _sum: { cambioExistencias: null },
     });
     images.upload.mockResolvedValue(
       'https://res.cloudinary.com/test/image/upload/product.png',
@@ -79,50 +77,65 @@ describe('ProductsService', () => {
   });
 
   it('maps public fields to persistence, preserves decimal precision and returns only public fields', async () => {
+    prisma.brand.findUnique.mockResolvedValue({
+      id: 'brand-id',
+      descripcion: 'MARCA',
+    });
     const result = await service.create(
       {
         ...dto,
         descripcion: ' ',
         marca: ' Marca ',
-        tallaIds: ['size-m', 'size-g'],
         precioCompra: 0,
       },
       'actor',
     );
     expect(prisma.product.create.mock.calls[0]![0].data).toEqual({
-      name: 'Anillo',
-      price: new Prisma.Decimal('0.10'),
-      minStock: null,
-      categoryId: 'category',
-      description: null,
-      barcode: 'SKU',
-      brand: 'Marca',
-      sizes: { create: [{ sizeId: 'size-m' }, { sizeId: 'size-g' }] },
-      cost: new Prisma.Decimal(0),
+      nombre: 'Anillo',
+      precioVenta: new Prisma.Decimal('0.10'),
+      existenciaMinima: null,
+      categoriaId: 'category',
+      descripcion: null,
+      codigoBarras: 'SKU',
+      marcaId: 'brand-id',
+      precioCompra: new Prisma.Decimal(0),
+      activo: true,
     });
     expect(result).toEqual({
       id: 'product',
+      nombre: 'Anillo',
       articulo: 'Anillo',
+      name: 'Anillo',
       descripcion: null,
+      description: null,
       codigoBarras: 'SKU',
+      barcode: 'SKU',
       marca: null,
+      marcaId: null,
+      brand: null,
       tallas: [],
       precioCompra: null,
       precioVenta: '0.10',
       stock: '0.000',
+      existenciaMinima: null,
       stockMinimo: null,
       imageUrl: null,
+      activo: true,
       isActive: true,
-      categoria: product.category,
+      categoria: product.categoria,
+      categoriaId: 'category',
+      fechaCreacion: date.toISOString(),
+      fechaActualizacion: date.toISOString(),
       createdAt: date.toISOString(),
       updatedAt: date.toISOString(),
     });
   });
+
   it('records initial stock as an ADMIN-authored inventory adjustment', async () => {
     prisma.inventoryMovement.groupBy.mockResolvedValue([
       {
-        productId: 'product',
-        _sum: { quantityChange: new Prisma.Decimal('4.125') },
+        productoId: 'product',
+        _sum: { cambioExistencias: new Prisma.Decimal('4.125') },
       },
     ]);
     await service.create({ ...dto, stock: 4.125, precioCompra: 10 }, 'admin');
@@ -131,34 +144,34 @@ describe('ProductsService', () => {
     });
     expect(prisma.inventoryMovement.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        productId: 'product',
-        type: 'ADJUSTMENT_IN',
-        quantityChange: new Prisma.Decimal('4.125'),
-        referenceType: 'PRODUCT_INITIAL_STOCK',
-        referenceId: 'product',
-        createdById: 'admin',
+        productoId: 'product',
+        tipo: 'ADJUSTMENT_IN',
+        cambioExistencias: new Prisma.Decimal('4.125'),
+        tipoReferencia: 'PRODUCT_INITIAL_STOCK',
+        creadoPorId: 'admin',
       }),
     });
   });
+
   it('sets stock through a signed movement rather than a product column', async () => {
     prisma.inventoryMovement.aggregate.mockResolvedValue({
-      _sum: { quantityChange: new Prisma.Decimal('5.000') },
+      _sum: { cambioExistencias: new Prisma.Decimal('5.000') },
     });
     prisma.inventoryMovement.groupBy.mockResolvedValue([
       {
-        productId: 'product',
-        _sum: { quantityChange: new Prisma.Decimal('3.000') },
+        productoId: 'product',
+        _sum: { cambioExistencias: new Prisma.Decimal('3.000') },
       },
     ]);
     await service.update('product', { stock: 3 }, 'admin');
     expect(prisma.product.update.mock.calls[0]![0].data).toEqual({});
     expect(prisma.inventoryMovement.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        productId: 'product',
-        type: 'ADJUSTMENT_OUT',
-        quantityChange: new Prisma.Decimal('-2.000'),
-        referenceType: 'PRODUCT_STOCK_EDIT',
-        createdById: 'admin',
+        productoId: 'product',
+        tipo: 'ADJUSTMENT_OUT',
+        cambioExistencias: new Prisma.Decimal('-2.000'),
+        tipoReferencia: 'PRODUCT_STOCK_EDIT',
+        creadoPorId: 'admin',
       }),
     });
   });
@@ -166,12 +179,12 @@ describe('ProductsService', () => {
   it('aggregates all listed products in a single query and preserves negative fractional stock', async () => {
     prisma.product.findMany.mockResolvedValue([
       product,
-      { ...product, id: 'other', isActive: false },
+      { ...product, id: 'other', activo: false },
     ]);
     prisma.inventoryMovement.groupBy.mockResolvedValue([
       {
-        productId: 'product',
-        _sum: { quantityChange: new Prisma.Decimal('-3.125') },
+        productoId: 'product',
+        _sum: { cambioExistencias: new Prisma.Decimal('-3.125') },
       },
     ]);
     const result = await service.findAll({
@@ -181,59 +194,55 @@ describe('ProductsService', () => {
     });
     expect(result.map(({ stock }) => stock)).toEqual(['-3.125', '0.000']);
     expect(prisma.inventoryMovement.groupBy).toHaveBeenCalledExactlyOnceWith({
-      by: ['productId'],
-      where: { productId: { in: ['product', 'other'] } },
-      _sum: { quantityChange: true },
+      by: ['productoId'],
+      where: { productoId: { in: ['product', 'other'] } },
+      _sum: { cambioExistencias: true },
     });
     expect(prisma.product.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          categoryId: 'category',
-          OR: ['name', 'barcode'].map((key) => ({
+          categoriaId: 'category',
+          OR: ['nombre', 'codigoBarras'].map((key) => ({
             [key]: { contains: 'ORO', mode: 'insensitive' },
           })),
         },
-        orderBy: { name: 'asc' },
+        orderBy: { nombre: 'asc' },
       }),
     );
   });
+
   it('filters active products by default', async () => {
     await service.findAll();
     expect(prisma.product.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { isActive: true } }),
+      expect.objectContaining({ where: { activo: true } }),
     );
   });
+
   it('does not aggregate an empty list', async () => {
     prisma.product.findMany.mockResolvedValue([]);
     expect(await service.findAll()).toEqual([]);
     expect(prisma.inventoryMovement.groupBy).not.toHaveBeenCalled();
   });
+
   it('includes stock and exact money strings in detail', async () => {
     prisma.product.findUnique.mockResolvedValue({
       ...product,
-      cost: new Prisma.Decimal('780.25'),
-      price: new Prisma.Decimal('9999999999.99'),
-      sizes: [
-        { size: { id: 'size-m', name: 'M' } },
-        { size: { id: 'size-g', name: 'G' } },
-      ],
+      precioCompra: new Prisma.Decimal('780.25'),
+      precioVenta: new Prisma.Decimal('9999999999.99'),
     });
     prisma.inventoryMovement.groupBy.mockResolvedValue([
       {
-        productId: 'product',
-        _sum: { quantityChange: new Prisma.Decimal('12.001') },
+        productoId: 'product',
+        _sum: { cambioExistencias: new Prisma.Decimal('12.001') },
       },
     ]);
     expect(await service.findById('product')).toMatchObject({
       precioCompra: '780.25',
       precioVenta: '9999999999.99',
-      tallas: [
-        { id: 'size-m', name: 'M' },
-        { id: 'size-g', name: 'G' },
-      ],
       stock: '12.001',
     });
   });
+
   it.each(['findById', 'movements', 'delete'] as const)(
     'reports missing product in %s',
     async (method) => {
@@ -245,6 +254,7 @@ describe('ProductsService', () => {
       expect(prisma.inventoryMovement.groupBy).not.toHaveBeenCalled();
     },
   );
+
   it('requires category before creating or updating', async () => {
     prisma.category.findUnique.mockResolvedValue(null);
     await expect(service.create(dto, 'actor')).rejects.toMatchObject({
@@ -257,31 +267,7 @@ describe('ProductsService', () => {
     expect(prisma.product.create).not.toHaveBeenCalled();
     expect(prisma.product.update).not.toHaveBeenCalled();
   });
-  it('rejects missing or inactive sizes before writing', async () => {
-    prisma.size.count.mockResolvedValue(1);
-    await expect(
-      service.create({ ...dto, tallaIds: ['size-m', 'inactive'] }, 'actor'),
-    ).rejects.toMatchObject({
-      status: 400,
-      message: 'Talla inexistente o inactiva',
-    });
-    await expect(
-      service.update('product', { tallaIds: ['size-m', 'inactive'] }, 'actor'),
-    ).rejects.toMatchObject({ status: 400 });
-    expect(prisma.size.count).toHaveBeenCalledWith({
-      where: { id: { in: ['size-m', 'inactive'] }, isActive: true },
-    });
-    expect(prisma.product.create).not.toHaveBeenCalled();
-    expect(prisma.product.update).not.toHaveBeenCalled();
-  });
-  it('replaces the size list on update and skips size lookup when absent', async () => {
-    await service.update('product', { tallaIds: ['size-m'] }, 'actor');
-    expect(prisma.product.update.mock.calls[0]![0].data).toEqual({
-      sizes: { deleteMany: {}, create: [{ sizeId: 'size-m' }] },
-    });
-    await service.update('product', { marca: 'X' }, 'actor');
-    expect(prisma.size.count).toHaveBeenCalledOnce();
-  });
+
   it('maps every update field without writing stock', async () => {
     await service.update(
       'product',
@@ -289,77 +275,81 @@ describe('ProductsService', () => {
         ...dto,
         descripcion: '',
         codigoBarras: ' new-code ',
-        marca: null,
-        tallaIds: [],
+        marcaId: null,
         precioCompra: null,
         isActive: false,
       },
       'actor',
     );
     expect(prisma.product.update.mock.calls[0]![0].data).toEqual({
-      name: 'Anillo',
-      description: null,
-      barcode: 'NEW-CODE',
-      brand: null,
-      sizes: { deleteMany: {}, create: [] },
-      cost: null,
-      price: new Prisma.Decimal('0.1'),
-      categoryId: 'category',
-      isActive: false,
+      nombre: 'Anillo',
+      descripcion: null,
+      codigoBarras: 'NEW-CODE',
+      marcaId: null,
+      precioCompra: null,
+      precioVenta: new Prisma.Decimal('0.1'),
+      categoriaId: 'category',
+      activo: false,
     });
   });
+
   it('maps the minimum stock on create, update and read', async () => {
     await service.create({ ...dto, stockMinimo: 2.5 }, 'actor');
-    expect(prisma.product.create.mock.calls[0]![0].data.minStock).toEqual(
+    expect(prisma.product.create.mock.calls[0]![0].data.existenciaMinima).toEqual(
       new Prisma.Decimal('2.5'),
     );
     await service.update('product', { stockMinimo: null }, 'actor');
     expect(prisma.product.update.mock.calls[0]![0].data).toEqual({
-      minStock: null,
+      existenciaMinima: null,
     });
     prisma.product.findUnique.mockResolvedValue({
       ...product,
-      minStock: new Prisma.Decimal('2.5'),
+      existenciaMinima: new Prisma.Decimal('2.5'),
     });
     expect((await service.findById('product')).stockMinimo).toBe('2.500');
   });
+
   it('creates, clears and filters products without a category', async () => {
     const { categoryId: _category, ...uncategorized } = dto;
     await service.create(uncategorized, 'actor');
     expect(prisma.category.findUnique).not.toHaveBeenCalled();
-    expect(prisma.product.create.mock.calls[0]![0].data.categoryId).toBeNull();
+    expect(prisma.product.create.mock.calls[0]![0].data.categoriaId).toBeNull();
     await service.update('product', { categoryId: null }, 'actor');
     expect(prisma.product.update.mock.calls[0]![0].data).toEqual({
-      categoryId: null,
+      categoriaId: null,
     });
-    prisma.product.findUnique.mockResolvedValue({ ...product, category: null });
+    prisma.product.findUnique.mockResolvedValue({ ...product, categoria: null });
     expect((await service.findById('product')).categoria).toBeNull();
     await service.findAll({ sinCategoria: 'true' });
     expect(prisma.product.findMany).toHaveBeenLastCalledWith(
-      expect.objectContaining({ where: { isActive: true, categoryId: null } }),
+      expect.objectContaining({ where: { activo: true, categoriaId: null } }),
     );
   });
+
   it('only changes supplied fields and rejects an empty update', async () => {
     await service.update('product', { precioCompra: 780.25 }, 'actor');
     expect(prisma.product.update.mock.calls[0]![0].data).toEqual({
-      cost: new Prisma.Decimal('780.25'),
+      precioCompra: new Prisma.Decimal('780.25'),
     });
     await expect(service.update('product', {}, 'actor')).rejects.toMatchObject({
       status: 400,
     });
   });
+
   it.each(['P2002', 'P2025', 'P2003'])('maps update races %s', async (code) => {
     prisma.product.update.mockRejectedValue(error(code));
     await expect(
       service.update('product', { categoryId: 'category' }, 'actor'),
     ).rejects.toMatchObject({ status: code === 'P2002' ? 409 : 404 });
   });
+
   it.each(['P2002', 'P2003'])('maps creation races %s', async (code) => {
     prisma.product.create.mockRejectedValue(error(code));
     await expect(service.create(dto, 'actor')).rejects.toMatchObject({
       status: code === 'P2002' ? 409 : 404,
     });
   });
+
   it('deletes without a body and maps restrictive references to 409', async () => {
     await expect(service.delete('product')).resolves.toBeUndefined();
     expect(prisma.product.delete).toHaveBeenCalledWith({
@@ -371,17 +361,18 @@ describe('ProductsService', () => {
       status: 409,
     });
   });
+
   it('lists only public movement fields ordered newest first', async () => {
     prisma.inventoryMovement.findMany.mockResolvedValue([
       {
         id: 'movement',
-        type: 'SALE_OUT',
-        quantityChange: new Prisma.Decimal('-2.125'),
-        unitCost: new Prisma.Decimal('12.50'),
-        referenceType: null,
-        referenceId: null,
-        notes: null,
-        createdAt: date,
+        tipo: 'SALE_OUT',
+        cambioExistencias: new Prisma.Decimal('-2.125'),
+        costoUnitario: new Prisma.Decimal('12.50'),
+        tipoReferencia: null,
+        referenciaId: null,
+        notas: null,
+        fechaCreacion: date,
       },
     ]);
     expect(await service.movements('product')).toEqual([
@@ -398,11 +389,12 @@ describe('ProductsService', () => {
     ]);
     expect(prisma.inventoryMovement.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { productId: 'product' },
-        orderBy: { createdAt: 'desc' },
+        where: { productoId: 'product' },
+        orderBy: { fechaCreacion: 'desc' },
       }),
     );
   });
+
   it('persists the uploaded URL and returns the product', async () => {
     const buffer = Buffer.from('image');
     prisma.product.update.mockResolvedValue({
@@ -421,6 +413,7 @@ describe('ProductsService', () => {
       }),
     );
   });
+
   it('does not call the image provider for a missing product', async () => {
     prisma.product.findUnique.mockResolvedValue(null);
     await expect(
@@ -428,6 +421,7 @@ describe('ProductsService', () => {
     ).rejects.toMatchObject({ status: 404 });
     expect(images.upload).not.toHaveBeenCalled();
   });
+
   it('does not change persisted image on provider failure', async () => {
     const failure = new Error('Upload failed');
     images.upload.mockRejectedValue(failure);
@@ -436,6 +430,7 @@ describe('ProductsService', () => {
     ).rejects.toBe(failure);
     expect(prisma.product.update).not.toHaveBeenCalled();
   });
+
   it('does not disguise infrastructure errors', async () => {
     const failure = new Error('Connection lost');
     prisma.product.create.mockRejectedValue(failure);

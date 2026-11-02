@@ -14,13 +14,13 @@ import type { InventoryMovementDto } from '../products/dto/inventory-movement.dt
 
 const movementSelect = {
   id: true,
-  type: true,
-  quantityChange: true,
-  unitCost: true,
-  referenceType: true,
-  referenceId: true,
-  notes: true,
-  createdAt: true,
+  tipo: true,
+  cambioExistencias: true,
+  costoUnitario: true,
+  tipoReferencia: true,
+  referenciaId: true,
+  notas: true,
+  fechaCreacion: true,
 } satisfies Prisma.InventoryMovementSelect;
 type MovementRecord = Prisma.InventoryMovementGetPayload<{
   select: typeof movementSelect;
@@ -28,10 +28,14 @@ type MovementRecord = Prisma.InventoryMovementGetPayload<{
 
 function toDto(movement: MovementRecord): InventoryMovementDto {
   return {
-    ...movement,
-    quantityChange: movement.quantityChange.toFixed(3),
-    unitCost: movement.unitCost?.toFixed(2) ?? null,
-    createdAt: movement.createdAt.toISOString(),
+    id: movement.id,
+    type: movement.tipo,
+    quantityChange: movement.cambioExistencias.toFixed(3),
+    unitCost: movement.costoUnitario?.toFixed(2) ?? null,
+    referenceType: movement.tipoReferencia,
+    referenceId: movement.referenciaId,
+    notes: movement.notas,
+    createdAt: movement.fechaCreacion.toISOString(),
   };
 }
 
@@ -51,18 +55,18 @@ export class InventoryMovementsService {
     try {
       const movement = await this.prisma.inventoryMovement.create({
         data: {
-          product: { connect: { id: productId } },
-          createdBy: { connect: { id: actorId } },
-          type: dto.type,
-          quantityChange:
+          productoId: productId,
+          creadoPorId: actorId,
+          tipo: dto.type,
+          cambioExistencias:
             dto.type === 'ADJUSTMENT_OUT' ? quantity.negated() : quantity,
-          unitCost:
+          costoUnitario:
             dto.unitCost === undefined
               ? null
               : new Prisma.Decimal(dto.unitCost),
-          notes: dto.notes?.trim() || null,
-          referenceType: null,
-          referenceId: null,
+          notas: dto.notes?.trim() || null,
+          tipoReferencia: null,
+          referenciaId: null,
         },
         select: movementSelect,
       });
@@ -86,17 +90,17 @@ export class InventoryMovementsService {
     }
     if (query.productId) await this.requireProduct(query.productId);
     const where: Prisma.InventoryMovementWhereInput = {};
-    if (query.productId) where.productId = query.productId;
-    if (query.type) where.type = query.type;
+    if (query.productId) where.productoId = query.productId;
+    if (query.type) where.tipo = query.type;
     if (query.startDate || query.endDate) {
-      where.createdAt = {
+      where.fechaCreacion = {
         ...(query.startDate ? { gte: new Date(query.startDate) } : {}),
         ...(query.endDate ? { lte: new Date(query.endDate) } : {}),
       };
     }
     const movements = await this.prisma.inventoryMovement.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy: { fechaCreacion: 'desc' },
       select: movementSelect,
     });
     return movements.map(toDto);

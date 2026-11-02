@@ -9,40 +9,35 @@ const error = (code: string) =>
   });
 
 describe('ProvidersService', () => {
-  const tx = {
-    provider: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-  };
   const prisma = {
     provider: {
-      ...tx.provider,
+      create: vi.fn(),
+      update: vi.fn(),
       findMany: vi.fn(),
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       delete: vi.fn(),
     },
-    $transaction: vi.fn(),
   };
   const service = new ProvidersService(prisma as unknown as PrismaService);
   const now = new Date('2026-10-30T12:00:00Z');
   const record = {
     id: 'p',
-    name: 'Textiles',
-    phone: null,
-    email: 'pedidos@textiles.mx',
-    contactName: 'Laura',
-    address: null,
-    isActive: true,
-    createdAt: now,
-    updatedAt: now,
+    nombre: 'Textiles',
+    telefono: null,
+    correo: 'pedidos@textiles.mx',
+    nombreContacto: 'Laura',
+    direccion: null,
+    activo: true,
+    fechaCreacion: now,
+    fechaActualizacion: now,
   };
 
   beforeEach(() => {
     vi.resetAllMocks();
-    prisma.$transaction.mockImplementation(
-      (fn: (client: typeof tx) => unknown) => fn(tx),
-    );
-    tx.provider.findFirst.mockResolvedValue(null);
-    tx.provider.create.mockResolvedValue(record);
-    tx.provider.update.mockResolvedValue(record);
+    prisma.provider.findFirst.mockResolvedValue(null);
+    prisma.provider.create.mockResolvedValue(record);
+    prisma.provider.update.mockResolvedValue(record);
   });
 
   it('normalizes input and maps to the Spanish contract', async () => {
@@ -52,58 +47,63 @@ describe('ProvidersService', () => {
       email: ' PEDIDOS@Textiles.MX ',
       contacto: ' Laura ',
     });
-    expect(tx.provider.create.mock.calls[0]![0].data).toEqual({
-      name: 'Textiles',
-      phone: null,
-      email: 'pedidos@textiles.mx',
-      contactName: 'Laura',
-      address: null,
+    expect(prisma.provider.create).toHaveBeenCalledWith({
+      data: {
+        nombre: 'Textiles',
+        telefono: null,
+        correo: 'pedidos@textiles.mx',
+        nombreContacto: 'Laura',
+        direccion: null,
+        activo: true,
+      },
+      select: expect.any(Object),
     });
     expect(result).toEqual({
       id: 'p',
       nombre: 'Textiles',
       telefono: null,
+      correo: 'pedidos@textiles.mx',
       email: 'pedidos@textiles.mx',
+      nombreContacto: 'Laura',
       contacto: 'Laura',
       direccion: null,
+      activo: true,
       isActive: true,
+      fechaCreacion: now.toISOString(),
+      fechaActualizacion: now.toISOString(),
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
     });
-    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
-      isolationLevel: 'Serializable',
-    });
   });
 
-  it('rejects case-insensitive duplicate names', async () => {
-    tx.provider.findFirst.mockResolvedValue({ id: 'other' });
+  it('rejects duplicate names via P2002', async () => {
+    prisma.provider.create.mockRejectedValue(error('P2002'));
     await expect(service.create({ nombre: 'textiles' })).rejects.toMatchObject({
       status: 409,
-      message: 'Ya existe un proveedor con ese nombre',
+      message: 'El nombre de proveedor ya existe',
     });
-    expect(tx.provider.findFirst).toHaveBeenCalledWith({
-      where: { name: { equals: 'textiles', mode: 'insensitive' } },
-      select: { id: true },
-    });
-    expect(tx.provider.create).not.toHaveBeenCalled();
   });
 
-  it('updates only supplied fields, clears with null and excludes itself from the name check', async () => {
+  it('updates only supplied fields, clears with null', async () => {
     await service.update('p', { nombre: 'TEXTILES', contacto: null });
-    expect(tx.provider.findFirst).toHaveBeenCalledWith({
-      where: {
-        name: { equals: 'TEXTILES', mode: 'insensitive' },
-        NOT: { id: 'p' },
+    expect(prisma.provider.update).toHaveBeenCalledWith({
+      where: { id: 'p' },
+      data: {
+        nombre: 'TEXTILES',
+        nombreContacto: null,
       },
-      select: { id: true },
+      select: expect.any(Object),
     });
-    expect(tx.provider.update.mock.calls[0]![0].data).toEqual({
-      name: 'TEXTILES',
-      contactName: null,
-    });
-    tx.provider.findFirst.mockClear();
+
     await service.update('p', { isActive: false });
-    expect(tx.provider.findFirst).not.toHaveBeenCalled();
+    expect(prisma.provider.update).toHaveBeenLastCalledWith({
+      where: { id: 'p' },
+      data: {
+        activo: false,
+      },
+      select: expect.any(Object),
+    });
+
     await expect(service.update('p', {})).rejects.toMatchObject({
       status: 400,
     });
@@ -116,15 +116,15 @@ describe('ProvidersService', () => {
     expect(prisma.provider.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          isActive: true,
+          activo: true,
           OR: [
-            { name: contains },
-            { contactName: contains },
-            { email: contains },
-            { phone: contains },
+            { nombre: contains },
+            { correo: contains },
+            { telefono: contains },
+            { nombreContacto: contains },
           ],
         },
-        orderBy: { name: 'asc' },
+        orderBy: { nombre: 'asc' },
       }),
     );
     await service.findAll({ includeInactive: 'true' });
@@ -135,7 +135,7 @@ describe('ProvidersService', () => {
 
   it.each([
     ['P2025', 404, 'Proveedor inexistente'],
-    ['P2003', 409, 'El proveedor tiene registros asociados'],
+    ['P2003', 409, 'El proveedor tiene compras asociadas'],
   ])('maps delete error %s', async (code, status, message) => {
     prisma.provider.delete.mockRejectedValue(error(code));
     await expect(service.delete('p')).rejects.toMatchObject({
@@ -145,11 +145,11 @@ describe('ProvidersService', () => {
   });
 
   it('maps update races and missing reads', async () => {
-    tx.provider.update.mockRejectedValue(error('P2002'));
+    prisma.provider.update.mockRejectedValue(error('P2002'));
     await expect(service.update('p', { nombre: 'X' })).rejects.toMatchObject({
       status: 409,
     });
-    tx.provider.update.mockRejectedValue(error('P2025'));
+    prisma.provider.update.mockRejectedValue(error('P2025'));
     await expect(service.update('p', { isActive: true })).rejects.toMatchObject(
       { status: 404 },
     );

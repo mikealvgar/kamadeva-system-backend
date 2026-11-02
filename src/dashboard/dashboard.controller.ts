@@ -20,18 +20,18 @@ import {
   TopProductsQueryDto,
 } from './dto/dashboard.dto.js';
 
-@ApiTags('dashboard')
+@ApiTags('tablero')
 @ApiBearerAuth()
 @ApiUnauthorizedResponse({ description: 'Token inválido o usuario inactivo' })
 @ApiForbiddenResponse({ description: 'Permisos insuficientes' })
 @ApiBadRequestResponse({ description: 'Query inválida' })
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('ADMIN', 'VENDEDOR')
-@Controller('dashboard')
+@Controller('tablero')
 export class DashboardController {
   constructor(private readonly dashboard: DashboardService) {}
 
-  @Get('summary')
+  @Get('resumen')
   @ApiOkResponse({
     type: DashboardSummaryDto,
     description:
@@ -41,13 +41,13 @@ export class DashboardController {
     return this.dashboard.summary(req.user.roles.includes('ADMIN'));
   }
 
-  @Get('top-products')
+  @Get('productos-mas-vendidos')
   @ApiOkResponse({ type: TopProductsDto })
   topProducts(@Query() query: TopProductsQueryDto): Promise<TopProductsDto> {
     return this.dashboard.topProducts(query);
   }
 
-  @Get('sales-history')
+  @Get('historial-ventas')
   @ApiOkResponse({ type: SalesHistoryDto })
   salesHistory(@Query() query: SalesHistoryQueryDto): Promise<SalesHistoryDto> {
     return this.dashboard.salesHistory(query.period);

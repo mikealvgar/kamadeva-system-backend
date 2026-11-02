@@ -1,12 +1,39 @@
-import { ApiPropertyOptional, PartialType } from '@nestjs/swagger';
-import { IsBoolean, ValidateIf } from 'class-validator';
-import { CreateSizeDto } from './create-size.dto.js';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
+import { IsBoolean, IsOptional, IsString, MaxLength } from 'class-validator';
 
-export class UpdateSizeDto extends PartialType(CreateSizeDto, {
-  skipNullProperties: false,
-}) {
+export class UpdateSizeDto {
+  @ApiPropertyOptional({
+    example: 'M',
+    maxLength: 20,
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toUpperCase() : value,
+  )
+  @IsString()
+  @MaxLength(20)
+  nombre?: string;
+
+  @ApiPropertyOptional({
+    example: 'M',
+    maxLength: 20,
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toUpperCase() : value,
+  )
+  @IsString()
+  @MaxLength(20)
+  name?: string;
+
   @ApiPropertyOptional({ example: true })
-  @ValidateIf((_object, value: unknown) => value !== undefined)
+  @IsOptional()
+  @IsBoolean()
+  activo?: boolean;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
   @IsBoolean()
   isActive?: boolean;
 }

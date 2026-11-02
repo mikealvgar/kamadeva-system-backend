@@ -5,6 +5,7 @@ import {
   CreateSaleUseCase,
   type CreateSaleResult,
 } from './application/use-cases/create-sale.use-case.js';
+import { ReturnSaleUseCase } from './application/use-cases/return-sale.use-case.js';
 import {
   GetSaleUseCase,
   ListSalesUseCase,
@@ -12,6 +13,7 @@ import {
 import type { CancelSaleDto } from './dto/cancel-sale.dto.js';
 import type { CreateSaleDto } from './dto/create-sale.dto.js';
 import type { ListSalesDto } from './dto/list-sales.dto.js';
+import type { ReturnSaleDto } from './dto/return-sale.dto.js';
 import type { SaleDetailDto, SalePageDto } from './dto/sale.dto.js';
 import { handleSaleError } from './presentation/sale-error.mapper.js';
 
@@ -20,6 +22,7 @@ export class SalesService {
   constructor(
     private readonly createSale: CreateSaleUseCase,
     private readonly cancelSale: CancelSaleUseCase,
+    private readonly returnSaleUseCase: ReturnSaleUseCase,
     private readonly getSale: GetSaleUseCase,
     private readonly listSales: ListSalesUseCase,
   ) {}
@@ -88,6 +91,22 @@ export class SalesService {
       return await this.cancelSale.execute(id, {
         actorId,
         reason: dto.reason,
+      });
+    } catch (error) {
+      handleSaleError(error);
+    }
+  }
+
+  async returnSale(
+    id: string,
+    dto: ReturnSaleDto,
+    actorId: string,
+  ): Promise<SaleDetailDto> {
+    try {
+      return await this.returnSaleUseCase.execute(id, {
+        actorId,
+        reason: dto.reason,
+        items: dto.items,
       });
     } catch (error) {
       handleSaleError(error);

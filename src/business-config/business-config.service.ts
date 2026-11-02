@@ -9,15 +9,15 @@ import type {
 const KEY = 'default';
 
 const configSelect = {
-  name: true,
-  address: true,
-  neighborhood: true,
-  municipality: true,
-  state: true,
-  phone: true,
-  taxId: true,
-  ticketFooter: true,
-  updatedAt: true,
+  nombre: true,
+  direccion: true,
+  colonia: true,
+  municipio: true,
+  estado: true,
+  telefono: true,
+  rfc: true,
+  mensajePie: true,
+  fechaActualizacion: true,
 } satisfies Prisma.BusinessConfigSelect;
 type ConfigRecord = Prisma.BusinessConfigGetPayload<{
   select: typeof configSelect;
@@ -25,15 +25,15 @@ type ConfigRecord = Prisma.BusinessConfigGetPayload<{
 
 function toDto(config: ConfigRecord): BusinessConfigDto {
   return {
-    nombre: config.name,
-    direccion: config.address,
-    colonia: config.neighborhood,
-    municipio: config.municipality,
-    estado: config.state,
-    telefono: config.phone,
-    rfc: config.taxId,
-    mensajePie: config.ticketFooter,
-    updatedAt: config.updatedAt.toISOString(),
+    nombre: config.nombre,
+    direccion: config.direccion,
+    colonia: config.colonia,
+    municipio: config.municipio,
+    estado: config.estado,
+    telefono: config.telefono,
+    rfc: config.rfc,
+    mensajePie: config.mensajePie,
+    updatedAt: config.fechaActualizacion.toISOString(),
   };
 }
 
@@ -43,7 +43,7 @@ export class BusinessConfigService {
 
   async get(): Promise<BusinessConfigDto> {
     const config = await this.prisma.businessConfig.findUnique({
-      where: { key: KEY },
+      where: { clave: KEY },
       select: configSelect,
     });
     if (!config)
@@ -51,23 +51,20 @@ export class BusinessConfigService {
     return toDto(config);
   }
 
-  /** Full replacement of the single configuration row. */
   async update(dto: UpdateBusinessConfigDto): Promise<BusinessConfigDto> {
     const data = {
-      name: dto.nombre.trim(),
-      address: dto.direccion.trim(),
-      neighborhood: dto.colonia.trim(),
-      municipality: dto.municipio.trim(),
-      state: dto.estado.trim(),
-      phone: dto.telefono.trim(),
-      taxId: dto.rfc.trim().toUpperCase(),
-      ticketFooter: dto.mensajePie.trim(),
+      nombre: dto.nombre.trim(),
+      direccion: dto.direccion.trim(),
+      colonia: dto.colonia.trim(),
+      municipio: dto.municipio.trim(),
+      estado: dto.estado.trim(),
+      telefono: dto.telefono.trim(),
+      rfc: dto.rfc.trim().toUpperCase(),
+      mensajePie: dto.mensajePie.trim(),
     };
-    // Atomic INSERT ... ON CONFLICT on the fixed key; concurrent saves cannot
-    // create a second row.
     const config = await this.prisma.businessConfig.upsert({
-      where: { key: KEY },
-      create: { key: KEY, ...data },
+      where: { clave: KEY },
+      create: { clave: KEY, ...data },
       update: data,
       select: configSelect,
     });

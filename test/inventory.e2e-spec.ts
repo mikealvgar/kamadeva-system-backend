@@ -9,7 +9,18 @@ import { PrismaService } from '../src/prisma/prisma.service.js';
 import { setupApp } from '../src/setup-app.js';
 import type { InventoryMovementDto } from '../src/catalog/products/dto/inventory-movement.dto.js';
 
-const globalPath = '/api/inventory/movements';
+interface InventoryMovementResponse {
+  id: string;
+  tipo: string;
+  cambioExistencias: string;
+  costoUnitario: string | null;
+  notas: string | null;
+  tipoReferencia: string | null;
+  referenciaId: string | null;
+  fechaCreacion: string;
+}
+
+const globalPath = '/api/inventario/movimientos';
 describe('Inventory HTTP + PostgreSQL', () => {
   let app: INestApplication<Server> | undefined;
   let prisma: PrismaService;
@@ -18,7 +29,7 @@ describe('Inventory HTTP + PostgreSQL', () => {
   let categoryId: string;
   const tokens: Record<string, string> = {};
   const http = () => request(app!.getHttpServer());
-  const path = (id = products[0]!) => `/api/catalog/products/${id}/movements`;
+  const path = (id = products[0]!) => `/api/productos/${id}/movimientos`;
   const post = (body: object, id = products[0]!) =>
     http().post(path(id)).set('Authorization', tokens.admin!).send(body);
   const get = (query: object = {}) =>
@@ -34,7 +45,7 @@ describe('Inventory HTTP + PostgreSQL', () => {
     await app.listen(0, '127.0.0.1');
     prisma = app.get(PrismaService);
     const jwt = new JwtService();
-    for (const [key, role, isActive] of [
+    for (const [key, role, activo] of [
       ['admin', 'ADMIN', true],
       ['seller', 'VENDEDOR', true],
       ['inactive', 'ADMIN', false],
@@ -42,13 +53,11 @@ describe('Inventory HTTP + PostgreSQL', () => {
     ] as const) {
       const user = await prisma.user.create({
         data: {
-          name: 'Inventory test',
+          nombre: `Inventory test ${key}`,
           email: `${randomUUID()}@inventory.test`,
           passwordHash: 'unused',
-          isActive,
-          ...(role
-            ? { roles: { create: { role: { connect: { name: role } } } } }
-            : {}),
+          activo,
+          ...(role ? { rol: { connect: { nombre: role } } } : {}),
         },
       });
       users.push(user.id);
@@ -56,7 +65,7 @@ describe('Inventory HTTP + PostgreSQL', () => {
         `Bearer ${jwt.sign({ sub: user.id, email: user.email, roles: role ? [role] : [] }, { secret: process.env.JWT_ACCESS_SECRET, expiresIn: '15m', algorithm: 'HS256' })}`;
     }
     const category = await prisma.category.create({
-      data: { name: 'Inventory test', slug: `inventory-${randomUUID()}` },
+      data: { descripcion: `inventory-${randomUUID().slice(0, 8)}` },
     });
     categoryId = category.id;
   });
@@ -64,10 +73,10 @@ describe('Inventory HTTP + PostgreSQL', () => {
     for (let index = 0; index < 2; index++) {
       const product = await prisma.product.create({
         data: {
-          name: 'Inventory test',
-          barcode: randomUUID(),
-          price: 1,
-          categoryId,
+          nombre: 'Inventory test',
+          codigoBarras: randomUUID(),
+          precioVenta: 1,
+          categoriaId: categoryId,
         },
       });
       products.push(product.id);
@@ -76,7 +85,7 @@ describe('Inventory HTTP + PostgreSQL', () => {
   afterEach(async () => {
     if (!prisma) return;
     await prisma.inventoryMovement.deleteMany({
-      where: { productId: { in: products } },
+      where: { productoId: { in: products } },
     });
     await prisma.product.deleteMany({ where: { id: { in: products } } });
     products.length = 0;
@@ -86,7 +95,6 @@ describe('Inventory HTTP + PostgreSQL', () => {
       if (prisma) {
         if (categoryId)
           await prisma.category.delete({ where: { id: categoryId } });
-        await prisma.userRole.deleteMany({ where: { userId: { in: users } } });
         await prisma.user.deleteMany({ where: { id: { in: users } } });
       }
     } finally {
@@ -103,40 +111,40 @@ describe('Inventory HTTP + PostgreSQL', () => {
         unitCost: 780.25,
         notes: ' Compra ',
       }).expect(201);
-      const movement = response.body as InventoryMovementDto;
+      const movement = response.body as InventoryMovementResponse;
       const quantity = type === 'ADJUSTMENT_OUT' ? '-2.125' : '2.125';
       expect(movement).toEqual({
         id: expect.any(String),
-        type,
-        quantityChange: quantity,
-        unitCost: '780.25',
-        notes: 'Compra',
-        referenceType: null,
-        referenceId: null,
-        createdAt: expect.any(String),
+        tipo: type,
+        cambioExistencias: quantity,
+        costoUnitario: '780.25',
+        notas: 'Compra',
+        tipoReferencia: null,
+        referenciaId: null,
+        fechaCreacion: expect.any(String),
       });
       expect(
         await prisma.inventoryMovement.findUnique({
           where: { id: movement.id },
         }),
       ).toMatchObject({
-        productId: products[0],
-        createdById: users[0],
-        saleItemId: null,
+        productoId: products[0],
+        creadoPorId: users[0],
+        renglonVentaId: null,
       });
       const detail = await http()
-        .get(`/api/catalog/products/${products[0]}`)
+        .get(`/api/productos/${products[0]}`)
         .set('Authorization', tokens.seller!)
         .expect(200);
-      expect(detail.body.stock).toBe(quantity);
+      expect(detail.body.existencias).toBe(quantity);
       const list = await http()
-        .get('/api/catalog/products')
+        .get('/api/productos')
         .query({ categoryId })
         .set('Authorization', tokens.seller!)
         .expect(200);
       expect(list.body).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ id: products[0], stock: quantity }),
+          expect.objectContaining({ id: products[0], existencias: quantity }),
         ]),
       );
       const history = await http()
@@ -153,16 +161,16 @@ describe('Inventory HTTP + PostgreSQL', () => {
       notes: '   ',
     }).expect(201);
     expect(first.body).toMatchObject({
-      quantityChange: '0.001',
-      unitCost: null,
-      notes: null,
+      cambioExistencias: '0.001',
+      costoUnitario: null,
+      notas: null,
     });
     const second = await post({
       type: 'RETURN_IN',
       quantity: 1,
       unitCost: 0,
     }).expect(201);
-    expect(second.body).toMatchObject({ unitCost: '0.00', notes: null });
+    expect(second.body).toMatchObject({ costoUnitario: '0.00', notas: null });
   });
   it('accepts maximum persisted precision without rounding', async () => {
     const result = await post({
@@ -172,8 +180,8 @@ describe('Inventory HTTP + PostgreSQL', () => {
       notes: 'x'.repeat(500),
     }).expect(201);
     expect(result.body).toMatchObject({
-      quantityChange: '99999999999.999',
-      unitCost: '9999999999.99',
+      cambioExistencias: '99999999999.999',
+      costoUnitario: '9999999999.99',
     });
   });
   it.each([
@@ -203,7 +211,7 @@ describe('Inventory HTTP + PostgreSQL', () => {
     await post({ type: 'PURCHASE_IN', quantity: 1, ...override }).expect(400);
     expect(
       await prisma.inventoryMovement.count({
-        where: { productId: products[0] },
+        where: { productoId: products[0] },
       }),
     ).toBe(0);
   });
@@ -228,10 +236,10 @@ describe('Inventory HTTP + PostgreSQL', () => {
     ].entries()) {
       const movement = await prisma.inventoryMovement.create({
         data: {
-          productId: products[index === 2 ? 1 : 0]!,
-          type: type as 'PURCHASE_IN' | 'ADJUSTMENT_OUT' | 'SALE_OUT',
-          quantityChange: index === 0 ? 1 : -1,
-          createdAt: new Date(dates[index]!),
+          productoId: products[index === 2 ? 1 : 0]!,
+          tipo: type as 'PURCHASE_IN' | 'ADJUSTMENT_OUT' | 'SALE_OUT',
+          cambioExistencias: index === 0 ? 1 : -1,
+          fechaCreacion: new Date(dates[index]!),
         },
       });
       ids.push(movement.id);
@@ -302,7 +310,7 @@ describe('Inventory HTTP + PostgreSQL', () => {
   it('documents responses, permissions, filters and manual types in Swagger', async () => {
     const { body } = await http().get('/api/docs-json').expect(200);
     for (const [endpoint, method, success] of [
-      ['/api/catalog/products/{id}/movements', 'post', '201'],
+      ['/api/productos/{productoId}/movimientos', 'post', '201'],
       [globalPath, 'get', '200'],
     ] as const) {
       const operation = body.paths[endpoint][method];
@@ -311,8 +319,8 @@ describe('Inventory HTTP + PostgreSQL', () => {
         expect(operation.responses[status]).toBeDefined();
     }
     const schema = body.components.schemas.CreateInventoryMovementDto;
-    expect(schema.required.sort()).toEqual(['quantity', 'type']);
-    expect(schema.properties.type.enum).toEqual([
+    expect(schema.required.sort()).toEqual(['cantidad', 'tipo']);
+    expect(schema.properties.tipo.enum).toEqual([
       'PURCHASE_IN',
       'RETURN_IN',
       'ADJUSTMENT_IN',
@@ -322,9 +330,9 @@ describe('Inventory HTTP + PostgreSQL', () => {
       body.paths[globalPath].get.parameters
         .map((p: { name: string }) => p.name)
         .sort(),
-    ).toEqual(['endDate', 'productId', 'startDate', 'type']);
+    ).toEqual(['fechaFin', 'fechaInicio', 'productoId', 'tipo']);
     expect(
-      body.components.schemas.InventoryMovementDto.properties.quantityChange
+      body.components.schemas.InventoryMovementDto.properties.cambioExistencias
         .type,
     ).toBe('string');
   });

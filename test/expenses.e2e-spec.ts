@@ -7,14 +7,36 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { setupApp } from '../src/setup-app.js';
-import type { ExpenseCategoryDto } from '../src/expenses/dto/expense-category.dto.js';
-import type {
-  ExpenseDto,
-  ExpensePageDto,
-} from '../src/expenses/dto/expense.dto.js';
+interface ExpenseCategoryResponse {
+  id: string;
+  nombre: string;
+  activo: boolean;
+}
 
-const categoriesBase = '/api/expense-categories';
-const base = '/api/expenses';
+interface ExpenseResponse {
+  id: string;
+  concepto: string;
+  monto: string;
+  descontarDeCaja: boolean;
+  fechaGasto: string;
+  categoria: { id: string; nombre: string };
+  creadoPor: { id: string; nombre: string };
+  notas: string | null;
+  corteCajaId: string | null;
+  fechaCreacion: string;
+  fechaActualizacion: string;
+}
+
+interface ExpensePageResponse {
+  datos: ExpenseResponse[];
+  total: number;
+  pagina: number;
+  limite: number;
+  montoTotal: string;
+}
+
+const categoriesBase = '/api/categorias-gastos';
+const base = '/api/gastos';
 
 describe('Expenses HTTP + PostgreSQL', () => {
   let app: INestApplication<Server> | undefined;
@@ -43,12 +65,10 @@ describe('Expenses HTTP + PostgreSQL', () => {
     ] as const) {
       const user = await prisma.user.create({
         data: {
-          name: `Expenses ${key}`,
+          nombre: `Expenses ${key}`,
           email: `${randomUUID()}@expenses.test`,
           passwordHash: 'unused-test-hash',
-          ...(role
-            ? { roles: { create: { role: { connect: { name: role } } } } }
-            : {}),
+          ...(role ? { rol: { connect: { nombre: role } } } : {}),
         },
       });
       users[key] = user.id;
@@ -60,7 +80,7 @@ describe('Expenses HTTP + PostgreSQL', () => {
   afterEach(async () => {
     if (!prisma) return;
     await prisma.expense.deleteMany({
-      where: { createdById: { in: Object.values(users) } },
+      where: { creadoPorId: { in: Object.values(users) } },
     });
     await prisma.expenseCategory.deleteMany({
       where: { id: { in: categories } },
@@ -72,7 +92,6 @@ describe('Expenses HTTP + PostgreSQL', () => {
     try {
       if (prisma) {
         const ids = Object.values(users);
-        await prisma.userRole.deleteMany({ where: { userId: { in: ids } } });
         await prisma.user.deleteMany({ where: { id: { in: ids } } });
       }
     } finally {
@@ -82,23 +101,23 @@ describe('Expenses HTTP + PostgreSQL', () => {
 
   async function createCategory(
     name = unique('Cat'),
-  ): Promise<ExpenseCategoryDto> {
+  ): Promise<ExpenseCategoryResponse> {
     const response = await http()
       .post(categoriesBase)
       .set('Authorization', tokens.admin)
       .send({ name })
       .expect(201);
-    categories.push((response.body as ExpenseCategoryDto).id);
-    return response.body as ExpenseCategoryDto;
+    categories.push((response.body as ExpenseCategoryResponse).id);
+    return response.body as ExpenseCategoryResponse;
   }
 
   async function createExpense(
     body: object,
     token: string = tokens.seller,
-  ): Promise<ExpenseDto> {
+  ): Promise<ExpenseResponse> {
     return (
       await http().post(base).set('Authorization', token).send(body).expect(201)
-    ).body as ExpenseDto;
+    ).body as ExpenseResponse;
   }
 
   describe('categories', () => {
@@ -108,14 +127,14 @@ describe('Expenses HTTP + PostgreSQL', () => {
         .set('Authorization', tokens.seller)
         .expect(200);
       expect(
-        (response.body as ExpenseCategoryDto[]).map(({ name }) => name),
-      ).toEqual(expect.arrayContaining(['Insumos', 'Otros', 'Servicios']));
+        (response.body as ExpenseCategoryResponse[]).map(({ nombre }) => nombre),
+      ).toEqual(expect.arrayContaining(['Mantenimiento', 'Otros', 'Servicios']));
     });
 
     it('creates trimmed names and rejects case-insensitive duplicates, including concurrently', async () => {
       const name = unique('Renta');
       const created = await createCategory(` ${name} `);
-      expect(created).toEqual({ id: expect.any(String), name, isActive: true });
+      expect(created).toEqual({ id: expect.any(String), nombre: name, activo: true });
       await http()
         .post(categoriesBase)
         .set('Authorization', tokens.admin)
@@ -133,7 +152,7 @@ describe('Expenses HTTP + PostgreSQL', () => {
       );
       for (const response of responses)
         if (response.status === 201)
-          categories.push((response.body as ExpenseCategoryDto).id);
+          categories.push((response.body as ExpenseCategoryResponse).id);
       expect(responses.map(({ status }) => status).sort()).toEqual([201, 409]);
     });
 
@@ -160,7 +179,7 @@ describe('Expenses HTTP + PostgreSQL', () => {
       await http()
         .patch(target)
         .set('Authorization', tokens.admin)
-        .send({ name: other.name.toLowerCase() })
+        .send({ name: other.nombre.toLowerCase() })
         .expect(409);
       await http()
         .patch(target)
@@ -171,20 +190,20 @@ describe('Expenses HTTP + PostgreSQL', () => {
         .patch(target)
         .set('Authorization', tokens.admin)
         .send({ isActive: false })
-        .expect(200, { ...category, isActive: false });
+        .expect(200, { ...category, activo: false });
       const active = (
         await http()
           .get(categoriesBase)
           .set('Authorization', tokens.seller)
           .expect(200)
-      ).body as ExpenseCategoryDto[];
+      ).body as ExpenseCategoryResponse[];
       expect(active.map(({ id }) => id)).not.toContain(category.id);
       const all = (
         await http()
           .get(`${categoriesBase}?includeInactive=true`)
           .set('Authorization', tokens.seller)
           .expect(200)
-      ).body as ExpenseCategoryDto[];
+      ).body as ExpenseCategoryResponse[];
       expect(all.map(({ id }) => id)).toContain(category.id);
 
       await createExpense({
@@ -238,18 +257,18 @@ describe('Expenses HTTP + PostgreSQL', () => {
       });
       expect(expense).toEqual({
         id: expect.any(String),
-        concept: 'Artículos de limpieza',
-        amount: '355.50',
-        deductFromCash: false,
-        spentAt: expect.any(String),
-        category: { id: category.id, name: category.name },
-        createdBy: { id: users.seller, name: 'Expenses seller' },
-        notes: 'Factura 12',
-        cashClosureId: null,
-        createdAt: expect.any(String),
-        updatedAt: expect.any(String),
+        concepto: 'Artículos de limpieza',
+        monto: '355.50',
+        descontarDeCaja: false,
+        fechaGasto: expect.any(String),
+        categoria: { id: category.id, nombre: category.nombre },
+        creadoPor: { id: users.seller, nombre: 'Expenses seller' },
+        notas: 'Factura 12',
+        corteCajaId: null,
+        fechaCreacion: expect.any(String),
+        fechaActualizacion: expect.any(String),
       });
-      expect(Date.now() - Date.parse(expense.spentAt)).toBeLessThan(60_000);
+      expect(Date.now() - Date.parse(expense.fechaGasto)).toBeLessThan(60_000);
       await http()
         .get(`${base}/${expense.id}`)
         .set('Authorization', tokens.admin)
@@ -291,7 +310,7 @@ describe('Expenses HTTP + PostgreSQL', () => {
       }
       expect(
         await prisma.expense.count({
-          where: { createdById: { in: Object.values(users) } },
+          where: { creadoPorId: { in: Object.values(users) } },
         }),
       ).toBe(0);
     });
@@ -335,24 +354,24 @@ describe('Expenses HTTP + PostgreSQL', () => {
             })
             .set('Authorization', tokens.seller)
             .expect(200)
-        ).body as ExpensePageDto;
-      const ids = (page: ExpensePageDto) => page.data.map(({ id }) => id);
+        ).body as ExpensePageResponse;
+      const ids = (page: ExpensePageResponse) => page.datos.map(({ id }) => id);
 
       const all = await list({});
       expect(ids(all)).toEqual([third.id, second.id, first.id]);
       expect(all).toMatchObject({
         total: 3,
-        page: 1,
-        pageSize: 20,
-        totalAmount: '650.00',
+        pagina: 1,
+        limite: 20,
+        montoTotal: '650.00',
       });
       const page = await list({ page: 2, pageSize: 1 });
       expect(ids(page)).toEqual([second.id]);
-      expect(page).toMatchObject({ total: 3, totalAmount: '650.00' });
+      expect(page).toMatchObject({ total: 3, montoTotal: '650.00' });
 
       const cash = await list({ deductFromCash: 'true' });
       expect(ids(cash)).toEqual([third.id, first.id]);
-      expect(cash.totalAmount).toBe('150.10');
+      expect(cash.montoTotal).toBe('150.10');
       expect(ids(await list({ deductFromCash: 'false' }))).toEqual([second.id]);
       expect(ids(await list({ categoryId: services.id }))).toEqual([second.id]);
       expect(ids(await list({ createdById: users.admin }))).toEqual([
@@ -425,7 +444,7 @@ describe('Expenses HTTP + PostgreSQL', () => {
         categoryId: category.id,
       });
       const response = await http()
-        .delete(`/api/users/${users.seller}`)
+        .delete(`/api/usuarios/${users.seller}`)
         .set('Authorization', tokens.admin)
         .expect(409);
       expect(response.body.message).toBe(

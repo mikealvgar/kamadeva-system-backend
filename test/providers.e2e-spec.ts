@@ -9,7 +9,19 @@ import { PrismaService } from '../src/prisma/prisma.service.js';
 import { setupApp } from '../src/setup-app.js';
 import type { ProviderDto } from '../src/providers/dto/provider.dto.js';
 
-const base = '/api/providers';
+interface ProviderResponse {
+  id: string;
+  nombre: string;
+  telefono: string | null;
+  correo: string | null;
+  contacto: string | null;
+  direccion: string | null;
+  activo: boolean;
+  fechaCreacion: string;
+  fechaActualizacion: string;
+}
+
+const base = '/api/proveedores';
 
 describe('Providers HTTP + PostgreSQL', () => {
   let app: INestApplication<Server> | undefined;
@@ -38,12 +50,10 @@ describe('Providers HTTP + PostgreSQL', () => {
     ] as const) {
       const user = await prisma.user.create({
         data: {
-          name: `Providers ${key}`,
+          nombre: `Providers ${key}`,
           email: `${randomUUID()}@providers.test`,
           passwordHash: 'unused-test-hash',
-          ...(role
-            ? { roles: { create: { role: { connect: { name: role } } } } }
-            : {}),
+          ...(role ? { rol: { connect: { nombre: role } } } : {}),
         },
       });
       users[key] = user.id;
@@ -62,7 +72,6 @@ describe('Providers HTTP + PostgreSQL', () => {
     try {
       if (prisma) {
         const ids = Object.values(users);
-        await prisma.userRole.deleteMany({ where: { userId: { in: ids } } });
         await prisma.user.deleteMany({ where: { id: { in: ids } } });
       }
     } finally {
@@ -73,8 +82,8 @@ describe('Providers HTTP + PostgreSQL', () => {
   const post = (body: object, token: string = tokens.admin) =>
     http().post(base).set('Authorization', token).send(body);
 
-  async function create(body: object): Promise<ProviderDto> {
-    const provider = (await post(body).expect(201)).body as ProviderDto;
+  async function create(body: object): Promise<ProviderResponse> {
+    const provider = (await post(body).expect(201)).body as ProviderResponse;
     created.push(provider.id);
     return provider;
   }
@@ -88,16 +97,16 @@ describe('Providers HTTP + PostgreSQL', () => {
       contacto: ' Laura Gómez ',
       direccion: ' Bodega 4, Monterrey ',
     });
-    expect(provider).toEqual({
+    expect(provider).toMatchObject({
       id: expect.any(String),
       nombre: name,
       telefono: '81-1234-5678',
-      email: 'pedidos@textiles.mx',
+      correo: 'pedidos@textiles.mx',
       contacto: 'Laura Gómez',
       direccion: 'Bodega 4, Monterrey',
-      isActive: true,
-      createdAt: expect.any(String),
-      updatedAt: expect.any(String),
+      activo: true,
+      fechaCreacion: expect.any(String),
+      fechaActualizacion: expect.any(String),
     });
     await http()
       .get(`${base}/${provider.id}`)
@@ -106,7 +115,7 @@ describe('Providers HTTP + PostgreSQL', () => {
     const minimal = await create({ nombre: unique('Mínimo'), telefono: ' ' });
     expect(minimal).toMatchObject({
       telefono: null,
-      email: null,
+      correo: null,
       contacto: null,
       direccion: null,
     });
@@ -141,12 +150,12 @@ describe('Providers HTTP + PostgreSQL', () => {
         .set('Authorization', tokens.admin)
         .send({ contacto: null, telefono: '55 1234 5678' })
         .expect(200)
-    ).body as ProviderDto;
+    ).body as ProviderResponse;
     expect(updated).toMatchObject({
       nombre: provider.nombre,
       contacto: null,
       telefono: '55 1234 5678',
-      email: 'a@b.mx',
+      correo: 'a@b.mx',
     });
     await http()
       .patch(target)
@@ -238,7 +247,7 @@ describe('Providers HTTP + PostgreSQL', () => {
     ]) {
       await post(body).expect(400);
     }
-    expect(await prisma.provider.count({ where: { name: valid.nombre } })).toBe(
+    expect(await prisma.provider.count({ where: { nombre: valid.nombre } })).toBe(
       0,
     );
     await http()

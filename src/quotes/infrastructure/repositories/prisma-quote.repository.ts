@@ -3,6 +3,8 @@ import { Prisma } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../../prisma/prisma.service.js';
 import { QuoteAggregate } from '../../domain/entities/quote.aggregate.js';
 import { QuoteItem } from '../../domain/entities/quote-item.entity.js';
+import { Money, Quantity } from '../../../common/domain/money.js';
+import { Folio } from '../../../common/domain/folio.js';
 import {
   CustomerNotFoundException,
   ProductNotFoundException,
@@ -54,15 +56,18 @@ export class PrismaQuoteRepository implements QuoteRepositoryPort {
   }
 
   async findAllRecords(filter: QuoteQueryFilter = {}): Promise<QuoteRecord[]> {
+    let folioFilter: number | undefined = undefined;
+    if (filter.search) {
+      const match = filter.search.match(/\d+/);
+      folioFilter = match ? parseInt(match[0], 10) : -1;
+    }
     return this.prisma.quote.findMany({
       where: {
-        ...(filter.status ? { status: filter.status as never } : {}),
-        ...(filter.customerId ? { customerId: filter.customerId } : {}),
-        ...(filter.search?.trim()
-          ? { folio: { contains: filter.search.trim(), mode: 'insensitive' } }
-          : {}),
+        ...(filter.status ? { estado: filter.status as never } : {}),
+        ...(filter.customerId ? { clienteId: filter.customerId } : {}),
+        ...(folioFilter !== undefined ? { folio: folioFilter } : {}),
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { fechaCreacion: 'desc' },
       select: quoteSelect,
     });
   }
@@ -71,24 +76,23 @@ export class PrismaQuoteRepository implements QuoteRepositoryPort {
     const client = this.getClient(tx);
     return client.quote.create({
       data: {
-        folio: quote.folio.toString(),
-        status: quote.status,
-        customerId: quote.customerId,
-        createdById: quote.createdById,
-        notes: quote.notes,
-        expiresAt: quote.expiresAt,
+        ...(quote.id ? { id: quote.id } : {}),
+        estado: quote.status,
+        clienteId: quote.customerId,
+        creadoPorId: quote.createdById,
+        notas: quote.notes,
+        fechaVencimiento: quote.expiresAt,
         subtotal: quote.subtotal.toDecimal(),
-        discount: quote.discount.toDecimal(),
-        tax: quote.tax.toDecimal(),
+        descuento: quote.discount.toDecimal(),
         total: quote.total.toDecimal(),
         items: {
           create: quote.items.map((item) => ({
-            productId: item.productId,
-            sizeId: item.sizeId,
-            quantity: item.quantity.toDecimal(),
-            unitPrice: item.unitPrice.toDecimal(),
-            discount: item.discount.toDecimal(),
-            tax: item.tax.toDecimal(),
+            id: item.id,
+            productoId: item.productId,
+            tallaId: item.sizeId ?? null,
+            cantidad: item.quantity.toDecimal(),
+            precioUnitario: item.unitPrice.toDecimal(),
+            descuento: item.discount.toDecimal(),
             total: item.total.toDecimal(),
           })),
         },
@@ -97,75 +101,65 @@ export class PrismaQuoteRepository implements QuoteRepositoryPort {
     });
   }
 
-  async update(
-    quote: QuoteAggregate,
-    tx?: Prisma.TransactionClient,
-    partialData?: Prisma.QuoteUncheckedUpdateInput,
-    selectClause: Prisma.QuoteSelect = quoteSelect,
-  ): Promise<QuoteRecord> {
+  async update(quote: QuoteAggregate, tx?: Prisma.TransactionClient): Promise<QuoteRecord> {
     const client = this.getClient(tx);
-    const data: Prisma.QuoteUncheckedUpdateInput = partialData ?? {
-      status: quote.status,
-      customerId: quote.customerId,
-      notes: quote.notes,
-      expiresAt: quote.expiresAt,
-      subtotal: quote.subtotal.toDecimal(),
-      discount: quote.discount.toDecimal(),
-      tax: quote.tax.toDecimal(),
-      total: quote.total.toDecimal(),
-      items: {
-        deleteMany: {},
-        create: quote.items.map((item) => ({
-          productId: item.productId,
-          sizeId: item.sizeId,
-          quantity: item.quantity.toDecimal(),
-          unitPrice: item.unitPrice.toDecimal(),
-          discount: item.discount.toDecimal(),
-          tax: item.tax.toDecimal(),
-          total: item.total.toDecimal(),
-        })),
-      },
-    };
+    await client.quoteItem.deleteMany({ where: { cotizacionId: quote.id } });
     return client.quote.update({
       where: { id: quote.id },
-      data,
-      select: selectClause,
-    }) as never;
+      data: {
+        clienteId: quote.customerId,
+        estado: quote.status,
+        notas: quote.notes,
+        fechaVencimiento: quote.expiresAt,
+        subtotal: quote.subtotal.toDecimal(),
+        descuento: quote.discount.toDecimal(),
+        total: quote.total.toDecimal(),
+        items: {
+          create: quote.items.map((item) => ({
+            id: item.id,
+            productoId: item.productId,
+            tallaId: item.sizeId ?? null,
+            cantidad: item.quantity.toDecimal(),
+            precioUnitario: item.unitPrice.toDecimal(),
+            descuento: item.discount.toDecimal(),
+            total: item.total.toDecimal(),
+          })),
+        },
+      },
+      select: quoteSelect,
+    });
   }
 
   async delete(id: string, tx?: Prisma.TransactionClient): Promise<void> {
     const client = this.getClient(tx);
-    await client.quote.delete({
-      where: { id },
-      select: { id: true },
-    });
+    await client.quote.delete({ where: { id } });
   }
 
-  async requireCustomerExists(
-    customerId: string,
-    tx?: Prisma.TransactionClient,
-  ): Promise<void> {
-    const client = this.getClient(tx);
-    const customer = await client.customer.findUnique({
-      where: { id: customerId },
-      select: { id: true },
+  async findExpiredQuotes(now: Date): Promise<QuoteAggregate[]> {
+    const records = await this.prisma.quote.findMany({
+      where: {
+        estado: { in: ['DRAFT', 'SENT'] },
+        fechaVencimiento: { lt: now },
+      },
+      select: quoteSelect,
     });
-    if (!customer) {
-      throw new CustomerNotFoundException('Cliente inexistente');
-    }
+    return records.map((r) => this.toDomain(r));
   }
 
-  async requireProductsExist(
-    productIds: string[],
-    tx?: Prisma.TransactionClient,
-  ): Promise<void> {
-    const client = this.getClient(tx);
-    const products = await client.product.findMany({
-      where: { id: { in: productIds } },
-      select: { id: true },
+  async requireCustomerExists(customerId: string): Promise<void> {
+    const count = await this.prisma.customer.count({
+      where: { id: customerId, activo: true },
     });
-    if (products.length !== productIds.length) {
-      throw new ProductNotFoundException('Producto inexistente');
+    if (count === 0) throw new CustomerNotFoundException(customerId);
+  }
+
+  async requireProductsExist(productIds: string[], tx?: Prisma.TransactionClient): Promise<void> {
+    const client = this.getClient(tx);
+    const count = await client.product.count({
+      where: { id: { in: productIds }, activo: true },
+    });
+    if (count !== productIds.length) {
+      throw new ProductNotFoundException('Uno o más productos no existen o están inactivos');
     }
   }
 
@@ -176,57 +170,49 @@ export class PrismaQuoteRepository implements QuoteRepositoryPort {
     const client = this.getClient(tx);
     const products = await client.product.findMany({
       where: { id: { in: productIds } },
-      select: { id: true, price: true },
+      select: { id: true, precioVenta: true },
     });
-    return new Map(products.map((p) => [p.id, p.price]));
+    return new Map(products.map((p) => [p.id, p.precioVenta]));
   }
 
   async getActiveProductSizes(
     productIds: string[],
-    tx?: Prisma.TransactionClient,
+    _tx?: Prisma.TransactionClient,
   ): Promise<Map<string, Set<string>>> {
-    const client = this.getClient(tx);
-    const links = await client.productSize.findMany({
-      where: { productId: { in: productIds }, size: { isActive: true } },
-      select: { productId: true, sizeId: true },
-    });
-    const result = new Map<string, Set<string>>();
-    for (const { productId, sizeId } of links) {
-      const sizes = result.get(productId) ?? new Set<string>();
-      sizes.add(sizeId);
-      result.set(productId, sizes);
-    }
-    return result;
+    return new Map(productIds.map((id) => [id, new Set<string>()]));
   }
 
   private toDomain(record: QuoteRecord): QuoteAggregate {
-    const items = record.items.map(
-      (item) =>
-        new QuoteItem({
-          id: item.id,
-          productId: item.product.id,
-          sizeId: item.size?.id ?? null,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          discount: item.discount,
-          tax: item.tax,
-        }),
-    );
-
+    const folioStr =
+      typeof record.folio === 'number'
+        ? Folio.fromSequence('C', record.folio).toString()
+        : String(record.folio);
     return new QuoteAggregate({
       id: record.id,
-      folio: record.folio,
-      status: record.status,
-      customerId: record.customer.id,
-      notes: record.notes,
-      expiresAt: record.expiresAt,
-      items,
-      subtotal: record.subtotal as never,
-      discount: record.discount as never,
-      tax: record.tax as never,
-      total: record.total as never,
-      createdAt: record.createdAt,
-      updatedAt: record.updatedAt,
+      folio: folioStr,
+      status: record.estado,
+      customerId: record.cliente.id,
+      createdById: null,
+      notes: record.notas,
+      expiresAt: record.fechaVencimiento,
+      subtotal: new Money(record.subtotal),
+      discount: new Money(record.descuento),
+      tax: Money.zero(),
+      total: new Money(record.total),
+      createdAt: record.fechaCreacion,
+      updatedAt: record.fechaActualizacion,
+      items: record.items.map(
+        (i) =>
+          new QuoteItem({
+            id: i.id,
+            productId: i.producto.id,
+            sizeId: i.talla?.id ?? null,
+            quantity: new Quantity(i.cantidad),
+            unitPrice: new Money(i.precioUnitario),
+            discount: new Money(i.descuento),
+            tax: Money.zero(),
+          }),
+      ),
     });
   }
 }

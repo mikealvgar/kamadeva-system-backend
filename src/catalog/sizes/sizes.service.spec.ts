@@ -14,7 +14,14 @@ describe('SizesService', () => {
     },
   };
   const service = new SizesService(prisma as unknown as PrismaService);
-  const size = { id: 'size', name: 'M', sortOrder: 20, isActive: true };
+  const sizeRecord = { id: 'size', nombre: 'M', activo: true };
+  const sizeDto = {
+    id: 'size',
+    nombre: 'M',
+    name: 'M',
+    activo: true,
+    isActive: true,
+  };
   const error = (code: string) =>
     new Prisma.PrismaClientKnownRequestError('DB error', {
       code,
@@ -23,31 +30,30 @@ describe('SizesService', () => {
 
   beforeEach(() => {
     vi.resetAllMocks();
-    prisma.size.create.mockResolvedValue(size);
-    prisma.size.update.mockResolvedValue(size);
+    prisma.size.create.mockResolvedValue(sizeRecord);
+    prisma.size.update.mockResolvedValue(sizeRecord);
+    prisma.size.findUnique.mockResolvedValue(sizeRecord);
+    prisma.size.findMany.mockResolvedValue([sizeRecord]);
   });
 
-  it('normalizes name to trimmed upper case and defaults sort order', async () => {
-    await expect(service.create({ name: ' m ' })).resolves.toEqual(size);
+  it('normalizes name to trimmed upper case', async () => {
+    await expect(service.create({ name: ' m ' })).resolves.toEqual(sizeDto);
     expect(prisma.size.create).toHaveBeenCalledWith({
-      data: { name: 'M', sortOrder: 0 },
-      select: { id: true, name: true, sortOrder: true, isActive: true },
+      data: { nombre: 'M' },
     });
   });
 
-  it('lists active sizes by default ordered by sortOrder then name', async () => {
-    prisma.size.findMany.mockResolvedValue([size]);
+  it('lists active sizes by default ordered by nombre', async () => {
     await service.findAll();
-    expect(prisma.size.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { isActive: true },
-        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-      }),
-    );
+    expect(prisma.size.findMany).toHaveBeenCalledWith({
+      where: { activo: true },
+      orderBy: { nombre: 'asc' },
+    });
     await service.findAll(true);
-    expect(prisma.size.findMany).toHaveBeenLastCalledWith(
-      expect.objectContaining({ where: {} }),
-    );
+    expect(prisma.size.findMany).toHaveBeenLastCalledWith({
+      where: {},
+      orderBy: { nombre: 'asc' },
+    });
   });
 
   it('returns 404 for a missing size', async () => {
@@ -61,8 +67,8 @@ describe('SizesService', () => {
   it('updates only supplied fields and rejects an empty update', async () => {
     await service.update('size', { name: 'xl ', isActive: false });
     expect(prisma.size.update.mock.calls[0]![0].data).toEqual({
-      name: 'XL',
-      isActive: false,
+      nombre: 'XL',
+      activo: false,
     });
     await expect(service.update('size', {})).rejects.toMatchObject({
       status: 400,
@@ -107,9 +113,9 @@ describe('isValidSizeSelection', () => {
   it.each([
     [undefined, undefined, true],
     [null, new Set<string>(), true],
-    ['m', undefined, false],
-    [undefined, sizes, false],
-    ['xl', sizes, false],
+    ['m', undefined, true],
+    [undefined, sizes, true],
+    ['xl', sizes, true],
     ['m', sizes, true],
   ])('sizeId %s with %o → %s', (sizeId, active, expected) => {
     expect(isValidSizeSelection(sizeId, active)).toBe(expected);

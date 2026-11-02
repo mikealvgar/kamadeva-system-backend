@@ -9,56 +9,47 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import type { CategoryDto } from './dto/category.dto.js';
 import type { CreateCategoryDto } from './dto/create-category.dto.js';
 import type { UpdateCategoryDto } from './dto/update-category.dto.js';
-import { SLUG_PATTERN, slugify } from './slugify.js';
 
-/** Category names are stored upper-case with single spaces. */
-export function normalizeCategoryName(name: string): string {
-  return name.trim().replace(/\s+/g, ' ').toUpperCase();
+export function normalizeCategoryDescription(desc: string): string {
+  return desc.trim().replace(/\s+/g, ' ').toUpperCase();
 }
-
-const categorySelect = {
-  id: true,
-  name: true,
-  slug: true,
-  description: true,
-  isActive: true,
-} satisfies Prisma.CategorySelect;
 
 @Injectable()
 export class CategoriesService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateCategoryDto): Promise<CategoryDto> {
-    const slug = this.resolveSlug(dto.slug, dto.name);
+    const raw = dto.descripcion !== undefined ? dto.descripcion : dto.name;
+    if (!raw || !raw.trim()) {
+      throw new BadRequestException('La descripción es obligatoria');
+    }
+    const descripcion = normalizeCategoryDescription(raw);
     try {
-      return await this.prisma.category.create({
+      const record = await this.prisma.category.create({
         data: {
-          name: normalizeCategoryName(dto.name),
-          slug,
-          description: dto.description?.trim() || null,
+          descripcion,
         },
-        select: categorySelect,
       });
+      return this.mapToDto(record);
     } catch (error) {
       this.rethrow(error);
     }
   }
 
   async findAll(includeInactive = false): Promise<CategoryDto[]> {
-    return this.prisma.category.findMany({
-      where: includeInactive ? {} : { isActive: true },
-      orderBy: { name: 'asc' },
-      select: categorySelect,
+    const records = await this.prisma.category.findMany({
+      where: includeInactive ? {} : { activo: true },
+      orderBy: { descripcion: 'asc' },
     });
+    return records.map((r) => this.mapToDto(r));
   }
 
   async findById(id: string): Promise<CategoryDto> {
     const category = await this.prisma.category.findUnique({
       where: { id },
-      select: categorySelect,
     });
     if (!category) throw new NotFoundException('Categoría inexistente');
-    return category;
+    return this.mapToDto(category);
   }
 
   async update(id: string, dto: UpdateCategoryDto): Promise<CategoryDto> {
@@ -66,18 +57,26 @@ export class CategoriesService {
       throw new BadRequestException('Debe enviar al menos un campo');
     }
     const data: Prisma.CategoryUpdateInput = {};
-    if (dto.name !== undefined) data.name = normalizeCategoryName(dto.name);
-    if (dto.name !== undefined || dto.slug !== undefined)
-      data.slug = this.resolveSlug(dto.slug, dto.name);
-    if (dto.description !== undefined)
-      data.description = dto.description?.trim() || null;
-    if (dto.isActive !== undefined) data.isActive = dto.isActive;
+    const raw = dto.descripcion !== undefined ? dto.descripcion : dto.name;
+    if (raw !== undefined) {
+      if (typeof raw !== 'string' || !raw.trim()) {
+        throw new BadRequestException('La descripción es obligatoria');
+      }
+      data.descripcion = normalizeCategoryDescription(raw);
+    }
+    const activo = dto.activo !== undefined ? dto.activo : dto.isActive;
+    if (activo !== undefined) {
+      if (typeof activo !== 'boolean') {
+        throw new BadRequestException('El estado activo debe ser un valor booleano');
+      }
+      data.activo = activo;
+    }
     try {
-      return await this.prisma.category.update({
+      const updated = await this.prisma.category.update({
         where: { id },
         data,
-        select: categorySelect,
       });
+      return this.mapToDto(updated);
     } catch (error) {
       this.rethrow(error);
     }
@@ -85,27 +84,36 @@ export class CategoriesService {
 
   async delete(id: string): Promise<void> {
     try {
-      // The required Product relation uses RESTRICT, including concurrent inserts.
       await this.prisma.category.delete({
         where: { id },
-        select: { id: true },
       });
     } catch (error) {
       this.rethrow(error);
     }
   }
 
-  private resolveSlug(slug: string | undefined, name?: string): string {
-    const result = slug ?? slugify(name ?? '');
-    if (!SLUG_PATTERN.test(result))
-      throw new BadRequestException('Slug inválido');
-    return result;
+  private mapToDto(r: {
+    id: string;
+    descripcion: string;
+    activo: boolean;
+    fechaCreacion: Date;
+    fechaActualizacion: Date;
+  }): CategoryDto {
+    return {
+      id: r.id,
+      descripcion: r.descripcion,
+      name: r.descripcion,
+      activo: r.activo,
+      isActive: r.activo,
+      fechaCreacion: r.fechaCreacion.toISOString(),
+      fechaActualizacion: r.fechaActualizacion.toISOString(),
+    };
   }
 
   private rethrow(error: unknown): never {
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       if (error.code === 'P2002')
-        throw new ConflictException('El slug ya existe');
+        throw new ConflictException('La categoría ya existe');
       if (error.code === 'P2025')
         throw new NotFoundException('Categoría inexistente');
       if (error.code === 'P2003')

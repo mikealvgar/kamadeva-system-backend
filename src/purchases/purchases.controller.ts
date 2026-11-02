@@ -29,7 +29,7 @@ import { ListPurchasesDto } from './dto/list-purchases.dto.js';
 import { PurchaseDto, PurchasePageDto } from './dto/purchase.dto.js';
 import { PurchasesService } from './purchases.service.js';
 
-@ApiTags('purchases')
+@ApiTags('compras')
 @ApiBearerAuth()
 @ApiUnauthorizedResponse({ description: 'Token inválido o usuario inactivo' })
 @ApiForbiddenResponse({ description: 'Permisos insuficientes' })
@@ -39,7 +39,7 @@ import { PurchasesService } from './purchases.service.js';
 })
 @ApiConflictResponse({ description: 'Proveedor o producto inactivo' })
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Controller('purchases')
+@Controller('compras')
 export class PurchasesController {
   constructor(private readonly purchases: PurchasesService) {}
 

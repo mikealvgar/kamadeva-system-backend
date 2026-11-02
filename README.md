@@ -50,10 +50,10 @@ Duraciones aceptadas: entero en segundos o entero con sufijo `s`, `m`, `h`, `d`,
 
 | Endpoint                  | Entrada JSON                | Éxito                                                         | Errores                                                                            |
 | ------------------------- | --------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `POST /api/auth/register` | `name`, `email`, `password` | `201`: `{ user, accessToken, refreshToken }`                  | `400` datos inválidos; `409` correo existente.                                     |
-| `POST /api/auth/login`    | `email`, `password`         | `200`: `{ user, accessToken, refreshToken }`                  | `400` datos inválidos; `401` credenciales inválidas o usuario inactivo.            |
-| `POST /api/auth/refresh`  | `refreshToken`              | `200`: `{ accessToken, refreshToken }`                        | `400` datos inválidos; `401` token inválido, vencido, revocado o usuario inactivo. |
-| `POST /api/auth/logout`   | `refreshToken`              | `204`, sin cuerpo, incluso para token inválido o ya revocado. | `400` si falta el campo o su tipo no es válido.                                    |
+| `POST /api/autenticacion/registro` | `name`, `email`, `password` | `201`: `{ user, accessToken, refreshToken }`                  | `400` datos inválidos; `409` correo existente.                                     |
+| `POST /api/autenticacion/login`            | `email`, `password`         | `200`: `{ user, accessToken, refreshToken }`                  | `400` datos inválidos; `401` credenciales inválidas o usuario inactivo.            |
+| `POST /api/autenticacion/refresh`          | `refreshToken`              | `200`: `{ accessToken, refreshToken }`                        | `400` datos inválidos; `401` token inválido, vencido, revocado o usuario inactivo. |
+| `POST /api/autenticacion/logout`            | `refreshToken`              | `204`, sin cuerpo, incluso para token inválido o ya revocado. | `400` si falta el campo o su tipo no es válido.                                    |
 
 Los errores de infraestructura conservan el estado `500`; logout no oculta fallos de persistencia. Los cuerpos inválidos se rechazan mediante `ValidationPipe` antes de ejecutar el contrato de logout.
 
@@ -62,19 +62,19 @@ Usuario público: `{ id, name, email, roles }`. El primer usuario registrado rec
 Nombre se recorta; correo se recorta y convierte a minúsculas. Contraseña: mínimo 8 caracteres y máximo 72 bytes UTF-8, sin recortar ni truncar. Los campos desconocidos se rechazan con `400`.
 
 ```bash
-curl -i http://localhost:3000/api/auth/register \
+curl -i http://localhost:3000/api/autenticacion/registro \
   -H 'Content-Type: application/json' \
   -d '{"name":"Juan Pérez","email":"juan@kamadeva.com","password":"Password123!"}'
 
-curl -i http://localhost:3000/api/auth/login \
+curl -i http://localhost:3000/api/autenticacion/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"juan@kamadeva.com","password":"Password123!"}'
 
-curl -i http://localhost:3000/api/auth/refresh \
+curl -i http://localhost:3000/api/autenticacion/refresh \
   -H 'Content-Type: application/json' \
   -d '{"refreshToken":"<refreshToken recibido>"}'
 
-curl -i http://localhost:3000/api/auth/logout \
+curl -i http://localhost:3000/api/autenticacion/logout \
   -H 'Content-Type: application/json' \
   -d '{"refreshToken":"<refreshToken vigente>"}'
 ```
@@ -106,13 +106,14 @@ E2E cubre validaciones, registro concurrente, credenciales, usuario inactivo, gu
 
 El conjunto es cerrado, con mayúsculas exactas. No hay creación dinámica de roles. Un usuario puede tener ambos roles. `@Roles()` usa OR y ADMIN también satisface VENDEDOR. Sin metadata, `@UseGuards(JwtAuthGuard, RolesGuard)` solo exige autenticación.
 
-| Endpoint (requiere ADMIN)                   | Resultado                                                                                                               |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/roles`                            | Los dos roles ordenados por nombre: `{ id, name, description, isActive }`.                                              |
-| `GET /api/users/:userId/roles`              | `{ userId, roles }`, solo roles activos.                                                                                |
-| `PUT /api/users/:userId/roles`              | Reemplaza todos los roles con `{ "roles": ["ADMIN"] }`, `["VENDEDOR"]` o ambos; devuelve `{ userId, roles }`.           |
-| `DELETE /api/users/:userId/roles/:roleName` | `204`, incluso si el rol no estaba asignado.                                                                            |
-| `DELETE /api/users/:userId`                 | `204`. Elimina usuario, sesiones y asignaciones. Solo si no tiene cotizaciones, ventas, pagos ni movimientos asociados. |
+| Endpoint (requiere ADMIN)                          | Resultado                                                                                                               |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/roles`                                   | Los dos roles ordenados por nombre: `{ id, nombre, descripcion, activo }`.                                              |
+| `GET /api/usuarios/:usuarioId/roles`               | `{ usuarioId, roles }`, solo roles activos.                                                                             |
+| `GET /api/usuarios`                                 | Lista paginada de usuarios; filtros opcionales `busqueda` y `activo`, paginación `pagina` y `limite`. Solo ADMIN.       |
+| `PUT /api/usuarios/:usuarioId/roles`               | Reemplaza todos los roles con `{ "roles": ["ADMIN"] }`, `["VENDEDOR"]` o ambos; devuelve `{ usuarioId, roles }`.        |
+| `DELETE /api/usuarios/:usuarioId/roles/:nombreRol` | `204`, incluso si el rol no estaba asignado.                                                                            |
+| `DELETE /api/usuarios/:usuarioId`                  | `204`. Elimina usuario, sesiones y asignaciones. Solo si no tiene cotizaciones, ventas, pagos ni movimientos asociados. |
 
 Sin token válido o usuario inactivo: `401`; sin ADMIN: `403`; usuario inexistente: `404`. UUID v4 inválido, roles desconocidos, vacíos o duplicados: `400`. Borrarse a sí mismo: `400` con `No puedes eliminar tu propio usuario`. Asignar un rol inactivo: `422`. Remover el último ADMIN activo: `409` con `No se puede remover el último administrador`; eliminarlo o eliminar un usuario con registros asociados: `409`. Repetir un PUT válido es idempotente.
 
@@ -124,32 +125,40 @@ No hay bootstrap por correo: solo el primer registro recibe ADMIN automáticamen
 
 Especificaciones implementadas disponibles en este checkout: `specs/spec-auth-services.md`, `specs/spec-catalog.md` y `specs/spec-catalog-products.md`. La gestión de roles también está implementada y cubierta por pruebas.
 
+## Contrato público en español
+
+Las rutas, parámetros, campos de entrada/salida y nombres de esquemas Swagger de la API se presentan en español. Las acciones de autenticación `login`, `logout` y `refresh` conservan esos nombres. Los valores enumerados de negocio (por ejemplo `COMPLETED`, `CASH` o `ORDERED`) conservan sus códigos estables. Los nombres internos de Prisma y de los servicios no forman parte del contrato HTTP.
+
+### Pedidos a proveedores
+
+`POST /api/pedidos-proveedores` (ADMIN) registra un pedido prepagado con `proveedorId`, `productos: [{ productoId, cantidad }]`, y opcionalmente `fechaEsperada`, `folioProveedor` y `notas`. El costo se copia de `precioCompra` del producto; crear el pedido no cambia existencias. `GET /api/pedidos-proveedores` y `GET /api/pedidos-proveedores/:id` permiten consultar. ADMIN registra recepciones parciales en `POST /api/pedidos-proveedores/:id/recepciones`, enviando `productos: [{ pedidoProductoId, cantidad }]`; cada recepción crea la compra y los movimientos de entrada de inventario en una transacción. Se puede cancelar un pedido abierto con `POST /api/pedidos-proveedores/:id/cancelar`. No se registran pagos, cuentas por pagar ni devoluciones en este flujo.
+
 ## Catálogo: categorías
 
 Todos los endpoints requieren un access token Bearer y un usuario activo. `ADMIN` puede escribir; `ADMIN` y `VENDEDOR` pueden leer. Sin token válido o con usuario inactivo: `401`; sin rol permitido: `403`.
 
 | Endpoint                             | Entrada                                                   | Resultado                                                                            |
 | ------------------------------------ | --------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `POST /api/catalog/categories`       | `name`, opcionales `slug` y `description`                 | `201`: `CategoryDto`; slug duplicado: `409`.                                         |
-| `GET /api/catalog/categories`        | Query opcional `includeInactive=true` o `false`           | `200`: `CategoryDto[]`, ordenado por nombre; por defecto solo activas.               |
-| `GET /api/catalog/categories/:id`    | UUID                                                      | `200`: `CategoryDto`, incluidas inactivas; inexistente: `404`.                       |
-| `PATCH /api/catalog/categories/:id`  | Al menos uno de `name`, `slug`, `description`, `isActive` | `200`: `CategoryDto`; inexistente: `404`; slug duplicado: `409`.                     |
-| `DELETE /api/catalog/categories/:id` | UUID                                                      | `204` sin cuerpo; con productos asociados: `409`; inexistente o ya eliminada: `404`. |
+| `POST /api/catalogo/categorias`       | `name`, opcionales `slug` y `description`                 | `201`: `CategoryDto`; slug duplicado: `409`.                                         |
+| `GET /api/catalogo/categorias`        | Query opcional `includeInactive=true` o `false`           | `200`: `CategoryDto[]`, ordenado por nombre; por defecto solo activas.               |
+| `GET /api/catalogo/categorias/:id`    | UUID                                                      | `200`: `CategoryDto`, incluidas inactivas; inexistente: `404`.                       |
+| `PATCH /api/catalogo/categorias/:id`  | Al menos uno de `name`, `slug`, `description`, `isActive` | `200`: `CategoryDto`; inexistente: `404`; slug duplicado: `409`.                     |
+| `DELETE /api/catalogo/categorias/:id` | UUID                                                      | `204` sin cuerpo; con productos asociados: `409`; inexistente o ya eliminada: `404`. |
 
 `CategoryDto`: `{ id, name, slug, description, isActive }`. Nombre obligatorio al crear, recortado, no vacío y máximo 100 caracteres. Slug explícito debe cumplir `^[a-z0-9]+(-[a-z0-9]+)*$`; si se omite, se genera del nombre en minúsculas, sin acentos y con separadores convertidos a guiones. Renombrar sin enviar slug lo regenera. Un nombre que no permita generar un slug válido produce `400`; puede acompañarse de un slug explícito válido.
 
 Descripción opcional de máximo 500 caracteres; se recorta y un valor vacío o `null` se guarda como `null`. `name`, `slug` e `isActive` no aceptan `null`. UUID, campos o query inválidos, campos desconocidos y PATCH vacío producen `400`. La base protege el slug único y el borrado con productos, también ante concurrencia.
 
 ```bash
-curl -i http://localhost:3000/api/catalog/categories \
+curl -i http://localhost:3000/api/catalogo/categorias \
   -H 'Authorization: Bearer <accessToken ADMIN>' \
   -H 'Content-Type: application/json' \
   -d '{"name":"Anillos","description":"Joyería de anillos"}'
 
-curl -i 'http://localhost:3000/api/catalog/categories?includeInactive=true' \
+curl -i 'http://localhost:3000/api/catalogo/categorias?includeInactive=true' \
   -H 'Authorization: Bearer <accessToken>'
 
-curl -i -X PATCH http://localhost:3000/api/catalog/categories/<id> \
+curl -i -X PATCH http://localhost:3000/api/catalogo/categorias/<id> \
   -H 'Authorization: Bearer <accessToken ADMIN>' \
   -H 'Content-Type: application/json' \
   -d '{"name":"Anillos de boda","isActive":false}'
@@ -163,11 +172,11 @@ Catálogo único de tallas que usan productos, cotizaciones y ventas. El stock s
 
 | Endpoint                        | Entrada                                         | Resultado                                                                                                            |
 | ------------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `POST /api/catalog/sizes`       | `name`; opcional `sortOrder` (entero 0–10000)   | `201`: `SizeDto`; nombre duplicado: `409`.                                                                           |
-| `GET /api/catalog/sizes`        | Query opcional `includeInactive=true` o `false` | `200`: `SizeDto[]` por `sortOrder` y nombre; por defecto solo activas.                                               |
-| `GET /api/catalog/sizes/:id`    | UUID                                            | `200`: `SizeDto`, incluso inactiva; inexistente: `404`.                                                              |
-| `PATCH /api/catalog/sizes/:id`  | Al menos uno de `name`, `sortOrder`, `isActive` | `200`: `SizeDto`; inexistente: `404`; nombre duplicado: `409`.                                                       |
-| `DELETE /api/catalog/sizes/:id` | UUID                                            | `204`; asignada a productos, renglones de cotización o de venta: `409` (usar `isActive: false`); inexistente: `404`. |
+| `POST /api/catalogo/tallas`       | `name`; opcional `sortOrder` (entero 0–10000)   | `201`: `SizeDto`; nombre duplicado: `409`.                                                                           |
+| `GET /api/catalogo/tallas`        | Query opcional `includeInactive=true` o `false` | `200`: `SizeDto[]` por `sortOrder` y nombre; por defecto solo activas.                                               |
+| `GET /api/catalogo/tallas/:id`    | UUID                                            | `200`: `SizeDto`, incluso inactiva; inexistente: `404`.                                                              |
+| `PATCH /api/catalogo/tallas/:id`  | Al menos uno de `name`, `sortOrder`, `isActive` | `200`: `SizeDto`; inexistente: `404`; nombre duplicado: `409`.                                                       |
+| `DELETE /api/catalogo/tallas/:id` | UUID                                            | `204`; asignada a productos, renglones de cotización o de venta: `409` (usar `isActive: false`); inexistente: `404`. |
 
 `SizeDto`: `{ id, name, sortOrder, isActive }`. `name` se recorta y pasa a mayúsculas (máximo 20), así que `m` y `M` son la misma talla. Las tallas migradas desde el campo de texto anterior conservan su nombre aunque excedan 20 caracteres.
 
@@ -179,13 +188,13 @@ Todos los endpoints exigen JWT y usuario activo. `ADMIN` escribe; `ADMIN` y `VEN
 
 | Endpoint                                  | Entrada                                                                                                                                        | Resultado                                                                                                                  |
 | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `POST /api/catalog/products`              | `codigoBarras`, `articulo`, `precioVenta`; opcionales `categoryId`, `descripcion`, `marca`, `tallaIds`, `precioCompra`, `stockMinimo`, `stock` | `201`: `ProductDto`; talla inexistente o inactiva: `400`; categoría inexistente: `404`; código de barras duplicado: `409`. |
-| `GET /api/catalog/products`               | Query `categoryId`, `includeInactive` (`true` o `false`), `search`                                                                             | `200`: `ProductDto[]` por artículo ascendente; por defecto solo activos.                                                   |
-| `GET /api/catalog/products/:id`           | UUID v4                                                                                                                                        | `200`: `ProductDto`, incluso inactivo; inexistente: `404`.                                                                 |
-| `GET /api/catalog/products/:id/movements` | UUID v4                                                                                                                                        | `200`: movimientos por fecha descendente; producto inexistente: `404`.                                                     |
-| `PATCH /api/catalog/products/:id`         | Al menos un campo de creación, `stock` o `isActive`                                                                                            | `200`: `ProductDto`; producto/categoría inexistente: `404`; duplicados: `409`.                                             |
-| `DELETE /api/catalog/products/:id`        | UUID v4                                                                                                                                        | `204` sin cuerpo; referencias en cotizaciones, ventas o movimientos: `409`; inexistente: `404`.                            |
-| `POST /api/catalog/products/:id/image`    | Multipart, un campo `file`                                                                                                                     | `200`: `ProductDto`; archivo inválido: `400`; producto inexistente: `404`; fallo del proveedor: `502`.                     |
+| `POST /api/productos`              | `codigoBarras`, `articulo`, `precioVenta`; opcionales `categoryId`, `descripcion`, `marca`, `tallaIds`, `precioCompra`, `stockMinimo`, `stock` | `201`: `ProductDto`; talla inexistente o inactiva: `400`; categoría inexistente: `404`; código de barras duplicado: `409`. |
+| `GET /api/productos`               | Query `categoryId`, `includeInactive` (`true` o `false`), `search`                                                                             | `200`: `ProductDto[]` por artículo ascendente; por defecto solo activos.                                                   |
+| `GET /api/productos/:id`           | UUID v4                                                                                                                                        | `200`: `ProductDto`, incluso inactivo; inexistente: `404`.                                                                 |
+| `GET /api/productos/:id/movimientos` | UUID v4                                                                                                                                        | `200`: movimientos por fecha descendente; producto inexistente: `404`.                                                     |
+| `PATCH /api/productos/:id`         | Al menos un campo de creación, `stock` o `isActive`                                                                                            | `200`: `ProductDto`; producto/categoría inexistente: `404`; duplicados: `409`.                                             |
+| `DELETE /api/productos/:id`        | UUID v4                                                                                                                                        | `204` sin cuerpo; referencias en cotizaciones, ventas o movimientos: `409`; inexistente: `404`.                            |
+| `POST /api/productos/:id/image`    | Multipart, un campo `file`                                                                                                                     | `200`: `ProductDto`; archivo inválido: `400`; producto inexistente: `404`; fallo del proveedor: `502`.                     |
 
 Respuesta pública: `{ id, articulo, descripcion, codigoBarras, marca, tallas, precioCompra, precioVenta, stock, stockMinimo, imageUrl, isActive, categoria, createdAt, updatedAt }`. `categoria` incluye únicamente `{ id, name, slug }` o es `null` si el producto no tiene categoría. Se conservan los nombres internos de Prisma; el servicio mapea los campos públicos.
 
@@ -199,7 +208,7 @@ Los movimientos exponen `{ id, type, quantityChange, unitCost, referenceType, re
 
 ### Importación desde Excel
 
-`POST /api/catalog/products/import` (solo `ADMIN`, `multipart/form-data`) crea los productos de un `.xlsx` que todavía no existen. Campos: `file` (hasta 5 MB; primera hoja; renglón 1 con encabezados), `dryRun` (`true` valida y reporta sin escribir) y `categoryMap` (JSON opcional). Encabezados reconocidos sin importar mayúsculas, acentos ni `*`: `articulo`, `descripcion`, `codigo de barras`, `stock`, `categoria`, `marca`, `precio compra`, `precio venta` (obligatorios: artículo, código, stock, categoría y precio de venta). Hasta 5000 renglones; los vacíos se ignoran.
+`POST /api/productos/importacion` (solo `ADMIN`, `multipart/form-data`) crea los productos de un `.xlsx` que todavía no existen. Campos: `file` (hasta 5 MB; primera hoja; renglón 1 con encabezados), `dryRun` (`true` valida y reporta sin escribir) y `categoryMap` (JSON opcional). Encabezados reconocidos sin importar mayúsculas, acentos ni `*`: `articulo`, `descripcion`, `codigo de barras`, `stock`, `categoria`, `marca`, `precio compra`, `precio venta` (obligatorios: artículo, código, stock, categoría y precio de venta). Hasta 5000 renglones; los vacíos se ignoran.
 
 - **Mismo producto** = mismo código de barras y mismo nombre (sin distinguir mayúsculas ni espacios). Si ya existe en el catálogo se omite; repetido en el archivo, gana el primero. Reimportar el mismo archivo no duplica nada.
 - **Código compartido** por productos con nombres distintos (en el archivo o contra el catálogo): esos renglones no se importan y se reportan como error.
@@ -247,15 +256,15 @@ npx prisma generate --config prisma7.config.ts
 ```
 
 ```bash
-curl -i http://localhost:3000/api/catalog/products \
+curl -i http://localhost:3000/api/productos \
   -H 'Authorization: Bearer <accessToken ADMIN>' \
   -H 'Content-Type: application/json' \
   -d '{"codigoBarras":"7501234567890","articulo":"Anillo de plata","categoryId":"<uuid categoría>","precioCompra":780.25,"precioVenta":1250.50,"marca":"Kamadeva"}'
 
-curl -i 'http://localhost:3000/api/catalog/products?search=anillo&includeInactive=true' \
+curl -i 'http://localhost:3000/api/productos?search=anillo&includeInactive=true' \
   -H 'Authorization: Bearer <accessToken>'
 
-curl -i http://localhost:3000/api/catalog/products/<id>/image \
+curl -i http://localhost:3000/api/productos/<id>/image \
   -H 'Authorization: Bearer <accessToken ADMIN>' \
   -F 'file=@/ruta/anillo.png'
 ```
@@ -266,8 +275,8 @@ Las pruebas unitarias sustituyen Prisma y el SDK. `test/catalog-products.e2e-spe
 
 | Endpoint                                   | Permiso          | Contrato                                                                                                                                                                                          |
 | ------------------------------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /api/catalog/products/:id/movements` | ADMIN            | `201`: movimiento manual; producto inexistente `404`.                                                                                                                                             |
-| `GET /api/inventory/movements`             | ADMIN o VENDEDOR | `200`: lista por `createdAt` descendente, sin paginación. Filtros opcionales `productId` (UUID v4), `type`, `startDate` y `endDate` (ISO 8601, inclusivos). Producto filtrado inexistente: `404`. |
+| `POST /api/productos/:id/movimientos` | ADMIN            | `201`: movimiento manual; producto inexistente `404`.                                                                                                                                             |
+| `GET /api/inventario/movimientos`             | ADMIN o VENDEDOR | `200`: lista por `createdAt` descendente, sin paginación. Filtros opcionales `productId` (UUID v4), `type`, `startDate` y `endDate` (ISO 8601, inclusivos). Producto filtrado inexistente: `404`. |
 
 Ambos requieren token válido y usuario activo (`401`); permisos insuficientes producen `403`. UUID, cuerpo o query inválidos producen `400`. Una lista sin coincidencias devuelve `[]`.
 
@@ -276,12 +285,12 @@ Ambos requieren token válido y usuario activo (`401`); permisos insuficientes p
 `unitCost` es opcional, no negativo, hasta 10 enteros y 2 decimales; omitido se guarda como `null`. `notes` es opcional, se recorta y admite hasta 500 caracteres; vacío u omitido se guarda como `null`. Los opcionales aceptan omisión, pero no `null` explícito. La respuesta reutiliza `InventoryMovementDto`, con cantidad y costo como strings de tres y dos decimales. Las referencias quedan en `null`; `createdById` procede del usuario autenticado y no se expone ni se acepta en el cuerpo.
 
 ```bash
-curl -i 'http://localhost:3000/api/catalog/products/<uuid>/movements' \
+curl -i 'http://localhost:3000/api/productos/<uuid>/movimientos' \
   -H 'Authorization: Bearer <accessToken ADMIN>' \
   -H 'Content-Type: application/json' \
   -d '{"type":"PURCHASE_IN","quantity":10,"unitCost":780.25,"notes":"Compra a proveedor"}'
 
-curl -i 'http://localhost:3000/api/inventory/movements?type=PURCHASE_IN&startDate=2026-09-01T00:00:00Z' \
+curl -i 'http://localhost:3000/api/inventario/movimientos?type=PURCHASE_IN&startDate=2026-09-01T00:00:00Z' \
   -H 'Authorization: Bearer <accessToken>'
 ```
 
@@ -293,39 +302,41 @@ Registrar una compra significa recibirla completa. `POST` solo permite `ADMIN`; 
 
 | Endpoint                 | Permiso          | Entrada / resultado                                                                                                                                                                                                                                                                       |
 | ------------------------ | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /api/purchases`    | ADMIN            | Recibe `proveedorId`, `productos[]` (`productoId`, `cantidad`) y opcionalmente `fechaRecepcion`, `folioProveedor`, `notas`. `201`: compra con renglones y total calculado; proveedor/producto inexistente `404`; proveedor/producto inactivo `409`; costo de compra sin configurar `400`. |
-| `GET /api/purchases`     | ADMIN o VENDEDOR | Filtros opcionales `proveedorId`, `fechaInicio`, `fechaFin`; paginación `pagina`/`limite`. Devuelve compras más recientes primero.                                                                                                                                                        |
-| `GET /api/purchases/:id` | ADMIN o VENDEDOR | `200`: detalle de compra; inexistente `404`.                                                                                                                                                                                                                                              |
+| `POST /api/compras`    | ADMIN            | Recibe `proveedorId`, `productos[]` (`productoId`, `cantidad`) y opcionalmente `fechaRecepcion`, `folioProveedor`, `notas`. `201`: compra con renglones y total calculado; proveedor/producto inexistente `404`; proveedor/producto inactivo `409`; costo de compra sin configurar `400`. |
+| `GET /api/compras`     | ADMIN o VENDEDOR | Filtros opcionales `proveedorId`, `fechaInicio`, `fechaFin`; paginación `pagina`/`limite`. Devuelve compras más recientes primero.                                                                                                                                                        |
+| `GET /api/compras/:id` | ADMIN o VENDEDOR | `200`: detalle de compra; inexistente `404`.                                                                                                                                                                                                                                              |
 
 Cada renglón fotografía el `precioCompra` actual del producto como `costoUnitario`; el cuerpo de compra no acepta costo ni precio de venta. Subtotales y total se calculan en el servidor con dos decimales. La compra no cambia `precioCompra` ni `precioVenta`; para cambiar el costo hay que editar el producto. Cada entrada conserva la referencia a la compra y al usuario autenticado. Las compras recibidas no se editan ni borran; diferencias de inventario se corrigen con ajustes.
 
 ```bash
-curl -i http://localhost:3000/api/purchases \
+curl -i http://localhost:3000/api/compras \
   -H 'Authorization: Bearer <accessToken ADMIN>' \
   -H 'Content-Type: application/json' \
   -d '{"proveedorId":"<uuid proveedor>","folioProveedor":"FAC-1842","productos":[{"productoId":"<uuid producto>","cantidad":10}]}'
 
-curl -i 'http://localhost:3000/api/purchases?proveedorId=<uuid>&pagina=1&limite=20' \
+curl -i 'http://localhost:3000/api/compras?proveedorId=<uuid>&pagina=1&limite=20' \
   -H 'Authorization: Bearer <accessToken>'
 ```
 
 ## Ventas
 
-Venta directa de mostrador, historial, detalle y cancelación en `/api/sales`. `ADMIN` y `VENDEDOR` pueden usar todos los endpoints. Sin token válido o con usuario inactivo: `401`; sin rol permitido: `403`. El stock es por producto; la talla es un dato del renglón.
+Venta directa de mostrador, historial, detalle y cancelación en `/api/ventas`. `ADMIN` y `VENDEDOR` pueden usar todos los endpoints. Sin token válido o con usuario inactivo: `401`; sin rol permitido: `403`. El stock es por producto; la talla es un dato del renglón.
 
 | Endpoint                     | Entrada                                                                                                                                                                        | Resultado                                                                                                                                                                                                      |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /api/sales`            | Header `Idempotency-Key` (UUID). Body: `customerId?`, `notes?`, `items[]` (`productId`, `sizeId?`, `quantity`, `discount?`, `tax?`), `payment` (`method`, `amount`)            | `201`: `SaleDetailDto`. Cliente/producto inexistente: `404`; producto inactivo, stock insuficiente, llave reutilizada con otro body u otro usuario: `409`; talla inválida o importe distinto del total: `400`. |
-| `GET /api/sales`             | Query `startDate`, `endDate` (ISO 8601, inclusivos), `status`, `createdById`, `customerId`, `paymentMethod`, `folio` (exacto), `page` (≥1), `pageSize` (1–100, por defecto 20) | `200`: `{ data, total, page, pageSize }`, más recientes primero. Incluye ventas nacidas de cotizaciones. `startDate` posterior a `endDate`: `400`.                                                             |
-| `GET /api/sales/:id`         | UUID                                                                                                                                                                           | `200`: `SaleDetailDto`; inexistente: `404`.                                                                                                                                                                    |
-| `POST /api/sales/:id/cancel` | `reason` (1–500)                                                                                                                                                               | `200`: `SaleDetailDto` cancelada; repetir devuelve el mismo resultado sin mover stock otra vez. Inexistente: `404`; venta no completada: `409`.                                                                |
+| `POST /api/ventas`            | Header `Idempotency-Key` (UUID). Body: `customerId?`, `notes?`, `items[]` (`productId`, `sizeId?`, `quantity`, `discount?`, `tax?`), `payment` (`method`, `amount`)            | `201`: `SaleDetailDto`. Cliente/producto inexistente: `404`; producto inactivo, stock insuficiente, llave reutilizada con otro body u otro usuario: `409`; talla inválida o importe distinto del total: `400`. |
+| `GET /api/ventas`             | Query `startDate`, `endDate` (ISO 8601, inclusivos), `status`, `createdById`, `customerId`, `paymentMethod`, `folio` (exacto), `page` (≥1), `pageSize` (1–100, por defecto 20) | `200`: `{ data, total, page, pageSize }`, más recientes primero. Incluye ventas nacidas de cotizaciones. `startDate` posterior a `endDate`: `400`.                                                             |
+| `GET /api/ventas/:id`         | UUID                                                                                                                                                                           | `200`: `SaleDetailDto`; inexistente: `404`.                                                                                                                                                                    |
+| `POST /api/ventas/:id/cancelar` | `reason` (1–500)                                                                                                                                                               | `200`: `SaleDetailDto` cancelada; repetir devuelve el mismo resultado sin mover stock otra vez. Inexistente: `404`; venta no completada: `409`.                                                                |
+| `POST /api/ventas/:id/devolucion` | Body: `reason?`, `items[]` (`saleItemId?`, `productId?`, `sizeId?`, `quantity`, `reason?`)                                                                                    | `200`: `SaleDetailDto` actualizada con reingreso a stock (`RETURN_IN`), reembolso registrado en pagos (`REFUNDED`) y estatus `REFUNDED` si se devolvió todo. Excede disponible o venta cancelada: `409`.     |
 
 - **Precio y totales:** el precio unitario sale de `Product.price`; el cliente nunca lo envía. Total por renglón = precio × cantidad − descuento + impuesto; un descuento mayor que el subtotal del renglón produce `400`. `payment.amount` debe coincidir exactamente con el total (sin pagos parciales ni cambio).
 - **Cliente:** si se omite `customerId` se usa el cliente por defecto "Público general".
 - **Tallas:** obligatorias si el producto tiene tallas activas y deben ser suyas; prohibidas si no tiene.
 - **Efectos:** en una sola transacción serializable se verifica el stock (sumando renglones repetidos del mismo producto), se reserva el folio `V-`, se guardan venta y renglones, un movimiento `SALE_OUT` por renglón y un pago `PAID`.
 - **Idempotencia:** la respuesta se guarda en `IdempotencyKey` (scope `sales.create`, vigencia 24 h). Repetir la misma llave con el mismo body y usuario devuelve la venta original con el header `Idempotent-Replayed: true`, sin otra venta ni folio, incluso si las dos solicitudes llegan a la vez. La llave no distingue mayúsculas.
-- **Cancelación:** cambia el estado a `CANCELLED`, registra quién, cuándo y por qué, crea un movimiento `RETURN_IN` por renglón (`referenceType: 'SALE_CANCEL'`) y marca los pagos `PAID` como `REFUNDED`. Una venta nacida de una cotización se puede cancelar; la cotización conserva `CONVERTED`. No hay cancelación parcial.
+- **Cancelación:** cambia el estado a `CANCELLED`, registra quién, cuándo y por qué, crea un movimiento `RETURN_IN` por renglón (`referenceType: 'SALE_CANCEL'`) y marca los pagos `PAID` como `REFUNDED`. Una venta nacida de una cotización se puede cancelar; la cotización conserva `CONVERTED`.
+- **Devolución parcial:** `POST /api/ventas/:id/devolucion` permite devolver uno o varios artículos específicos. Valida que la cantidad a devolver no exceda lo comprado ni devoluciones previas, genera movimientos `RETURN_IN` (`referenceType: 'SALE_RETURN'`) aumentando el stock físico, crea un registro en `payments` con estado `REFUNDED` por el importe proporcional exacto para cuadre del corte de caja, y si se devuelve el 100 % de los artículos, actualiza la venta a estado `REFUNDED`.
 
 `SaleDetailDto`: `{ id, folio, status, customer, createdBy, quoteId, notes, subtotal, discount, tax, total, items[], payments[], cancelledAt, cancelledBy, cancelReason, createdAt, updatedAt }`; `customer`, `createdBy` y `cancelledBy` son `{ id, name }`; cada renglón incluye `product { id, barcode, name }` y `size { id, name } | null`. Los montos son strings con dos decimales y las cantidades con tres. `test/sales.e2e-spec.ts` cubre el contrato con PostgreSQL temporal.
 
@@ -335,15 +346,15 @@ Registro y consulta de egresos. Cada gasto pertenece a una categoría del catál
 
 | Endpoint                             | Permiso          | Entrada / resultado                                                                                                                                                                               |
 | ------------------------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /api/expense-categories`       | ADMIN            | `name` (1–100). `201`: `{ id, name, isActive }`; repetido sin distinguir mayúsculas: `409`.                                                                                                       |
-| `GET /api/expense-categories`        | ADMIN o VENDEDOR | Query `includeInactive`. `200` por nombre; por defecto solo activas.                                                                                                                              |
-| `GET /api/expense-categories/:id`    | ADMIN o VENDEDOR | `200`; inexistente: `404`.                                                                                                                                                                        |
-| `PATCH /api/expense-categories/:id`  | ADMIN            | `name` y/o `isActive`. `200`; repetido: `409`; inexistente: `404`.                                                                                                                                |
-| `DELETE /api/expense-categories/:id` | ADMIN            | `204`; con gastos: `409` (desactivarla en su lugar); inexistente: `404`.                                                                                                                          |
-| `POST /api/expenses`                 | ADMIN o VENDEDOR | `concept` (1–255), `amount` (> 0, 2 decimales), `categoryId` (activa), opcionales `deductFromCash` (por defecto `false`), `spentAt` (por defecto ahora; no futura), `notes`. `201`: `ExpenseDto`. |
-| `GET /api/expenses`                  | ADMIN o VENDEDOR | Query `startDate`, `endDate` (sobre `spentAt`, inclusivos), `categoryId`, `createdById`, `deductFromCash`, `page`, `pageSize`. `200`: `{ data, total, page, pageSize, totalAmount }`.             |
-| `GET /api/expenses/:id`              | ADMIN o VENDEDOR | `200`: `ExpenseDto`; inexistente: `404`.                                                                                                                                                          |
-| `DELETE /api/expenses/:id`           | ADMIN            | `204`; incluido en un corte de caja: `409`; inexistente: `404`.                                                                                                                                   |
+| `POST /api/categorias-gastos`       | ADMIN            | `name` (1–100). `201`: `{ id, name, isActive }`; repetido sin distinguir mayúsculas: `409`.                                                                                                       |
+| `GET /api/categorias-gastos`        | ADMIN o VENDEDOR | Query `includeInactive`. `200` por nombre; por defecto solo activas.                                                                                                                              |
+| `GET /api/categorias-gastos/:id`    | ADMIN o VENDEDOR | `200`; inexistente: `404`.                                                                                                                                                                        |
+| `PATCH /api/categorias-gastos/:id`  | ADMIN            | `name` y/o `isActive`. `200`; repetido: `409`; inexistente: `404`.                                                                                                                                |
+| `DELETE /api/categorias-gastos/:id` | ADMIN            | `204`; con gastos: `409` (desactivarla en su lugar); inexistente: `404`.                                                                                                                          |
+| `POST /api/gastos`                 | ADMIN o VENDEDOR | `concept` (1–255), `amount` (> 0, 2 decimales), `categoryId` (activa), opcionales `deductFromCash` (por defecto `false`), `spentAt` (por defecto ahora; no futura), `notes`. `201`: `ExpenseDto`. |
+| `GET /api/gastos`                  | ADMIN o VENDEDOR | Query `startDate`, `endDate` (sobre `spentAt`, inclusivos), `categoryId`, `createdById`, `deductFromCash`, `page`, `pageSize`. `200`: `{ data, total, page, pageSize, totalAmount }`.             |
+| `GET /api/gastos/:id`              | ADMIN o VENDEDOR | `200`: `ExpenseDto`; inexistente: `404`.                                                                                                                                                          |
+| `DELETE /api/gastos/:id`           | ADMIN            | `204`; incluido en un corte de caja: `409`; inexistente: `404`.                                                                                                                                   |
 
 `ExpenseDto`: `{ id, concept, amount, deductFromCash, spentAt, category: { id, name }, createdBy: { id, name }, notes, createdAt, updatedAt }`. El autor es siempre el usuario autenticado. `totalAmount` suma todo el filtro, no solo la página. La lista se ordena por `spentAt` descendente. No hay edición: un error de captura se corrige borrando (ADMIN) y registrando de nuevo. La migración `20261030120000_expenses` crea las categorías iniciales Servicios, Insumos y Otros. Un usuario con gastos registrados, o que canceló ventas, no se puede eliminar (`409`). `test/expenses.e2e-spec.ts` cubre el contrato con PostgreSQL temporal.
 
@@ -353,10 +364,10 @@ Corte de caja de toda la tienda sin abrir turno: cada corte cubre todo lo pendie
 
 | Endpoint                                 | Entrada / resultado                                                                                                                                                                                                               |
 | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/cash-closures/current-summary` | Lo pendiente: `previousClosureId`, `periodStart`, `openingFloat`, `sales` por método, `refunds`, `expenses` y `expectedCash` antes de ajustes. No escribe nada.                                                                   |
-| `POST /api/cash-closures`                | `previousClosureId` (del resumen; `null` en el primer corte), `denominations`, `adjustments?` (`INCOME`/`WITHDRAWAL`, máx. 50), `floatLeft`, `notes?`. `201`: `CashClosureDto`. Resumen desactualizado o corte simultáneo: `409`. |
-| `GET /api/cash-closures`                 | Query `startDate`, `endDate` (sobre `closedAt`), `page`, `pageSize`. `200`: `{ data, total, page, pageSize }`, más recientes primero.                                                                                             |
-| `GET /api/cash-closures/:id`             | `200`: `CashClosureDto`; inexistente: `404`.                                                                                                                                                                                      |
+| `GET /api/cortes-caja/resumen-actual` | Lo pendiente: `previousClosureId`, `periodStart`, `openingFloat`, `sales` por método, `refunds`, `expenses` y `expectedCash` antes de ajustes. No escribe nada.                                                                   |
+| `POST /api/cortes-caja`                | `previousClosureId` (del resumen; `null` en el primer corte), `denominations`, `adjustments?` (`INCOME`/`WITHDRAWAL`, máx. 50), `floatLeft`, `notes?`. `201`: `CashClosureDto`. Resumen desactualizado o corte simultáneo: `409`. |
+| `GET /api/cortes-caja`                 | Query `startDate`, `endDate` (sobre `closedAt`), `page`, `pageSize`. `200`: `{ data, total, page, pageSize }`, más recientes primero.                                                                                             |
+| `GET /api/cortes-caja/:id`             | `200`: `CashClosureDto`; inexistente: `404`.                                                                                                                                                                                      |
 
 ```
 esperado   = fondo inicial + ventas en efectivo − reembolsos en efectivo − gastos de caja + entradas − salidas
@@ -367,7 +378,7 @@ retirado   = contado − fondo dejado
 
 - **Fondo:** `floatLeft` (≤ contado) se vuelve el `openingFloat` del siguiente corte; el primer corte empieza en `0`.
 - **Contar una sola vez:** cada pago, reembolso y gasto queda ligado al corte que lo contó (`Payment.cashClosureId`, `Payment.refundClosureId`, `Expense.cashClosureId`). Un corte toma solo lo que aún no tiene corte; una venta confirmada mientras se ejecuta el corte queda para el siguiente. Una venta cobrada y cancelada en el mismo periodo se compensa; si se cancela después, el reembolso sale en el corte en que se canceló.
-- **Gastos:** el corte liga todos los gastos pendientes; `expenses.cash` suma solo los `deductFromCash`. Un gasto ya incluido en un corte no se puede borrar (`409`). `GET /api/expenses` acepta `pendingClosure=true|false` y `cashClosureId`, y `ExpenseDto` expone `cashClosureId`.
+- **Gastos:** el corte liga todos los gastos pendientes; `expenses.cash` suma solo los `deductFromCash`. Un gasto ya incluido en un corte no se puede borrar (`409`). `GET /api/gastos` acepta `pendingClosure=true|false` y `cashClosureId`, y `ExpenseDto` expone `cashClosureId`.
 - **Historial previo:** pagos y gastos anteriores a esta función quedan pendientes, así que el primer corte los incluye todos.
 - Un usuario que hizo cortes no se puede eliminar (`409`).
 
@@ -379,9 +390,9 @@ Métricas para la pantalla principal. "Hoy", la semana (lunes a domingo) y el me
 
 | Endpoint                           | Query                                                                                                               | Resultado                                                                                                                                                                                                           |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/dashboard/summary`       | —                                                                                                                   | `date`, `timezone`, `salesToday` (`total`, `count`, `averageTicket`, `byMethod`), `inventory` (`activeProducts`, `lowStock`), `expensesToday` (`total`, `fromCash`), `estimatedProfitToday` (`null` para VENDEDOR). |
-| `GET /api/dashboard/top-products`  | `startDate`, `endDate` (por defecto inicio del mes local → ahora), `limit` (1–50, 10), `sortBy` (`units`/`revenue`) | `{ startDate, endDate, sortBy, data: [{ product: { id, barcode, name }, units, revenue, salesCount }] }`. `salesCount` cuenta ventas distintas.                                                                     |
-| `GET /api/dashboard/sales-history` | `period` (`week`/`month`, por defecto `week`)                                                                       | `{ period, timezone, days: [{ date, salesTotal, salesCount, expensesTotal }] }` con todos los días del periodo, incluidos futuros o sin movimiento.                                                                 |
+| `GET /api/tablero/resumen`       | —                                                                                                                   | `date`, `timezone`, `salesToday` (`total`, `count`, `averageTicket`, `byMethod`), `inventory` (`activeProducts`, `lowStock`), `expensesToday` (`total`, `fromCash`), `estimatedProfitToday` (`null` para VENDEDOR). |
+| `GET /api/tablero/productos-mas-vendidos`  | `startDate`, `endDate` (por defecto inicio del mes local → ahora), `limit` (1–50, 10), `sortBy` (`units`/`revenue`) | `{ startDate, endDate, sortBy, data: [{ product: { id, barcode, name }, units, revenue, salesCount }] }`. `salesCount` cuenta ventas distintas.                                                                     |
+| `GET /api/tablero/historial-ventas` | `period` (`week`/`month`, por defecto `week`)                                                                       | `{ period, timezone, days: [{ date, salesTotal, salesCount, expensesTotal }] }` con todos los días del periodo, incluidos futuros o sin movimiento.                                                                 |
 
 - **Stock bajo:** productos activos con `stockMinimo` y `stock ≤ stockMinimo`; sin mínimo no se cuentan.
 - **Utilidad estimada:** `netSales` (Σ total − impuesto) − `costOfGoods` − gastos del día. El costo sale de `SaleItem.unitCost`, una foto de `Product.cost` al registrar la venta (cambiar el costo después no altera ventas pasadas); ventas anteriores a la foto usan el costo actual. Si algún producto vendido no tiene costo cuenta como 0 y `costIncomplete` es `true`.
@@ -395,8 +406,8 @@ Identidad comercial y fiscal impresa en tickets. Existe un solo registro. `ADMIN
 
 | Endpoint                   | Permiso          | Entrada / resultado                                                                                                             |
 | -------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/business-config` | ADMIN o VENDEDOR | `200`: `{ nombre, direccion, colonia, municipio, estado, telefono, rfc, mensajePie, updatedAt }`; antes de configurarla: `404`. |
-| `PUT /api/business-config` | ADMIN            | Los 8 campos obligatorios (reemplazo completo). `200`: misma forma. Faltante, vacío, inválido o campo desconocido: `400`.       |
+| `GET /api/configuracion-negocio` | ADMIN o VENDEDOR | `200`: `{ nombre, direccion, colonia, municipio, estado, telefono, rfc, mensajePie, updatedAt }`; antes de configurarla: `404`. |
+| `PUT /api/configuracion-negocio` | ADMIN            | Los 8 campos obligatorios (reemplazo completo). `200`: misma forma. Faltante, vacío, inválido o campo desconocido: `400`.       |
 
 Reglas (todos se recortan): `nombre` 1–150; `direccion` 1–255; `colonia`, `municipio` y `estado` 1–100; `telefono` hasta 50 con dígitos y separadores (`espacio + - ( ) .`) y al menos 7 dígitos; `rfc` en mayúsculas con formato mexicano de 12 (moral) o 13 (física) caracteres, p. ej. `KAM210315ABC` o `XAXX010101000`; `mensajePie` 1–500 y admite saltos de línea. Las llaves JSON coinciden con el modelo `BusinessConfigModel` de la app; en la base las columnas están en inglés. `PUT` hace un upsert atómico sobre la llave fija, así que guardados simultáneos no crean un segundo registro. `test/business-config.e2e-spec.ts` cubre el contrato.
 
@@ -406,11 +417,11 @@ Directorio de proveedores. `ADMIN` escribe; `ADMIN` y `VENDEDOR` leen. Sin token
 
 | Endpoint                    | Entrada / resultado                                                                                                                        |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `POST /api/providers`       | `nombre`; opcionales `telefono`, `email`, `contacto`, `direccion`. `201`: `ProviderDto`; nombre repetido sin distinguir mayúsculas: `409`. |
-| `GET /api/providers`        | Query `search` (nombre, contacto, correo o teléfono) e `includeInactive`. `200` por nombre; por defecto solo activos.                      |
-| `GET /api/providers/:id`    | `200`: `ProviderDto`, incluso inactivo; inexistente: `404`.                                                                                |
-| `PATCH /api/providers/:id`  | Al menos un campo o `isActive`; `null` borra un opcional. `200`; inexistente: `404`; nombre repetido: `409`.                               |
-| `DELETE /api/providers/:id` | `204`; inexistente: `404`.                                                                                                                 |
+| `POST /api/proveedores`       | `nombre`; opcionales `telefono`, `email`, `contacto`, `direccion`. `201`: `ProviderDto`; nombre repetido sin distinguir mayúsculas: `409`. |
+| `GET /api/proveedores`        | Query `search` (nombre, contacto, correo o teléfono) e `includeInactive`. `200` por nombre; por defecto solo activos.                      |
+| `GET /api/proveedores/:id`    | `200`: `ProviderDto`, incluso inactivo; inexistente: `404`.                                                                                |
+| `PATCH /api/proveedores/:id`  | Al menos un campo o `isActive`; `null` borra un opcional. `200`; inexistente: `404`; nombre repetido: `409`.                               |
+| `DELETE /api/proveedores/:id` | `204`; inexistente: `404`.                                                                                                                 |
 
 `ProviderDto`: `{ id, nombre, telefono, email, contacto, direccion, isActive, createdAt, updatedAt }`, con las llaves del modelo `ProviderModel` de la app (columnas en inglés en la base). Reglas (todo se recorta; opcionales vacíos quedan en `null`): `nombre` 1–150; `telefono` hasta 30 con dígitos y separadores y al menos 7 dígitos; `email` válido en minúsculas, hasta 150; `contacto` hasta 100; `direccion` hasta 255. `test/providers.e2e-spec.ts` cubre el contrato.
 

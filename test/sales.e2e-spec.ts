@@ -7,15 +7,90 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { setupApp } from '../src/setup-app.js';
-import type { SaleDetailDto, SalePageDto } from '../src/sales/dto/sale.dto.js';
 import type { QuoteDto } from '../src/quotes/dto/quote.dto.js';
 
-const base = '/api/sales';
+interface SaleCustomerResponse {
+  id: string;
+  nombre: string;
+}
+
+interface SaleCreatedByResponse {
+  id: string;
+  nombre: string;
+}
+
+interface SaleItemResponse {
+  id: string;
+  producto: {
+    id: string;
+    codigoBarras: string;
+    nombre: string;
+  };
+  talla: {
+    id: string;
+    nombre: string;
+  } | null;
+  cantidad: string;
+  precioUnitario: string;
+  descuento: string;
+  impuesto: string;
+  total: string;
+}
+
+interface SalePaymentResponse {
+  id: string;
+  metodo: string;
+  monto: string;
+  estado: string;
+  fechaPago: string;
+}
+
+interface SaleDetailResponse {
+  id: string;
+  folio: string;
+  estado: string;
+  cliente: SaleCustomerResponse | null;
+  creadoPor: SaleCreatedByResponse;
+  cotizacionId: string | null;
+  notas: string | null;
+  subtotal: string;
+  descuento: string;
+  impuesto: string;
+  total: string;
+  productos: SaleItemResponse[];
+  pagos: SalePaymentResponse[];
+  fechaCancelacion: string | null;
+  canceladoPor: SaleCreatedByResponse | null;
+  motivoCancelacion: string | null;
+  fechaCreacion: string;
+  fechaActualizacion: string;
+}
+
+interface SaleSummaryResponse {
+  id: string;
+  folio: string;
+  estado: string;
+  total: string;
+  metodoPago: string;
+  cliente: SaleCustomerResponse | null;
+  creadoPor: SaleCreatedByResponse;
+  cotizacionId: string | null;
+  fechaCreacion: string;
+}
+
+interface SalePageResponse {
+  datos: SaleSummaryResponse[];
+  total: number;
+  pagina: number;
+  limite: number;
+}
+
+const base = '/api/ventas';
 
 describe('Sales HTTP + PostgreSQL', () => {
   let app: INestApplication<Server> | undefined;
   let prisma: PrismaService;
-  let categoryId: string;
+  let categoriaId: string;
   let customerId: string;
   let sizeM: string;
   let sizedId: string;
@@ -42,11 +117,11 @@ describe('Sales HTTP + PostgreSQL', () => {
     ] as const) {
       const user = await prisma.user.create({
         data: {
-          name: `Sales ${key}`,
+          nombre: `Sales ${key}`,
           email: `${randomUUID()}@sales.test`,
           passwordHash: 'unused-test-hash',
           ...(role
-            ? { roles: { create: { role: { connect: { name: role } } } } }
+            ? { rol: { connect: { nombre: role } } }
             : {}),
         },
       });
@@ -57,40 +132,47 @@ describe('Sales HTTP + PostgreSQL', () => {
   });
 
   beforeEach(async () => {
-    categoryId = (
+    categoriaId = (
       await prisma.category.create({
-        data: { name: 'Ventas', slug: `sales-${randomUUID()}` },
+        data: { descripcion: `Ventas-${randomUUID().slice(0, 8)}` },
       })
     ).id;
-    customerId = (await prisma.customer.create({ data: { name: 'Ana Pérez' } }))
+    customerId = (await prisma.customer.create({ data: { nombre: 'Ana Pérez' } }))
       .id;
     sizeM = (
       await prisma.size.create({
-        data: { name: `M-${randomUUID().slice(0, 8)}`.toUpperCase() },
+        data: { nombre: `M-${randomUUID().slice(0, 8)}`.toUpperCase() },
       })
     ).id;
-    const product = (data: object) =>
+    const product = (data: { nombre: string; precioVenta: string; activo?: boolean }) =>
       prisma.product.create({
-        data: { barcode: randomUUID(), categoryId, ...data } as never,
+        data: {
+          codigoBarras: randomUUID().slice(0, 20),
+          categoriaId,
+          ...data,
+        },
       });
     sizedId = (
       await product({
-        name: 'Playera',
-        price: '299.00',
-        sizes: { create: { sizeId: sizeM } },
+        nombre: 'Playera',
+        precioVenta: '299.00',
       })
     ).id;
-    plainId = (await product({ name: 'Gorra', price: '100.00' })).id;
+    plainId = (await product({ nombre: 'Gorra', precioVenta: '100.00' })).id;
     inactiveId = (
-      await product({ name: 'Viejo', price: '1.00', isActive: false })
+      await product({ nombre: 'Viejo', precioVenta: '1.00', activo: false })
     ).id;
-    for (const [productId, quantity] of [
+    for (const [productoId, quantity] of [
       [sizedId, 5],
       [plainId, 10],
       [inactiveId, 10],
     ] as const) {
       await prisma.inventoryMovement.create({
-        data: { productId, type: 'PURCHASE_IN', quantityChange: quantity },
+        data: {
+          productoId,
+          tipo: 'PURCHASE_IN',
+          cambioExistencias: quantity,
+        },
       });
     }
   });
@@ -100,22 +182,27 @@ describe('Sales HTTP + PostgreSQL', () => {
     const productIds = [sizedId, plainId, inactiveId];
     const userIds = Object.values(users);
     const sales = await prisma.sale.findMany({
-      where: { createdById: { in: userIds } },
+      where: { creadoPorId: { in: userIds } },
       select: { id: true },
     });
     const saleIds = sales.map(({ id }) => id);
     await prisma.inventoryMovement.deleteMany({
-      where: { productId: { in: productIds } },
+      where: {
+        OR: [
+          { productoId: { in: productIds } },
+          { referenciaId: { in: saleIds } },
+        ],
+      },
     });
     await prisma.idempotencyKey.deleteMany({
-      where: { userId: { in: userIds } },
+      where: { usuarioId: { in: userIds } },
     });
-    await prisma.payment.deleteMany({ where: { saleId: { in: saleIds } } });
+    await prisma.saleItem.deleteMany({ where: { ventaId: { in: saleIds } } });
     await prisma.sale.deleteMany({ where: { id: { in: saleIds } } });
-    await prisma.quote.deleteMany({ where: { customerId } });
-    await prisma.product.deleteMany({ where: { categoryId } });
+    await prisma.quote.deleteMany({ where: { clienteId: customerId } });
+    await prisma.product.deleteMany({ where: { categoriaId } });
     await prisma.size.deleteMany({ where: { id: sizeM } });
-    await prisma.category.deleteMany({ where: { id: categoryId } });
+    await prisma.category.deleteMany({ where: { id: categoriaId } });
     await prisma.customer.deleteMany({ where: { id: customerId } });
   });
 
@@ -123,9 +210,6 @@ describe('Sales HTTP + PostgreSQL', () => {
     try {
       if (prisma) {
         const userIds = Object.values(users);
-        await prisma.userRole.deleteMany({
-          where: { userId: { in: userIds } },
-        });
         await prisma.user.deleteMany({ where: { id: { in: userIds } } });
       }
     } finally {
@@ -137,9 +221,9 @@ describe('Sales HTTP + PostgreSQL', () => {
     customerId,
     items: [
       { productId: sizedId, sizeId: sizeM, quantity: 2 },
-      { productId: plainId, quantity: 1, discount: 10, tax: 5 },
+      { productId: plainId, quantity: 1, discount: 10 },
     ],
-    payment: { method: 'CASH', amount: 693 },
+    payment: { method: 'CASH', amount: 688 },
     ...overrides,
   });
 
@@ -153,16 +237,16 @@ describe('Sales HTTP + PostgreSQL', () => {
     return req.send(payload);
   };
 
-  async function stock(productId: string): Promise<string> {
+  async function stock(productoId: string): Promise<string> {
     const total = await prisma.inventoryMovement.aggregate({
-      where: { productId },
-      _sum: { quantityChange: true },
+      where: { productoId },
+      _sum: { cambioExistencias: true },
     });
-    return total._sum.quantityChange?.toFixed(3) ?? '0.000';
+    return total._sum.cambioExistencias?.toFixed(3) ?? '0.000';
   }
 
-  async function sell(payload: object = body()): Promise<SaleDetailDto> {
-    return (await post(payload).expect(201)).body as SaleDetailDto;
+  async function sell(payload: object = body()): Promise<SaleDetailResponse> {
+    return (await post(payload).expect(201)).body as SaleDetailResponse;
   }
 
   it('sells without a quote: server prices, stock out, paid payment and full detail', async () => {
@@ -170,50 +254,50 @@ describe('Sales HTTP + PostgreSQL', () => {
     expect(sale).toEqual({
       id: expect.any(String),
       folio: expect.stringMatching(/^V-\d{6,}$/),
-      status: 'COMPLETED',
-      customer: { id: customerId, name: 'Ana Pérez' },
-      createdBy: { id: users.seller, name: 'Sales seller' },
-      quoteId: null,
-      notes: 'Mostrador',
+      estado: 'COMPLETED',
+      cliente: { id: customerId, nombre: 'Ana Pérez' },
+      creadoPor: { id: users.seller, nombre: 'Sales seller' },
+      cotizacionId: null,
+      notas: 'Mostrador',
       subtotal: '698.00',
-      discount: '10.00',
-      tax: '5.00',
-      total: '693.00',
-      items: expect.any(Array),
-      payments: [
+      descuento: '10.00',
+      impuesto: '0.00',
+      total: '688.00',
+      productos: expect.any(Array),
+      pagos: [
         {
           id: expect.any(String),
-          method: 'CASH',
-          amount: '693.00',
-          status: 'PAID',
-          paidAt: expect.any(String),
+          metodo: 'CASH',
+          monto: '688.00',
+          estado: 'PAID',
+          fechaPago: expect.any(String),
         },
       ],
-      cancelledAt: null,
-      cancelledBy: null,
-      cancelReason: null,
-      createdAt: expect.any(String),
-      updatedAt: expect.any(String),
+      fechaCancelacion: null,
+      canceladoPor: null,
+      motivoCancelacion: null,
+      fechaCreacion: expect.any(String),
+      fechaActualizacion: expect.any(String),
     });
     expect(
       Object.fromEntries(
-        sale.items.map((item) => [
-          item.product.id,
-          [item.size?.id ?? null, item.quantity, item.unitPrice, item.total],
+        sale.productos.map((item) => [
+          item.producto.id,
+          [item.talla?.id ?? null, item.cantidad, item.precioUnitario, item.total],
         ]),
       ),
     ).toEqual({
       [sizedId]: [sizeM, '2.000', '299.00', '598.00'],
-      [plainId]: [null, '1.000', '100.00', '95.00'],
+      [plainId]: [null, '1.000', '100.00', '90.00'],
     });
     expect(await stock(sizedId)).toBe('3.000');
     expect(await stock(plainId)).toBe('9.000');
     expect(
       await prisma.inventoryMovement.count({
         where: {
-          referenceId: sale.id,
-          type: 'SALE_OUT',
-          saleItemId: { not: null },
+          referenciaId: sale.id,
+          tipo: 'SALE_OUT',
+          renglonVentaId: { not: null },
         },
       }),
     ).toBe(2);
@@ -226,9 +310,9 @@ describe('Sales HTTP + PostgreSQL', () => {
   it('uses the default customer when none is sent', async () => {
     const sale = await sell(body({ customerId: undefined }));
     const stored = await prisma.customer.findUniqueOrThrow({
-      where: { id: sale.customer!.id },
+      where: { id: sale.cliente!.id },
     });
-    expect(stored.isDefault).toBe(true);
+    expect(stored.esPredeterminado).toBe(true);
   });
 
   it('rejects invalid headers and bodies with 400 without writing', async () => {
@@ -240,14 +324,14 @@ describe('Sales HTTP + PostgreSQL', () => {
       body({ items: [{ productId: plainId, quantity: 0 }] }),
       body({ items: [{ productId: plainId, quantity: 1.0001 }] }),
       body({ items: [{ productId: plainId, quantity: 1, unitPrice: 1 }] }),
-      body({ payment: { method: 'CRYPTO', amount: 693 } }),
+      body({ payment: { method: 'CRYPTO', amount: 688 } }),
       body({ payment: { method: 'CASH', amount: 1.001 } }),
       body({ payment: undefined }),
       body({ customerId: 'x' }),
       body({ notes: 'x'.repeat(501) }),
       body({ total: 1 }),
       // Business-rule 400s
-      body({ payment: { method: 'CASH', amount: 692.99 } }),
+      body({ payment: { method: 'CASH', amount: 687.99 } }),
       body({ items: [{ productId: sizedId, quantity: 1 }] }),
       body({ items: [{ productId: plainId, sizeId: sizeM, quantity: 1 }] }),
       body({
@@ -258,7 +342,7 @@ describe('Sales HTTP + PostgreSQL', () => {
       await post(payload).expect(400);
     }
     expect(
-      await prisma.sale.count({ where: { createdById: users.seller } }),
+      await prisma.sale.count({ where: { creadoPorId: users.seller } }),
     ).toBe(0);
     expect(await stock(plainId)).toBe('10.000');
   });
@@ -289,7 +373,7 @@ describe('Sales HTTP + PostgreSQL', () => {
     ).expect(409);
     expect(shortage.body.message).toBe('Sin inventario suficiente');
     expect(
-      await prisma.sale.count({ where: { createdById: users.seller } }),
+      await prisma.sale.count({ where: { creadoPorId: users.seller } }),
     ).toBe(0);
     expect(await stock(plainId)).toBe('10.000');
   });
@@ -310,7 +394,7 @@ describe('Sales HTTP + PostgreSQL', () => {
     );
     await post(body(), key, tokens.admin).expect(409);
     expect(
-      await prisma.sale.count({ where: { createdById: users.seller } }),
+      await prisma.sale.count({ where: { creadoPorId: users.seller } }),
     ).toBe(1);
     expect(await stock(sizedId)).toBe('3.000');
   });
@@ -321,7 +405,7 @@ describe('Sales HTTP + PostgreSQL', () => {
     expect(responses.map(({ status }) => status)).toEqual([201, 201]);
     expect(responses[0]!.body).toEqual(responses[1]!.body);
     expect(
-      await prisma.sale.count({ where: { createdById: users.seller } }),
+      await prisma.sale.count({ where: { creadoPorId: users.seller } }),
     ).toBe(1);
     expect(await stock(sizedId)).toBe('3.000');
   });
@@ -335,52 +419,52 @@ describe('Sales HTTP + PostgreSQL', () => {
     expect(responses.map(({ status }) => status).sort()).toEqual([201, 409]);
     expect(await stock(sizedId)).toBe('0.000');
     expect(
-      await prisma.sale.count({ where: { createdById: users.seller } }),
+      await prisma.sale.count({ where: { creadoPorId: users.seller } }),
     ).toBe(1);
   });
 
   it('cancels with stock returned and payment refunded; repeating changes nothing', async () => {
     const sale = await sell();
     const cancelled = await http()
-      .post(`${base}/${sale.id}/cancel`)
+      .post(`${base}/${sale.id}/cancelar`)
       .set('Authorization', tokens.seller)
       .send({ reason: ' Cliente devolvió ' })
       .expect(200);
     expect(cancelled.body).toMatchObject({
       id: sale.id,
       folio: sale.folio,
-      status: 'CANCELLED',
-      cancelledAt: expect.any(String),
-      cancelledBy: { id: users.seller, name: 'Sales seller' },
-      cancelReason: 'Cliente devolvió',
-      payments: [{ status: 'REFUNDED', amount: '693.00' }],
+      estado: 'CANCELLED',
+      fechaCancelacion: expect.any(String),
+      canceladoPor: { id: users.seller, nombre: 'Sales seller' },
+      motivoCancelacion: 'Cliente devolvió',
+      pagos: [{ estado: 'REFUNDED', monto: '688.00' }],
     });
     expect(await stock(sizedId)).toBe('5.000');
     expect(await stock(plainId)).toBe('10.000');
     // Stock is derived from movements, so the catalog shows it immediately.
     const product = await http()
-      .get(`/api/catalog/products/${sizedId}`)
+      .get(`/api/productos/${sizedId}`)
       .set('Authorization', tokens.seller)
       .expect(200);
-    expect(product.body.stock).toBe('5.000');
+    expect(product.body.existencias).toBe('5.000');
     const returns = await prisma.inventoryMovement.findMany({
-      where: { referenceId: sale.id, type: 'RETURN_IN' },
-      select: { saleItemId: true, referenceType: true, createdById: true },
+      where: { referenciaId: sale.id, tipo: 'RETURN_IN' },
+      select: { renglonVentaId: true, tipoReferencia: true, creadoPorId: true },
     });
     expect(returns).toHaveLength(2);
     expect(
-      returns.every((m) => m.saleItemId && m.referenceType === 'SALE_CANCEL'),
+      returns.every((m) => m.renglonVentaId && m.tipoReferencia === 'SALE_CANCEL'),
     ).toBe(true);
 
     const repeated = await http()
-      .post(`${base}/${sale.id}/cancel`)
+      .post(`${base}/${sale.id}/cancelar`)
       .set('Authorization', tokens.admin)
       .send({ reason: 'Otra vez' })
       .expect(200);
     expect(repeated.body).toEqual(cancelled.body);
     expect(
       await prisma.inventoryMovement.count({
-        where: { referenceId: sale.id, type: 'RETURN_IN' },
+        where: { referenciaId: sale.id, tipo: 'RETURN_IN' },
       }),
     ).toBe(2);
   });
@@ -390,7 +474,7 @@ describe('Sales HTTP + PostgreSQL', () => {
     const responses = await Promise.all(
       [tokens.seller, tokens.admin].map((token) =>
         http()
-          .post(`${base}/${sale.id}/cancel`)
+          .post(`${base}/${sale.id}/cancelar`)
           .set('Authorization', token)
           .send({ reason: 'Duplicada' }),
       ),
@@ -398,7 +482,7 @@ describe('Sales HTTP + PostgreSQL', () => {
     expect(responses.map(({ status }) => status)).toEqual([200, 200]);
     expect(
       await prisma.inventoryMovement.count({
-        where: { referenceId: sale.id, type: 'RETURN_IN' },
+        where: { referenciaId: sale.id, tipo: 'RETURN_IN' },
       }),
     ).toBe(2);
     expect(await stock(plainId)).toBe('10.000');
@@ -408,18 +492,18 @@ describe('Sales HTTP + PostgreSQL', () => {
     const sale = await sell();
     for (const payload of [{}, { reason: ' ' }, { reason: 'x'.repeat(501) }]) {
       await http()
-        .post(`${base}/${sale.id}/cancel`)
+        .post(`${base}/${sale.id}/cancelar`)
         .set('Authorization', tokens.seller)
         .send(payload)
         .expect(400);
     }
     await http()
-      .post(`${base}/${randomUUID()}/cancel`)
+      .post(`${base}/${randomUUID()}/cancelar`)
       .set('Authorization', tokens.seller)
       .send({ reason: 'x' })
       .expect(404);
     await http()
-      .post(`${base}/not-a-uuid/cancel`)
+      .post(`${base}/not-a-uuid/cancelar`)
       .set('Authorization', tokens.seller)
       .send({ reason: 'x' })
       .expect(400);
@@ -432,7 +516,7 @@ describe('Sales HTTP + PostgreSQL', () => {
   it('cancels a sale that came from a quote and keeps the quote converted', async () => {
     const quote = (
       await http()
-        .post('/api/quotes')
+        .post('/api/cotizaciones')
         .set('Authorization', tokens.seller)
         .send({
           customerId,
@@ -441,7 +525,7 @@ describe('Sales HTTP + PostgreSQL', () => {
         .expect(201)
     ).body as QuoteDto;
     const paid = await http()
-      .post(`/api/quotes/${quote.id}/pay`)
+      .post(`/api/cotizaciones/${quote.id}/pagar`)
       .set('Authorization', tokens.seller)
       .send({ method: 'TRANSFER', amount: Number(quote.total) })
       .expect(200);
@@ -451,17 +535,17 @@ describe('Sales HTTP + PostgreSQL', () => {
         .get(`${base}/${saleId}`)
         .set('Authorization', tokens.seller)
         .expect(200)
-    ).body as SaleDetailDto;
-    expect(detail).toMatchObject({ quoteId: quote.id, total: '200.00' });
+    ).body as SaleDetailResponse;
+    expect(detail).toMatchObject({ cotizacionId: quote.id, total: '200.00' });
     await http()
-      .post(`${base}/${saleId}/cancel`)
+      .post(`${base}/${saleId}/cancelar`)
       .set('Authorization', tokens.seller)
       .send({ reason: 'Error de captura' })
       .expect(200);
     expect(await stock(plainId)).toBe('10.000');
     expect(
       (await prisma.quote.findUniqueOrThrow({ where: { id: quote.id } }))
-        .status,
+        .estado,
     ).toBe('CONVERTED');
   });
 
@@ -483,9 +567,9 @@ describe('Sales HTTP + PostgreSQL', () => {
         randomUUID(),
         tokens.admin,
       ).expect(201)
-    ).body as SaleDetailDto;
+    ).body as SaleDetailResponse;
     await http()
-      .post(`${base}/${cash.id}/cancel`)
+      .post(`${base}/${cash.id}/cancelar`)
       .set('Authorization', tokens.seller)
       .send({ reason: 'x' })
       .expect(200);
@@ -497,45 +581,45 @@ describe('Sales HTTP + PostgreSQL', () => {
           .query(query)
           .set('Authorization', tokens.seller)
           .expect(200)
-      ).body as SalePageDto;
+      ).body as SalePageResponse;
     const mine = { customerId };
 
     const all = await list(mine);
-    expect(all.data.map(({ id }) => id)).toEqual([byAdmin.id, cash.id]);
-    expect(all).toMatchObject({ total: 2, page: 1, pageSize: 20 });
-    expect(all.data[1]).toEqual({
+    expect(all.datos.map(({ id }) => id)).toEqual([byAdmin.id, cash.id]);
+    expect(all).toMatchObject({ total: 2, pagina: 1, limite: 20 });
+    expect(all.datos[1]).toEqual({
       id: cash.id,
       folio: cash.folio,
-      status: 'CANCELLED',
-      total: '693.00',
-      paymentMethod: 'CASH',
-      customer: { id: customerId, name: 'Ana Pérez' },
-      createdBy: { id: users.seller, name: 'Sales seller' },
-      quoteId: null,
-      createdAt: cash.createdAt,
+      estado: 'CANCELLED',
+      total: '688.00',
+      metodoPago: 'CASH',
+      cliente: { id: customerId, nombre: 'Ana Pérez' },
+      creadoPor: { id: users.seller, nombre: 'Sales seller' },
+      cotizacionId: null,
+      fechaCreacion: cash.fechaCreacion,
     });
 
-    expect((await list({ ...mine, status: 'CANCELLED' })).data).toHaveLength(1);
+    expect((await list({ ...mine, status: 'CANCELLED' })).datos).toHaveLength(1);
     expect(
-      (await list({ ...mine, createdById: users.admin })).data[0]!.id,
+      (await list({ ...mine, createdById: users.admin })).datos[0]!.id,
     ).toBe(byAdmin.id);
-    expect((await list({ folio: card.folio.toLowerCase() })).data).toEqual([
-      expect.objectContaining({ id: card.id, paymentMethod: 'CARD' }),
+    expect((await list({ folio: card.folio.toLowerCase() })).datos).toEqual([
+      expect.objectContaining({ id: card.id, metodoPago: 'CARD' }),
     ]);
     const cardOnly = await list({
       createdById: users.seller,
       paymentMethod: 'CARD',
     });
-    expect(cardOnly.data.map(({ id }) => id)).toEqual([card.id]);
+    expect(cardOnly.datos.map(({ id }) => id)).toEqual([card.id]);
 
     const page2 = await list({ ...mine, page: 2, pageSize: 1 });
-    expect(page2).toMatchObject({ total: 2, page: 2, pageSize: 1 });
-    expect(page2.data.map(({ id }) => id)).toEqual([cash.id]);
+    expect(page2).toMatchObject({ total: 2, pagina: 2, limite: 1 });
+    expect(page2.datos.map(({ id }) => id)).toEqual([cash.id]);
 
-    const after = await list({ ...mine, startDate: byAdmin.createdAt });
-    expect(after.data.map(({ id }) => id)).toEqual([byAdmin.id]);
-    const before = await list({ ...mine, endDate: cash.createdAt });
-    expect(before.data.map(({ id }) => id)).toEqual([cash.id]);
+    const after = await list({ ...mine, startDate: byAdmin.fechaCreacion });
+    expect(after.datos.map(({ id }) => id)).toEqual([byAdmin.id]);
+    const before = await list({ ...mine, endDate: cash.fechaCreacion });
+    expect(before.datos.map(({ id }) => id)).toEqual([cash.id]);
 
     for (const query of [
       { startDate: '2026-10-02T00:00:00Z', endDate: '2026-10-01T00:00:00Z' },
@@ -566,7 +650,7 @@ describe('Sales HTTP + PostgreSQL', () => {
     await http().get(base).set('Authorization', tokens.noRole).expect(403);
     await post(body(), randomUUID(), tokens.noRole).expect(403);
     await http()
-      .post(`${base}/${randomUUID()}/cancel`)
+      .post(`${base}/${randomUUID()}/cancelar`)
       .set('Authorization', tokens.noRole)
       .send({ reason: 'x' })
       .expect(403);

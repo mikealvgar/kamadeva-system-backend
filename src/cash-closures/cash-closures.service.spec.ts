@@ -64,36 +64,36 @@ describe('CashClosuresService', () => {
       create: vi.fn(),
       findUniqueOrThrow: vi.fn(),
     },
-    payment: { findMany: vi.fn(), updateMany: vi.fn() },
+    sale: { findMany: vi.fn(), updateMany: vi.fn() },
     expense: { findMany: vi.fn(), updateMany: vi.fn() },
   };
   const prisma = { $transaction: vi.fn() };
   const service = new CashClosuresService(prisma as unknown as PrismaService);
   const stored = {
     id: 'closure',
-    previousClosureId: 'previous',
-    periodStart: previousClosedAt,
-    closedAt: now,
-    closedBy: { id: 'actor', name: 'Carlos' },
-    openingFloat: d(500),
-    salesCount: 2,
-    cashSales: d(300),
-    cardSales: d(150),
-    transferSales: d(0),
-    otherSales: d(0),
-    cashRefunds: d(100),
-    totalRefunds: d(100),
-    expensesCount: 2,
-    cashExpenses: d(50),
-    totalExpenses: d(80),
-    adjustmentsIn: d(20),
-    adjustmentsOut: d(10),
-    expectedCash: d(660),
-    countedCash: d(650),
-    difference: d(-10),
-    floatLeft: d(500),
-    denominations: { '500': 1, '100': 1, '50': 1 },
-    notes: null,
+    corteAnteriorId: 'previous',
+    inicioPeriodo: previousClosedAt,
+    fechaCierre: now,
+    cerradoPor: { id: 'actor', nombre: 'Carlos' },
+    fondoInicial: d(500),
+    cantidadVentas: 2,
+    ventasEfectivo: d(300),
+    ventasTarjeta: d(150),
+    ventasTransferencia: d(0),
+    otrasVentas: d(0),
+    reembolsosEfectivo: d(100),
+    reembolsosTotales: d(100),
+    cantidadGastos: 2,
+    gastosEfectivo: d(50),
+    gastosTotales: d(80),
+    ajustesEntrada: d(20),
+    ajustesSalida: d(10),
+    efectivoEsperado: d(660),
+    efectivoContado: d(650),
+    diferencia: d(-10),
+    fondoDejado: d(500),
+    denominaciones: { '500': 1, '100': 1, '50': 1 },
+    notas: null,
     adjustments: [],
   };
   const dto = {
@@ -115,25 +115,27 @@ describe('CashClosuresService', () => {
     );
     tx.cashClosure.findFirst.mockResolvedValue({
       id: 'previous',
-      closedAt: previousClosedAt,
-      floatLeft: d(500),
+      fechaCierre: previousClosedAt,
+      fondoDejado: d(500),
     });
-    tx.payment.findMany.mockImplementation(
-      ({ where }: { where: { status: unknown } }) =>
-        Promise.resolve(
-          where.status === 'REFUNDED'
-            ? [{ id: 'r1', amount: d(100), method: 'CASH' }]
+    tx.sale.findMany.mockImplementation(
+      ({ where }: { where: { estado?: { in?: string[] } | string; corteCajaId?: unknown } }) => {
+        const isRefund =
+          where.estado === 'REFUNDED' ||
+          (Array.isArray(where.estado?.in) && where.corteCajaId === undefined);
+        return Promise.resolve(
+          isRefund
+            ? [{ id: 'r1', total: d(100), metodoPago: 'CASH' }]
             : [
-                // Sale s1 paid in cash then cancelled; s2 by card.
-                { id: 'p1', amount: d(100), method: 'CASH', saleId: 's1' },
-                { id: 'p2', amount: d(200), method: 'CASH', saleId: 's1' },
-                { id: 'p3', amount: d(150), method: 'CARD', saleId: 's2' },
+                { id: 's1', total: d(300), metodoPago: 'CASH' },
+                { id: 's2', total: d(150), metodoPago: 'CARD' },
               ],
-        ),
+        );
+      },
     );
     tx.expense.findMany.mockResolvedValue([
-      { id: 'e1', amount: d(50), deductFromCash: true },
-      { id: 'e2', amount: d(30), deductFromCash: false },
+      { id: 'e1', monto: d(50), descontarDeCaja: true },
+      { id: 'e2', monto: d(30), descontarDeCaja: false },
     ]);
     tx.cashClosure.create.mockResolvedValue({ id: 'closure' });
     tx.cashClosure.findUniqueOrThrow.mockResolvedValue(stored);
@@ -159,18 +161,22 @@ describe('CashClosuresService', () => {
       // 500 + 300 − 100 − 50
       expectedCash: '650.00',
     });
-    expect(tx.payment.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { cashClosureId: null, status: { in: ['PAID', 'REFUNDED'] } },
-      }),
-    );
-    expect(tx.payment.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { refundClosureId: null, status: 'REFUNDED' },
-      }),
-    );
+    expect(tx.sale.findMany).toHaveBeenCalledWith({
+      where: { corteCajaId: null, estado: { in: ['COMPLETED', 'CANCELLED', 'REFUNDED'] } },
+      select: { id: true, total: true, metodoPago: true },
+    });
+    expect(tx.sale.findMany).toHaveBeenCalledWith({
+      where: {
+        estado: { in: ['CANCELLED', 'REFUNDED'] },
+        OR: [
+          { corteCajaId: null },
+          { fechaCancelacion: { gte: previousClosedAt } },
+        ],
+      },
+      select: { id: true, total: true, metodoPago: true },
+    });
     expect(tx.cashClosure.create).not.toHaveBeenCalled();
-    expect(tx.payment.updateMany).not.toHaveBeenCalled();
+    expect(tx.sale.updateMany).not.toHaveBeenCalled();
   });
 
   it('starts the first closure with no float and no period start', async () => {
@@ -187,58 +193,54 @@ describe('CashClosuresService', () => {
   it('stores server-computed totals and links exactly the counted rows', async () => {
     await service.close({ ...dto, notes: ' Faltó cambio ' }, 'actor');
     expect(tx.cashClosure.create.mock.calls[0]![0].data).toEqual({
-      previousClosureId: 'previous',
-      periodStart: previousClosedAt,
-      closedAt: now,
-      closedById: 'actor',
-      openingFloat: d(500),
-      salesCount: 2,
-      cashSales: d(300),
-      cardSales: d(150),
-      transferSales: d(0),
-      otherSales: d(0),
-      cashRefunds: d(100),
-      totalRefunds: d(100),
-      expensesCount: 2,
-      cashExpenses: d(50),
-      totalExpenses: d(80),
-      adjustmentsIn: d(20),
-      adjustmentsOut: d(10),
+      corteAnteriorId: 'previous',
+      inicioPeriodo: previousClosedAt,
+      fechaCierre: now,
+      cerradoPorId: 'actor',
+      fondoInicial: d(500),
+      cantidadVentas: 2,
+      ventasEfectivo: d(300),
+      ventasTarjeta: d(150),
+      ventasTransferencia: d(0),
+      otrasVentas: d(0),
+      reembolsosEfectivo: d(100),
+      reembolsosTotales: d(100),
+      cantidadGastos: 2,
+      gastosEfectivo: d(50),
+      gastosTotales: d(80),
+      ajustesEntrada: d(20),
+      ajustesSalida: d(10),
       // 500 + 300 − 100 − 50 + 20 − 10
-      expectedCash: d(660),
-      countedCash: d(650),
-      difference: d(-10),
-      floatLeft: d(500),
-      denominations: expect.objectContaining({ '500': 1, '100': 1, '50': 1 }),
-      notes: 'Faltó cambio',
+      efectivoEsperado: d(660),
+      efectivoContado: d(650),
+      diferencia: d(-10),
+      fondoDejado: d(500),
+      denominaciones: expect.objectContaining({ '500': 1, '100': 1, '50': 1 }),
+      notas: 'Faltó cambio',
       adjustments: {
         create: [
           {
-            position: 0,
-            type: 'INCOME',
-            amount: d(20),
-            description: 'Propina',
+            posicion: 0,
+            tipo: 'INCOME',
+            monto: d(20),
+            descripcion: 'Propina',
           },
           {
-            position: 1,
-            type: 'WITHDRAWAL',
-            amount: d(10),
-            description: 'Mensajero',
+            posicion: 1,
+            tipo: 'WITHDRAWAL',
+            monto: d(10),
+            descripcion: 'Mensajero',
           },
         ],
       },
     });
-    expect(tx.payment.updateMany).toHaveBeenCalledWith({
-      where: { id: { in: ['p1', 'p2', 'p3'] } },
-      data: { cashClosureId: 'closure' },
-    });
-    expect(tx.payment.updateMany).toHaveBeenCalledWith({
-      where: { id: { in: ['r1'] } },
-      data: { refundClosureId: 'closure' },
+    expect(tx.sale.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['s1', 's2'] } },
+      data: { corteCajaId: 'closure' },
     });
     expect(tx.expense.updateMany).toHaveBeenCalledWith({
       where: { id: { in: ['e1', 'e2'] } },
-      data: { cashClosureId: 'closure' },
+      data: { corteCajaId: 'closure' },
     });
     expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
       isolationLevel: 'Serializable',

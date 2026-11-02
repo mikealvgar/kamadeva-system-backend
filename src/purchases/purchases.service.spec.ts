@@ -3,32 +3,32 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { PurchasesService } from './purchases.service.js';
 
 describe('PurchasesService', () => {
-  const provider = { id: 'provider-1', isActive: true };
+  const provider = { id: 'provider-1', activo: true };
   const product = {
     id: 'product-1',
-    name: 'Vibrador',
-    barcode: '750001',
-    cost: new Prisma.Decimal('125.50'),
-    isActive: true,
+    nombre: 'Vibrador',
+    codigoBarras: '750001',
+    precioCompra: new Prisma.Decimal('125.50'),
+    activo: true,
   };
   const purchaseRecord = {
     id: 'purchase-1',
-    provider: { id: provider.id, name: 'Proveedor Norte' },
-    receivedAt: new Date('2026-10-30T18:00:00.000Z'),
-    supplierFolio: 'FAC-1842',
-    notes: 'Compra de mercancía',
+    proveedor: { id: provider.id, nombre: 'Proveedor Norte' },
+    fechaRecepcion: new Date('2026-10-30T18:00:00.000Z'),
+    folioProveedor: 'FAC-1842',
+    notas: 'Compra de mercancía',
     total: new Prisma.Decimal('251.00'),
-    createdById: 'admin-1',
-    createdAt: new Date('2026-10-30T18:00:00.000Z'),
+    creadoPorId: 'admin-1',
+    fechaCreacion: new Date('2026-10-30T18:00:00.000Z'),
     items: [
       {
         id: 'item-1',
-        productId: product.id,
-        productName: product.name,
-        barcode: product.barcode,
-        quantity: new Prisma.Decimal('2.000'),
-        unitCost: new Prisma.Decimal('125.50'),
-        lineSubtotal: new Prisma.Decimal('251.00'),
+        productoId: product.id,
+        nombreProducto: product.nombre,
+        codigoBarras: product.codigoBarras,
+        cantidad: new Prisma.Decimal('2.000'),
+        costoUnitario: new Prisma.Decimal('125.50'),
+        subtotalRenglon: new Prisma.Decimal('251.00'),
       },
     ],
   };
@@ -86,22 +86,22 @@ describe('PurchasesService', () => {
     const createData = tx.purchase.create.mock.calls[0]![0].data;
     expect(createData.total).toEqual(new Prisma.Decimal('251.00'));
     expect(createData.items.create[0]).toMatchObject({
-      productName: 'Vibrador',
-      barcode: '750001',
-      quantity: new Prisma.Decimal('2.000'),
-      unitCost: new Prisma.Decimal('125.50'),
-      lineSubtotal: new Prisma.Decimal('251.00'),
+      nombreProducto: 'Vibrador',
+      codigoBarras: '750001',
+      cantidad: new Prisma.Decimal('2.000'),
+      costoUnitario: new Prisma.Decimal('125.50'),
+      subtotalRenglon: new Prisma.Decimal('251.00'),
     });
     expect(tx.inventoryMovement.createMany).toHaveBeenCalledWith({
       data: [
         expect.objectContaining({
-          productId: product.id,
-          type: 'PURCHASE_IN',
-          quantityChange: new Prisma.Decimal('2.000'),
-          unitCost: new Prisma.Decimal('125.50'),
-          referenceType: 'PURCHASE',
-          referenceId: 'purchase-1',
-          createdById: 'admin-1',
+          productoId: product.id,
+          tipo: 'PURCHASE_IN',
+          cambioExistencias: new Prisma.Decimal('2.000'),
+          costoUnitario: new Prisma.Decimal('125.50'),
+          tipoReferencia: 'PURCHASE',
+          referenciaId: 'purchase-1',
+          creadoPorId: 'admin-1',
         }),
       ],
     });
@@ -117,7 +117,7 @@ describe('PurchasesService', () => {
     });
     expect(tx.purchase.create).not.toHaveBeenCalled();
 
-    tx.provider.findUnique.mockResolvedValue({ ...provider, isActive: false });
+    tx.provider.findUnique.mockResolvedValue({ ...provider, activo: false });
     await expect(service.create(input, 'admin-1')).rejects.toMatchObject({
       status: 409,
     });
@@ -129,12 +129,12 @@ describe('PurchasesService', () => {
       status: 404,
     });
 
-    tx.product.findMany.mockResolvedValue([{ ...product, isActive: false }]);
+    tx.product.findMany.mockResolvedValue([{ ...product, activo: false }]);
     await expect(service.create(input, 'admin-1')).rejects.toMatchObject({
       status: 409,
     });
 
-    tx.product.findMany.mockResolvedValue([{ ...product, cost: null }]);
+    tx.product.findMany.mockResolvedValue([{ ...product, precioCompra: null }]);
     await expect(service.create(input, 'admin-1')).rejects.toMatchObject({
       status: 400,
       message: expect.stringContaining('precio de compra'),
@@ -156,13 +156,13 @@ describe('PurchasesService', () => {
     expect(prisma.purchase.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          providerId: provider.id,
-          receivedAt: {
+          proveedorId: provider.id,
+          fechaRecepcion: {
             gte: new Date('2026-10-01T00:00:00.000Z'),
             lte: new Date('2026-10-31T23:59:59.999Z'),
           },
         },
-        orderBy: [{ receivedAt: 'desc' }, { id: 'desc' }],
+        orderBy: [{ fechaRecepcion: 'desc' }, { id: 'desc' }],
         skip: 5,
         take: 5,
       }),

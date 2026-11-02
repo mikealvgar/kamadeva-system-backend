@@ -3,7 +3,7 @@ import { ROLE_NAMES } from '../../roles/role-names.js';
 
 export class UserRolesDto {
   @ApiProperty({ format: 'uuid' })
-  userId!: string;
+  usuarioId!: string;
 
   @ApiProperty({ enum: ROLE_NAMES, isArray: true })
   roles!: string[];

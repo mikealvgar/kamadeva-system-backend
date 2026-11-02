@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Folio } from '../../../common/domain/folio.js';
 import { Money } from '../../../common/domain/money.js';
 import { QuoteItem } from './quote-item.entity.js';
@@ -51,7 +52,7 @@ export class QuoteAggregate {
   rawRecord?: unknown;
 
   constructor(props: QuoteAggregateProps) {
-    this.id = props.id ?? '';
+    this.id = props.id ?? randomUUID();
     this._folio =
       props.folio instanceof Folio ? props.folio : new Folio(props.folio);
     this._status = props.status ?? 'DRAFT';

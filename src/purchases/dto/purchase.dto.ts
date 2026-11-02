@@ -33,7 +33,7 @@ export class PurchaseDto {
 }
 
 export class PurchasePageDto {
-  @ApiProperty({ type: [PurchaseDto] }) items: PurchaseDto[];
+  @ApiProperty({ type: [PurchaseDto] }) datos: PurchaseDto[];
   @ApiProperty() pagina: number;
   @ApiProperty() limite: number;
   @ApiProperty() total: number;

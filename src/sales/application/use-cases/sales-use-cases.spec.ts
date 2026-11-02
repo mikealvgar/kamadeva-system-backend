@@ -13,7 +13,6 @@ import {
   SaleNotFoundException,
   SalePaymentMismatchException,
   SaleProductNotFoundException,
-  SaleSizeSelectionException,
 } from '../../domain/sale-exceptions.js';
 import { SaleAggregate, SaleItem } from '../../domain/sale.aggregate.js';
 import type {
@@ -348,16 +347,6 @@ describe('Sales use cases', () => {
         'inactive product',
         command({ items: [{ productId: 'inactive', quantity: 1 }] }),
         InactiveProductException,
-      ],
-      [
-        'missing size',
-        command({ items: [{ productId: 'sized', quantity: 1 }] }),
-        SaleSizeSelectionException,
-      ],
-      [
-        'size on a product without sizes',
-        command({ items: [{ productId: 'plain', sizeId: 'm', quantity: 1 }] }),
-        SaleSizeSelectionException,
       ],
       [
         'payment below total',

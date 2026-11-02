@@ -6,70 +6,54 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { serializableTransaction } from '../prisma/serializable-transaction.js';
-import type { CreateProviderDto } from './dto/create-provider.dto.js';
-import type { ListProvidersDto } from './dto/list-providers.dto.js';
 import type { ProviderDto } from './dto/provider.dto.js';
+import type { CreateProviderDto } from './dto/create-provider.dto.js';
 import type { UpdateProviderDto } from './dto/update-provider.dto.js';
-
-const DUPLICATE = 'Ya existe un proveedor con ese nombre';
-const MISSING = 'Proveedor inexistente';
+import type { ListProvidersDto } from './dto/list-providers.dto.js';
 
 const providerSelect = {
   id: true,
-  name: true,
-  phone: true,
-  email: true,
-  contactName: true,
-  address: true,
-  isActive: true,
-  createdAt: true,
-  updatedAt: true,
+  nombre: true,
+  telefono: true,
+  correo: true,
+  nombreContacto: true,
+  direccion: true,
+  activo: true,
+  fechaCreacion: true,
+  fechaActualizacion: true,
 } satisfies Prisma.ProviderSelect;
-type ProviderRecord = Prisma.ProviderGetPayload<{
+type PublicProvider = Prisma.ProviderGetPayload<{
   select: typeof providerSelect;
 }>;
-
-function toDto(provider: ProviderRecord): ProviderDto {
-  return {
-    id: provider.id,
-    nombre: provider.name,
-    telefono: provider.phone,
-    email: provider.email,
-    contacto: provider.contactName,
-    direccion: provider.address,
-    isActive: provider.isActive,
-    createdAt: provider.createdAt.toISOString(),
-    updatedAt: provider.updatedAt.toISOString(),
-  };
-}
-
-const optional = (value: string | null | undefined) =>
-  value === undefined ? undefined : value?.trim() || null;
 
 @Injectable()
 export class ProvidersService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateProviderDto): Promise<ProviderDto> {
-    const name = dto.nombre.trim();
+    const nombre = dto.nombre.trim();
+    const existing = await this.prisma.provider.findFirst({
+      where: { nombre: { equals: nombre, mode: 'insensitive' } },
+    });
+    if (existing) {
+      throw new ConflictException('Ya existe un proveedor con ese nombre');
+    }
+    const correo = (dto.correo ?? dto.email)?.trim().toLowerCase() || null;
+    const nombreContacto = (dto.nombreContacto ?? dto.contacto)?.trim() || null;
     try {
-      // Serializable read of the name predicate blocks concurrent duplicates.
-      return await serializableTransaction(this.prisma, async (tx) => {
-        await this.assertNameFree(name, tx);
-        return toDto(
-          await tx.provider.create({
-            data: {
-              name,
-              phone: optional(dto.telefono) ?? null,
-              email: optional(dto.email)?.toLowerCase() ?? null,
-              contactName: optional(dto.contacto) ?? null,
-              address: optional(dto.direccion) ?? null,
-            },
-            select: providerSelect,
-          }),
-        );
-      });
+      return this.toDto(
+        await this.prisma.provider.create({
+          data: {
+            nombre,
+            telefono: dto.telefono?.trim() || null,
+            correo,
+            nombreContacto,
+            direccion: dto.direccion?.trim() || null,
+            activo: dto.activo ?? true,
+          },
+          select: providerSelect,
+        }),
+      );
     } catch (error) {
       this.rethrow(error);
     }
@@ -77,28 +61,25 @@ export class ProvidersService {
 
   async findAll(query: ListProvidersDto = {}): Promise<ProviderDto[]> {
     const search = query.search?.trim();
-    const contains = (value: string) => ({
-      contains: value,
-      mode: 'insensitive' as const,
-    });
+    const where: Prisma.ProviderWhereInput = {
+      ...(query.includeInactive === 'true' ? {} : { activo: true }),
+      ...(search
+        ? {
+            OR: [
+              { nombre: { contains: search, mode: 'insensitive' as const } },
+              { correo: { contains: search, mode: 'insensitive' as const } },
+              { telefono: { contains: search, mode: 'insensitive' as const } },
+              { nombreContacto: { contains: search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
     const providers = await this.prisma.provider.findMany({
-      where: {
-        ...(query.includeInactive === 'true' ? {} : { isActive: true }),
-        ...(search
-          ? {
-              OR: [
-                { name: contains(search) },
-                { contactName: contains(search) },
-                { email: contains(search) },
-                { phone: contains(search) },
-              ],
-            }
-          : {}),
-      },
-      orderBy: { name: 'asc' },
+      where,
+      orderBy: { nombre: 'asc' },
       select: providerSelect,
     });
-    return providers.map(toDto);
+    return providers.map((provider) => this.toDto(provider));
   }
 
   async findById(id: string): Promise<ProviderDto> {
@@ -106,8 +87,8 @@ export class ProvidersService {
       where: { id },
       select: providerSelect,
     });
-    if (!provider) throw new NotFoundException(MISSING);
-    return toDto(provider);
+    if (!provider) throw new NotFoundException('Proveedor inexistente');
+    return this.toDto(provider);
   }
 
   async update(id: string, dto: UpdateProviderDto): Promise<ProviderDto> {
@@ -115,25 +96,40 @@ export class ProvidersService {
       throw new BadRequestException('Debe enviar al menos un campo');
     }
     const data: Prisma.ProviderUpdateInput = {};
-    if (dto.nombre !== undefined) data.name = dto.nombre.trim();
-    if (dto.telefono !== undefined) data.phone = optional(dto.telefono);
-    if (dto.email !== undefined)
-      data.email = optional(dto.email)?.toLowerCase() ?? null;
-    if (dto.contacto !== undefined) data.contactName = optional(dto.contacto);
-    if (dto.direccion !== undefined) data.address = optional(dto.direccion);
-    if (dto.isActive !== undefined) data.isActive = dto.isActive;
-    try {
-      return await serializableTransaction(this.prisma, async (tx) => {
-        if (typeof data.name === 'string')
-          await this.assertNameFree(data.name, tx, id);
-        return toDto(
-          await tx.provider.update({
-            where: { id },
-            data,
-            select: providerSelect,
-          }),
-        );
+    if (dto.nombre !== undefined) {
+      const nombre = dto.nombre.trim();
+      const existing = await this.prisma.provider.findFirst({
+        where: {
+          nombre: { equals: nombre, mode: 'insensitive' },
+          id: { not: id },
+        },
       });
+      if (existing) {
+        throw new ConflictException('Ya existe un proveedor con ese nombre');
+      }
+      data.nombre = nombre;
+    }
+    if (dto.telefono !== undefined)
+      data.telefono = dto.telefono?.trim() || null;
+    const correo = dto.correo ?? dto.email;
+    if (correo !== undefined)
+      data.correo = correo?.trim().toLowerCase() || null;
+    const contacto = dto.nombreContacto ?? dto.contacto;
+    if (contacto !== undefined)
+      data.nombreContacto = contacto?.trim() || null;
+    if (dto.direccion !== undefined)
+      data.direccion = dto.direccion?.trim() || null;
+    const activo = dto.activo ?? dto.isActive;
+    if (activo !== undefined) data.activo = activo;
+
+    try {
+      return this.toDto(
+        await this.prisma.provider.update({
+          where: { id },
+          data,
+          select: providerSelect,
+        }),
+      );
     } catch (error) {
       this.rethrow(error);
     }
@@ -150,28 +146,33 @@ export class ProvidersService {
     }
   }
 
-  private async assertNameFree(
-    name: string,
-    tx: Prisma.TransactionClient,
-    exceptId?: string,
-  ): Promise<void> {
-    const existing = await tx.provider.findFirst({
-      where: {
-        name: { equals: name, mode: 'insensitive' },
-        ...(exceptId ? { NOT: { id: exceptId } } : {}),
-      },
-      select: { id: true },
-    });
-    if (existing) throw new ConflictException(DUPLICATE);
+  private toDto(provider: PublicProvider): ProviderDto {
+    return {
+      id: provider.id,
+      nombre: provider.nombre,
+      telefono: provider.telefono,
+      correo: provider.correo,
+      email: provider.correo,
+      nombreContacto: provider.nombreContacto,
+      contacto: provider.nombreContacto,
+      direccion: provider.direccion,
+      activo: provider.activo,
+      isActive: provider.activo,
+      fechaCreacion: provider.fechaCreacion.toISOString(),
+      fechaActualizacion: provider.fechaActualizacion.toISOString(),
+      createdAt: provider.fechaCreacion.toISOString(),
+      updatedAt: provider.fechaActualizacion.toISOString(),
+    };
   }
 
   private rethrow(error: unknown): never {
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      if (error.code === 'P2002') throw new ConflictException(DUPLICATE);
-      if (error.code === 'P2025') throw new NotFoundException(MISSING);
-      // Future relations (expenses, purchases) will reference providers with RESTRICT.
+      if (error.code === 'P2002')
+        throw new ConflictException('El nombre de proveedor ya existe');
+      if (error.code === 'P2025')
+        throw new NotFoundException('Proveedor inexistente');
       if (error.code === 'P2003')
-        throw new ConflictException('El proveedor tiene registros asociados');
+        throw new ConflictException('El proveedor tiene compras asociadas');
     }
     throw error;
   }

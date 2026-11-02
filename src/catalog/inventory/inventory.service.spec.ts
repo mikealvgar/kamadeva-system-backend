@@ -14,20 +14,22 @@ describe('InventoryMovementsService', () => {
   const date = new Date('2026-09-14T12:00:00Z');
   const movement = {
     id: 'movement',
-    type: 'PURCHASE_IN',
-    quantityChange: new Prisma.Decimal('2.125'),
-    unitCost: null,
-    notes: null,
-    referenceType: null,
-    referenceId: null,
-    createdAt: date,
+    tipo: 'PURCHASE_IN' as const,
+    cambioExistencias: new Prisma.Decimal('2.125'),
+    costoUnitario: null,
+    notas: null,
+    tipoReferencia: null,
+    referenciaId: null,
+    fechaCreacion: date,
   };
+
   beforeEach(() => {
     vi.resetAllMocks();
     prisma.product.findUnique.mockResolvedValue({ id: 'product' });
     prisma.inventoryMovement.create.mockResolvedValue(movement);
     prisma.inventoryMovement.findMany.mockResolvedValue([movement]);
   });
+
   it.each(manualMovementTypes)(
     'derives sign and records authenticated author for %s',
     async (type) => {
@@ -37,19 +39,20 @@ describe('InventoryMovementsService', () => {
         'actor',
       );
       expect(prisma.inventoryMovement.create.mock.calls[0]![0].data).toEqual({
-        product: { connect: { id: 'product' } },
-        createdBy: { connect: { id: 'actor' } },
-        type,
-        quantityChange: new Prisma.Decimal(
+        productoId: 'product',
+        creadoPorId: 'actor',
+        tipo: type,
+        cambioExistencias: new Prisma.Decimal(
           type === 'ADJUSTMENT_OUT' ? '-2.125' : '2.125',
         ),
-        unitCost: new Prisma.Decimal(0),
-        notes: 'compra',
-        referenceType: null,
-        referenceId: null,
+        costoUnitario: new Prisma.Decimal(0),
+        notas: 'compra',
+        tipoReferencia: null,
+        referenciaId: null,
       });
     },
   );
+
   it('serializes public decimals and normalizes omitted cost and blank notes', async () => {
     const result = await service.create(
       'product',
@@ -57,20 +60,27 @@ describe('InventoryMovementsService', () => {
       'actor',
     );
     expect(result).toEqual({
-      ...movement,
+      id: 'movement',
+      type: 'PURCHASE_IN',
       quantityChange: '2.125',
+      unitCost: null,
+      notes: null,
+      referenceType: null,
+      referenceId: null,
       createdAt: date.toISOString(),
     });
     expect(
       prisma.inventoryMovement.create.mock.calls[0]![0].data,
-    ).toMatchObject({ unitCost: null, notes: null });
+    ).toMatchObject({ costoUnitario: null, notas: null });
   });
+
   it('rejects SALE_OUT before writing', async () => {
     await expect(
       service.create('product', { type: 'SALE_OUT', quantity: 1 }, 'actor'),
     ).rejects.toMatchObject({ status: 400 });
     expect(prisma.inventoryMovement.create).not.toHaveBeenCalled();
   });
+
   it('requires an existing product for creation and filtering', async () => {
     prisma.product.findUnique.mockResolvedValue(null);
     await expect(
@@ -82,6 +92,7 @@ describe('InventoryMovementsService', () => {
     expect(prisma.inventoryMovement.create).not.toHaveBeenCalled();
     expect(prisma.inventoryMovement.findMany).not.toHaveBeenCalled();
   });
+
   it('maps P2025 without disguising infrastructure errors', async () => {
     prisma.inventoryMovement.create.mockRejectedValue(
       new Prisma.PrismaClientKnownRequestError('missing', {
@@ -98,9 +109,10 @@ describe('InventoryMovementsService', () => {
       service.create('product', { type: 'RETURN_IN', quantity: 1 }, 'actor'),
     ).rejects.toBe(failure);
   });
+
   it('combines inclusive filters and orders newest first', async () => {
     prisma.inventoryMovement.findMany.mockResolvedValue([
-      { ...movement, unitCost: new Prisma.Decimal('780.25') },
+      { ...movement, costoUnitario: new Prisma.Decimal('780.25') },
     ]);
     expect(
       await service.findAll({
@@ -111,41 +123,48 @@ describe('InventoryMovementsService', () => {
       }),
     ).toEqual([
       {
-        ...movement,
+        id: 'movement',
+        type: 'PURCHASE_IN',
         quantityChange: '2.125',
         unitCost: '780.25',
+        notes: null,
+        referenceType: null,
+        referenceId: null,
         createdAt: date.toISOString(),
       },
     ]);
     expect(prisma.inventoryMovement.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          productId: 'product',
-          type: 'SALE_OUT',
-          createdAt: { gte: date, lte: date },
+          productoId: 'product',
+          tipo: 'SALE_OUT',
+          fechaCreacion: { gte: date, lte: date },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { fechaCreacion: 'desc' },
       }),
     );
   });
+
   it('rejects dates unsupported by persistence before querying', async () => {
     await expect(
       service.findAll({ startDate: '2026-W01-1' }),
     ).rejects.toMatchObject({ status: 400 });
     expect(prisma.inventoryMovement.findMany).not.toHaveBeenCalled();
   });
+
   it('returns an empty global list without checking a product', async () => {
     prisma.inventoryMovement.findMany.mockResolvedValue([]);
     expect(await service.findAll()).toEqual([]);
     expect(prisma.product.findUnique).not.toHaveBeenCalled();
   });
+
   it.each(['startDate', 'endDate'] as const)(
     'supports only %s',
     async (key) => {
       await service.findAll({ [key]: date.toISOString() });
       expect(prisma.inventoryMovement.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { createdAt: { [key === 'startDate' ? 'gte' : 'lte']: date } },
+          where: { fechaCreacion: { [key === 'startDate' ? 'gte' : 'lte']: date } },
         }),
       );
     },

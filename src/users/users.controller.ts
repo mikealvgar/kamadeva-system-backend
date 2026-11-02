@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Put,
   Req,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -30,9 +31,11 @@ import { RolesGuard } from '../auth/guards/roles.guard.js';
 import { ROLE_NAMES, type RoleName } from '../roles/role-names.js';
 import { SetUserRolesDto } from './dto/set-user-roles.dto.js';
 import { UserRolesDto } from './dto/user-roles.dto.js';
+import { ListUsersDto } from './dto/list-users.dto.js';
+import { UserListPageDto } from './dto/user-list.dto.js';
 import { UsersService } from './users.service.js';
 
-@ApiTags('users')
+@ApiTags('usuarios')
 @ApiBearerAuth()
 @ApiUnauthorizedResponse({ description: 'Token inválido o usuario inactivo' })
 @ApiForbiddenResponse({
@@ -43,63 +46,74 @@ import { UsersService } from './users.service.js';
 @ApiBadRequestResponse({
   description: 'UUID v4, roles inválidos o auto-eliminación',
 })
-@ApiParam({ name: 'userId', format: 'uuid' })
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('ADMIN')
-@Controller('users')
+@Controller('usuarios')
 export class UsersController {
   constructor(private readonly users: UsersService) {}
 
-  @Get(':userId/roles')
-  @ApiOkResponse({ type: UserRolesDto })
-  get(@Param('userId', new ParseUUIDPipe({ version: '4' })) userId: string) {
-    return this.users.getUserRoles(userId);
+  @Get()
+  @ApiOkResponse({ type: UserListPageDto })
+  list(@Query() query: ListUsersDto): Promise<UserListPageDto> {
+    return this.users.listUsers(query);
   }
 
-  @Put(':userId/roles')
+  @Get(':usuarioId/roles')
+  @ApiParam({ name: 'usuarioId', format: 'uuid' })
+  @ApiOkResponse({ type: UserRolesDto })
+  get(
+    @Param('usuarioId', new ParseUUIDPipe({ version: '4' })) usuarioId: string,
+  ) {
+    return this.users.getUserRoles(usuarioId);
+  }
+
+  @Put(':usuarioId/roles')
+  @ApiParam({ name: 'usuarioId', format: 'uuid' })
   @ApiOkResponse({ type: UserRolesDto })
   @ApiUnprocessableEntityResponse({ description: 'Rol inactivo' })
   @ApiConflictResponse({
     description: 'No se puede remover el último administrador',
   })
   set(
-    @Param('userId', new ParseUUIDPipe({ version: '4' })) userId: string,
+    @Param('usuarioId', new ParseUUIDPipe({ version: '4' })) usuarioId: string,
     @Body() dto: SetUserRolesDto,
   ) {
-    return this.users.setUserRoles(userId, dto.roles);
+    return this.users.setUserRoles(usuarioId, dto.roles);
   }
 
-  @Delete(':userId/roles/:roleName')
+  @Delete(':usuarioId/roles/:nombreRol')
+  @ApiParam({ name: 'usuarioId', format: 'uuid' })
   @HttpCode(204)
-  @ApiParam({ name: 'roleName', enum: ROLE_NAMES })
+  @ApiParam({ name: 'nombreRol', enum: ROLE_NAMES })
   @ApiNoContentResponse({ description: 'Rol removido o no asignado' })
   @ApiConflictResponse({
     description: 'No se puede remover el último administrador',
   })
   remove(
-    @Param('userId', new ParseUUIDPipe({ version: '4' })) userId: string,
+    @Param('usuarioId', new ParseUUIDPipe({ version: '4' })) usuarioId: string,
     @Param(
-      'roleName',
+      'nombreRol',
       new ParseEnumPipe({ ADMIN: 'ADMIN', VENDEDOR: 'VENDEDOR' }),
     )
-    roleName: RoleName,
+    nombreRol: RoleName,
   ) {
-    return this.users.removeUserRole(userId, roleName);
+    return this.users.removeUserRole(usuarioId, nombreRol);
   }
 
-  @Delete(':userId')
+  @Delete(':usuarioId')
+  @ApiParam({ name: 'usuarioId', format: 'uuid' })
   @HttpCode(204)
   @ApiNoContentResponse({
     description: 'Usuario, sesiones y asignaciones eliminados',
   })
   @ApiConflictResponse({
     description:
-      'Último administrador o usuario con registros asociados (cotizaciones, ventas, pagos o movimientos)',
+      'Último administrador o usuario con registros asociados (cotizaciones, ventas, compras o movimientos)',
   })
   deleteUser(
-    @Param('userId', new ParseUUIDPipe({ version: '4' })) userId: string,
+    @Param('usuarioId', new ParseUUIDPipe({ version: '4' })) usuarioId: string,
     @Req() req: { user: { id: string } },
   ) {
-    return this.users.deleteUser(userId, req.user.id);
+    return this.users.deleteUser(usuarioId, req.user.id);
   }
 }

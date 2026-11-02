@@ -34,18 +34,18 @@ import {
 import { CreateCashClosureDto } from './dto/create-cash-closure.dto.js';
 import { ListCashClosuresDto } from './dto/list-cash-closures.dto.js';
 
-@ApiTags('cash-closures')
+@ApiTags('cortes-caja')
 @ApiBearerAuth()
 @ApiUnauthorizedResponse({ description: 'Token inválido o usuario inactivo' })
 @ApiForbiddenResponse({ description: 'Permisos insuficientes' })
 @ApiBadRequestResponse({ description: 'Body, query o UUID inválidos' })
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('ADMIN', 'VENDEDOR')
-@Controller('cash-closures')
+@Controller('cortes-caja')
 export class CashClosuresController {
   constructor(private readonly closures: CashClosuresService) {}
 
-  @Get('current-summary')
+  @Get('resumen-actual')
   @ApiOkResponse({
     type: CashClosureSummaryDto,
     description: 'Lo pendiente desde el último corte; no escribe nada',

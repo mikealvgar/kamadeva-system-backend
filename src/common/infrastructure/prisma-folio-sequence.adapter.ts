@@ -12,14 +12,21 @@ export class PrismaFolioSequenceAdapter implements FolioSequencePort {
     series: FolioSeries,
     tx?: Prisma.TransactionClient,
   ): Promise<Folio> {
-    // Row lock held until commit; concurrent callers serialize on it and the
-    // serializable transaction helper retries the losers.
-    const { lastValue } = await (tx ?? this.prisma).folioCounter.upsert({
-      where: { prefix: series },
-      create: { prefix: series, lastValue: 1 },
-      update: { lastValue: { increment: 1 } },
-      select: { lastValue: true },
-    });
-    return Folio.fromSequence(series, lastValue);
+    const client = tx ?? this.prisma;
+    if (series === 'C') {
+      const last = await client.quote.findFirst({
+        orderBy: { folio: 'desc' },
+        select: { folio: true },
+      });
+      const nextNum = (last?.folio ?? 0) + 1;
+      return Folio.fromSequence('C', nextNum);
+    } else {
+      const last = await client.sale.findFirst({
+        orderBy: { folio: 'desc' },
+        select: { folio: true },
+      });
+      const nextNum = (last?.folio ?? 0) + 1;
+      return Folio.fromSequence('V', nextNum);
+    }
   }
 }

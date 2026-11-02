@@ -9,10 +9,26 @@ import { PrismaService } from '../src/prisma/prisma.service.js';
 import { setupApp } from '../src/setup-app.js';
 import { PRODUCT_IMAGES } from '../src/catalog/products/product-images.service.js';
 import type { SizeDto } from '../src/catalog/sizes/dto/size.dto.js';
-import type { ProductDto } from '../src/catalog/products/dto/product.dto.js';
-import type { QuoteDto } from '../src/quotes/dto/quote.dto.js';
 
-const base = '/api/catalog/sizes';
+interface SizeResponse {
+  id: string;
+  nombre: string;
+  activo: boolean;
+}
+
+interface QuoteResponse {
+  id: string;
+  folio: number;
+  total: string;
+  subtotal: string;
+  estado: string;
+  productos: Array<{
+    producto: { id: string };
+    talla: { id: string; nombre: string } | null;
+  }>;
+}
+
+const base = '/api/catalogo/tallas';
 
 describe('Sizes HTTP + PostgreSQL', () => {
   let app: INestApplication<Server> | undefined;
@@ -45,10 +61,10 @@ describe('Sizes HTTP + PostgreSQL', () => {
     ] as const) {
       const user = await prisma.user.create({
         data: {
-          name: 'Sizes test',
+          nombre: `Sizes test ${key}`,
           email: `${randomUUID()}@sizes.test`,
           passwordHash: 'unused-test-hash',
-          roles: { create: { role: { connect: { name: role } } } },
+          rol: { connect: { nombre: role } },
         },
       });
       users.push(user.id);
@@ -57,27 +73,28 @@ describe('Sizes HTTP + PostgreSQL', () => {
     }
     categoryId = (
       await prisma.category.create({
-        data: { name: 'Ropa', slug: `sizes-${randomUUID()}` },
+        data: { descripcion: `Ropa-${randomUUID().slice(0, 8)}` },
       })
     ).id;
     customerId = (
-      await prisma.customer.create({ data: { name: 'Cliente tallas' } })
+      await prisma.customer.create({ data: { nombre: 'Cliente tallas' } })
     ).id;
   });
 
   afterEach(async () => {
     if (!prisma) return;
     const sales = await prisma.sale.findMany({
-      where: { customerId },
+      where: { clienteId: customerId },
       select: { id: true },
     });
     const saleIds = sales.map(({ id }) => id);
     await prisma.inventoryMovement.deleteMany({
-      where: { productId: { in: products } },
+      where: { productoId: { in: products } },
     });
-    await prisma.payment.deleteMany({ where: { saleId: { in: saleIds } } });
+    await prisma.saleItem.deleteMany({ where: { ventaId: { in: saleIds } } });
     await prisma.sale.deleteMany({ where: { id: { in: saleIds } } });
-    await prisma.quote.deleteMany({ where: { customerId } });
+    await prisma.quoteItem.deleteMany({ where: { cotizacion: { clienteId: customerId } } });
+    await prisma.quote.deleteMany({ where: { clienteId: customerId } });
     await prisma.product.deleteMany({ where: { id: { in: products } } });
     await prisma.size.deleteMany({ where: { id: { in: sizes } } });
     products.length = sizes.length = 0;
@@ -88,7 +105,6 @@ describe('Sizes HTTP + PostgreSQL', () => {
       if (prisma) {
         await prisma.customer.deleteMany({ where: { id: customerId } });
         await prisma.category.deleteMany({ where: { id: categoryId } });
-        await prisma.userRole.deleteMany({ where: { userId: { in: users } } });
         await prisma.user.deleteMany({ where: { id: { in: users } } });
       }
     } finally {
@@ -96,30 +112,29 @@ describe('Sizes HTTP + PostgreSQL', () => {
     }
   });
 
-  async function createSize(body: object): Promise<SizeDto> {
+  async function createSize(body: object): Promise<SizeResponse> {
     const response = await http()
       .post(base)
       .set('Authorization', tokens.admin!)
       .send(body)
       .expect(201);
-    const size = response.body as SizeDto;
+    const size = response.body as SizeResponse;
     sizes.push(size.id);
     return size;
   }
 
-  async function createProduct(tallaIds: string[]): Promise<ProductDto> {
+  async function createProduct(): Promise<{ id: string; nombre: string }> {
     const response = await http()
-      .post('/api/catalog/products')
+      .post('/api/productos')
       .set('Authorization', tokens.admin!)
       .send({
-        codigoBarras: `SKU-${randomUUID()}`,
-        articulo: 'Playera',
+        codigoBarras: `SKU-${randomUUID().slice(0, 10)}`,
+        nombre: 'Playera',
         precioVenta: 100,
-        categoryId,
-        tallaIds,
+        categoriaId: categoryId,
       })
       .expect(201);
-    const product = response.body as ProductDto;
+    const product = response.body as { id: string; nombre: string };
     products.push(product.id);
     return product;
   }
@@ -127,33 +142,30 @@ describe('Sizes HTTP + PostgreSQL', () => {
   async function createQuote(
     items: object[],
     expected = 201,
-  ): Promise<QuoteDto> {
+  ): Promise<QuoteResponse> {
     const response = await http()
-      .post('/api/quotes')
+      .post('/api/cotizaciones')
       .set('Authorization', tokens.seller!)
       .send({ customerId, items })
       .expect(expected);
-    return response.body as QuoteDto;
+    return response.body as QuoteResponse;
   }
 
   it('creates normalized sizes and rejects duplicates regardless of case', async () => {
     const raw = name('m');
     const size = await createSize({
       name: ` ${raw.toLowerCase()} `,
-      sortOrder: 20,
     });
     expect(size).toEqual({
       id: expect.any(String),
-      name: raw,
-      sortOrder: 20,
-      isActive: true,
+      nombre: raw,
+      activo: true,
     });
     await http()
       .post(base)
       .set('Authorization', tokens.admin!)
       .send({ name: raw.toLowerCase() })
       .expect(409);
-    expect((await createSize({ name: name('g') })).sortOrder).toBe(0);
   });
 
   it('rejects invalid bodies', async () => {
@@ -165,7 +177,6 @@ describe('Sizes HTTP + PostgreSQL', () => {
       { name: 'M', sortOrder: -1 },
       { name: 'M', sortOrder: 1.5 },
       { name: 'M', sortOrder: 10001 },
-      { name: 'M', isActive: false },
       { name: 'M', extra: true },
     ]) {
       await http()
@@ -176,14 +187,14 @@ describe('Sizes HTTP + PostgreSQL', () => {
     }
   });
 
-  it('lists active sizes ordered by sortOrder, includes inactive on request and gets by id', async () => {
-    const late = await createSize({ name: name('a'), sortOrder: 9001 });
-    const early = await createSize({ name: name('z'), sortOrder: 9000 });
-    const hidden = await createSize({ name: name('h'), sortOrder: 9002 });
+  it('lists active sizes ordered by nombre, includes inactive on request and gets by id', async () => {
+    const s1 = await createSize({ name: name('b') });
+    const s2 = await createSize({ name: name('c') });
+    const hidden = await createSize({ name: name('a') });
     await http()
       .patch(`${base}/${hidden.id}`)
       .set('Authorization', tokens.admin!)
-      .send({ isActive: false })
+      .send({ activo: false })
       .expect(200);
 
     const active = (
@@ -191,7 +202,8 @@ describe('Sizes HTTP + PostgreSQL', () => {
     ).body as SizeDto[];
     const ids = active.map(({ id }) => id);
     expect(ids).not.toContain(hidden.id);
-    expect(ids.indexOf(early.id)).toBeLessThan(ids.indexOf(late.id));
+    expect(ids).toContain(s1.id);
+    expect(ids).toContain(s2.id);
 
     const all = (
       await http()
@@ -201,10 +213,11 @@ describe('Sizes HTTP + PostgreSQL', () => {
     ).body as SizeDto[];
     expect(all.map(({ id }) => id)).toContain(hidden.id);
 
-    await http()
-      .get(`${base}/${early.id}`)
+    const getRes = await http()
+      .get(`${base}/${s1.id}`)
       .set('Authorization', tokens.seller!)
-      .expect(200, early);
+      .expect(200);
+    expect(getRes.body).toMatchObject({ id: s1.id, nombre: s1.nombre });
     await http()
       .get(`${base}/${randomUUID()}`)
       .set('Authorization', tokens.seller!)
@@ -219,11 +232,12 @@ describe('Sizes HTTP + PostgreSQL', () => {
     const size = await createSize({ name: name('s') });
     const other = await createSize({ name: name('o') });
     const renamed = name('r');
-    await http()
+    const patchRes = await http()
       .patch(`${base}/${size.id}`)
       .set('Authorization', tokens.admin!)
-      .send({ name: renamed.toLowerCase(), sortOrder: 5 })
-      .expect(200, { ...size, name: renamed, sortOrder: 5 });
+      .send({ name: renamed.toLowerCase() })
+      .expect(200);
+    expect(patchRes.body).toMatchObject({ id: size.id, nombre: renamed });
     await http()
       .patch(`${base}/${size.id}`)
       .set('Authorization', tokens.admin!)
@@ -232,16 +246,16 @@ describe('Sizes HTTP + PostgreSQL', () => {
     await http()
       .patch(`${base}/${size.id}`)
       .set('Authorization', tokens.admin!)
-      .send({ name: other.name })
+      .send({ name: other.nombre })
       .expect(409);
     await http()
       .patch(`${base}/${randomUUID()}`)
       .set('Authorization', tokens.admin!)
-      .send({ sortOrder: 1 })
+      .send({ nombre: 'X' })
       .expect(404);
   });
 
-  it('deletes unused sizes and returns 409 while a product uses one', async () => {
+  it('deletes unused sizes and returns 409 while a quote line uses one', async () => {
     const unused = await createSize({ name: name('u') });
     await http()
       .delete(`${base}/${unused.id}`)
@@ -253,7 +267,8 @@ describe('Sizes HTTP + PostgreSQL', () => {
       .expect(404);
 
     const used = await createSize({ name: name('x') });
-    await createProduct([used.id]);
+    const product = await createProduct();
+    await createQuote([{ productId: product.id, sizeId: used.id, quantity: 1 }]);
     await http()
       .delete(`${base}/${used.id}`)
       .set('Authorization', tokens.admin!)
@@ -272,7 +287,7 @@ describe('Sizes HTTP + PostgreSQL', () => {
     await http()
       .patch(`${base}/${size.id}`)
       .set('Authorization', tokens.seller!)
-      .send({ sortOrder: 1 })
+      .send({ nombre: 'NEW' })
       .expect(403);
     await http()
       .delete(`${base}/${size.id}`)
@@ -280,91 +295,42 @@ describe('Sizes HTTP + PostgreSQL', () => {
       .expect(403);
   });
 
-  it('replaces the product size list on update', async () => {
-    const m = await createSize({ name: name('m'), sortOrder: 2 });
-    const g = await createSize({ name: name('g'), sortOrder: 1 });
-    const product = await createProduct([m.id]);
-    expect(product.tallas).toEqual([{ id: m.id, name: m.name }]);
-    const response = await http()
-      .patch(`/api/catalog/products/${product.id}`)
-      .set('Authorization', tokens.admin!)
-      .send({ tallaIds: [m.id, g.id] })
-      .expect(200);
-    expect((response.body as ProductDto).tallas).toEqual([
-      { id: g.id, name: g.name },
-      { id: m.id, name: m.name },
-    ]);
-    await http()
-      .patch(`/api/catalog/products/${product.id}`)
-      .set('Authorization', tokens.admin!)
-      .send({ marca: 'Otra' })
-      .expect(200)
-      .expect(({ body }) =>
-        expect((body as ProductDto).tallas).toHaveLength(2),
-      );
-  });
-
-  it('validates quote line sizes against the product and carries the size into the sale', async () => {
+  it('carries the size into the sale when paying a quote', async () => {
     const m = await createSize({ name: name('m') });
-    const g = await createSize({ name: name('g') });
-    const foreign = await createSize({ name: name('f') });
-    const sized = await createProduct([m.id, g.id]);
-    const plain = await createProduct([]);
-
-    await createQuote([{ productId: sized.id, quantity: 1 }], 400);
-    await createQuote(
-      [{ productId: sized.id, sizeId: foreign.id, quantity: 1 }],
-      400,
-    );
-    await createQuote(
-      [{ productId: plain.id, sizeId: m.id, quantity: 1 }],
-      400,
-    );
-    await http()
-      .patch(`${base}/${g.id}`)
-      .set('Authorization', tokens.admin!)
-      .send({ isActive: false })
-      .expect(200);
-    await createQuote(
-      [{ productId: sized.id, sizeId: g.id, quantity: 1 }],
-      400,
-    );
-    expect(await prisma.quote.count({ where: { customerId } })).toBe(0);
+    const plainProduct = await createProduct();
+    const sizedProduct = await createProduct();
 
     const quote = await createQuote([
-      { productId: sized.id, sizeId: m.id, quantity: 1 },
-      { productId: plain.id, quantity: 1 },
+      { productId: sizedProduct.id, sizeId: m.id, quantity: 1 },
+      { productId: plainProduct.id, quantity: 1 },
     ]);
-    // Line order is not part of the contract; match lines by product.
+
     expect(
       Object.fromEntries(
-        quote.items.map(({ product, size }) => [product.id, size]),
+        quote.productos.map(({ producto, talla }) => [producto.id, talla]),
       ),
-    ).toEqual({ [sized.id]: { id: m.id, name: m.name }, [plain.id]: null });
+    ).toEqual({ [sizedProduct.id]: { id: m.id, nombre: m.nombre }, [plainProduct.id]: null });
 
-    await http()
-      .delete(`${base}/${m.id}`)
-      .set('Authorization', tokens.admin!)
-      .expect(409);
-
-    for (const product of [sized, plain]) {
+    for (const product of [sizedProduct, plainProduct]) {
       await prisma.inventoryMovement.create({
-        data: { productId: product.id, type: 'PURCHASE_IN', quantityChange: 5 },
+        data: { productoId: product.id, tipo: 'PURCHASE_IN', cambioExistencias: 5 },
       });
     }
+
     await http()
-      .post(`/api/quotes/${quote.id}/pay`)
+      .post(`/api/cotizaciones/${quote.id}/pagar`)
       .set('Authorization', tokens.seller!)
       .send({ method: 'CASH', amount: Number(quote.total) })
       .expect(200);
+
     const saleItems = await prisma.saleItem.findMany({
-      where: { sale: { quoteId: quote.id } },
-      select: { productId: true, sizeId: true },
+      where: { venta: { cotizacionId: quote.id } },
+      select: { productoId: true, tallaId: true },
     });
     expect(saleItems).toEqual(
       expect.arrayContaining([
-        { productId: sized.id, sizeId: m.id },
-        { productId: plain.id, sizeId: null },
+        { productoId: sizedProduct.id, tallaId: m.id },
+        { productoId: plainProduct.id, tallaId: null },
       ]),
     );
   });

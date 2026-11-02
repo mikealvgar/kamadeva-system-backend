@@ -8,9 +8,9 @@ export class RolesService {
 
   findAll() {
     return this.prisma.role.findMany({
-      where: { name: { in: [...ROLE_NAMES] } },
-      select: { id: true, name: true, description: true, isActive: true },
-      orderBy: { name: 'asc' },
+      where: { nombre: { in: [...ROLE_NAMES] } },
+      select: { id: true, nombre: true, descripcion: true, activo: true },
+      orderBy: { nombre: 'asc' },
     });
   }
 }

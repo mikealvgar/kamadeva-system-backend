@@ -8,15 +8,15 @@ describe('BusinessConfigService', () => {
   const service = new BusinessConfigService(prisma as unknown as PrismaService);
   const updatedAt = new Date('2026-10-30T12:00:00Z');
   const record = {
-    name: 'Kamadeva',
-    address: 'Av. 1',
-    neighborhood: 'Roma Sur',
-    municipality: 'Cuauhtémoc',
-    state: 'CDMX',
-    phone: '55-1234-5678',
-    taxId: 'KAM210315ABC',
-    ticketFooter: 'Gracias',
-    updatedAt,
+    nombre: 'Kamadeva',
+    direccion: 'Av. 1',
+    colonia: 'Roma Sur',
+    municipio: 'Cuauhtémoc',
+    estado: 'CDMX',
+    telefono: '55-1234-5678',
+    rfc: 'KAM210315ABC',
+    mensajePie: 'Gracias',
+    fechaActualizacion: updatedAt,
   };
   const dto = {
     nombre: ' Kamadeva ',
@@ -41,7 +41,7 @@ describe('BusinessConfigService', () => {
       message: 'Configuración del negocio no registrada',
     });
     expect(prisma.businessConfig.findUnique).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { key: 'default' } }),
+      expect.objectContaining({ where: { clave: 'default' } }),
     );
   });
 
@@ -63,19 +63,19 @@ describe('BusinessConfigService', () => {
   it('upserts the single row with normalized values', async () => {
     await service.update(dto);
     const data = {
-      name: 'Kamadeva',
-      address: 'Av. 1',
-      neighborhood: 'Roma Sur',
-      municipality: 'Cuauhtémoc',
-      state: 'CDMX',
-      phone: '55-1234-5678',
-      taxId: 'KAM210315ABC',
-      ticketFooter: 'Gracias',
+      nombre: 'Kamadeva',
+      direccion: 'Av. 1',
+      colonia: 'Roma Sur',
+      municipio: 'Cuauhtémoc',
+      estado: 'CDMX',
+      telefono: '55-1234-5678',
+      rfc: 'KAM210315ABC',
+      mensajePie: 'Gracias',
     };
     expect(prisma.businessConfig.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { key: 'default' },
-        create: { key: 'default', ...data },
+        where: { clave: 'default' },
+        create: { clave: 'default', ...data },
         update: data,
       }),
     );
@@ -89,7 +89,7 @@ describe('BusinessConfigService', () => {
     ['KA210315ABC', false],
     ['KAM21031ABC', false],
     ['KAM210315AB', false],
-    ['kam210315abc', false], // DTO upper-cases before validating
+    ['kam210315abc', false],
   ])('validates RFC %s → %s', (rfc, valid) => {
     expect(RFC_PATTERN.test(rfc)).toBe(valid);
   });

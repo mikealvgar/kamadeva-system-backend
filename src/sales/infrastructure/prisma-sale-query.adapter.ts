@@ -8,46 +8,36 @@ import type {
   SaleQueryPort,
 } from '../application/ports/sale-query.port.js';
 
-const ref = { select: { id: true, name: true } } as const;
+const ref = { select: { id: true, nombre: true } } as const;
 
 const detailSelect = {
   id: true,
   folio: true,
-  status: true,
-  quoteId: true,
-  notes: true,
+  estado: true,
+  cotizacionId: true,
+  notas: true,
   subtotal: true,
-  discount: true,
-  tax: true,
+  descuento: true,
   total: true,
-  cancelledAt: true,
-  cancelReason: true,
-  createdAt: true,
-  updatedAt: true,
-  customer: ref,
-  createdBy: ref,
-  cancelledBy: ref,
+  metodoPago: true,
+  fechaPago: true,
+  fechaCancelacion: true,
+  motivoCancelacion: true,
+  fechaCreacion: true,
+  fechaActualizacion: true,
+  cliente: ref,
+  creadoPor: ref,
+  canceladoPor: ref,
   items: {
-    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    orderBy: [{ fechaCreacion: 'asc' }, { id: 'asc' }],
     select: {
       id: true,
-      quantity: true,
-      unitPrice: true,
-      discount: true,
-      tax: true,
+      cantidad: true,
+      precioUnitario: true,
+      descuento: true,
       total: true,
-      product: { select: { id: true, barcode: true, name: true } },
-      size: ref,
-    },
-  },
-  payments: {
-    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-    select: {
-      id: true,
-      method: true,
-      amount: true,
-      status: true,
-      paidAt: true,
+      producto: { select: { id: true, codigoBarras: true, nombre: true } },
+      talla: ref,
     },
   },
 } satisfies Prisma.SaleSelect;
@@ -55,56 +45,59 @@ const detailSelect = {
 const summarySelect = {
   id: true,
   folio: true,
-  status: true,
+  estado: true,
   total: true,
-  quoteId: true,
-  createdAt: true,
-  customer: ref,
-  createdBy: ref,
-  payments: {
-    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-    take: 1,
-    select: { method: true },
-  },
+  metodoPago: true,
+  cotizacionId: true,
+  fechaCreacion: true,
+  cliente: ref,
+  creadoPor: ref,
 } satisfies Prisma.SaleSelect;
 
 type DetailRecord = Prisma.SaleGetPayload<{ select: typeof detailSelect }>;
 
 function toDetail(sale: DetailRecord): SaleDetailView {
+  const folioFormatted = `V-${sale.folio.toString().padStart(6, '0')}`;
   return {
     id: sale.id,
-    folio: sale.folio,
-    status: sale.status,
-    customer: sale.customer,
-    createdBy: sale.createdBy,
-    quoteId: sale.quoteId,
-    notes: sale.notes,
+    folio: folioFormatted,
+    status: sale.estado,
+    customer: sale.cliente ? { id: sale.cliente.id, name: sale.cliente.nombre } : null,
+    createdBy: sale.creadoPor ? { id: sale.creadoPor.id, name: sale.creadoPor.nombre } : null,
+    quoteId: sale.cotizacionId,
+    notes: sale.notas,
     subtotal: sale.subtotal.toFixed(2),
-    discount: sale.discount.toFixed(2),
-    tax: sale.tax.toFixed(2),
+    discount: sale.descuento.toFixed(2),
+    tax: '0.00',
     total: sale.total.toFixed(2),
     items: sale.items.map((item) => ({
       id: item.id,
-      product: item.product,
-      size: item.size,
-      quantity: item.quantity.toFixed(3),
-      unitPrice: item.unitPrice.toFixed(2),
-      discount: item.discount.toFixed(2),
-      tax: item.tax.toFixed(2),
+      product: {
+        id: item.producto.id,
+        barcode: item.producto.codigoBarras,
+        name: item.producto.nombre,
+      },
+      size: item.talla ? { id: item.talla.id, name: item.talla.nombre } : null,
+      quantity: item.cantidad.toFixed(3),
+      unitPrice: item.precioUnitario.toFixed(2),
+      discount: item.descuento.toFixed(2),
+      tax: '0.00',
       total: item.total.toFixed(2),
     })),
-    payments: sale.payments.map((payment) => ({
-      id: payment.id,
-      method: payment.method,
-      amount: payment.amount.toFixed(2),
-      status: payment.status,
-      paidAt: payment.paidAt?.toISOString() ?? null,
-    })),
-    cancelledAt: sale.cancelledAt?.toISOString() ?? null,
-    cancelledBy: sale.cancelledBy,
-    cancelReason: sale.cancelReason,
-    createdAt: sale.createdAt.toISOString(),
-    updatedAt: sale.updatedAt.toISOString(),
+    payments: [
+      {
+        id: sale.id,
+        method: sale.metodoPago,
+        amount: sale.total.toFixed(2),
+        status: sale.estado === 'CANCELLED' || sale.estado === 'REFUNDED' ? 'REFUNDED' : 'PAID',
+        paidAt: sale.fechaPago?.toISOString() ?? sale.fechaCreacion.toISOString(),
+      },
+    ],
+    cancelledAt: sale.fechaCancelacion?.toISOString() ?? null,
+    cancelledBy: sale.canceladoPor ? { id: sale.canceladoPor.id, name: sale.canceladoPor.nombre } : null,
+    cancelReason: sale.motivoCancelacion,
+    createdAt: sale.fechaCreacion.toISOString(),
+    updatedAt: sale.fechaActualizacion.toISOString(),
   };
 }
 
@@ -125,14 +118,16 @@ export class PrismaSaleQueryAdapter implements SaleQueryPort {
 
   async list(filter: SaleListFilter): Promise<SalePage> {
     const where: Prisma.SaleWhereInput = {};
-    if (filter.status) where.status = filter.status;
-    if (filter.createdById) where.createdById = filter.createdById;
-    if (filter.customerId) where.customerId = filter.customerId;
-    if (filter.folio) where.folio = filter.folio;
-    if (filter.paymentMethod)
-      where.payments = { some: { method: filter.paymentMethod } };
+    if (filter.status) where.estado = filter.status;
+    if (filter.createdById) where.creadoPorId = filter.createdById;
+    if (filter.customerId) where.clienteId = filter.customerId;
+    if (filter.folio) {
+      const num = parseInt(filter.folio.replace(/\D/g, ''), 10);
+      if (!isNaN(num)) where.folio = num;
+    }
+    if (filter.paymentMethod) where.metodoPago = filter.paymentMethod;
     if (filter.startDate || filter.endDate)
-      where.createdAt = {
+      where.fechaCreacion = {
         ...(filter.startDate ? { gte: filter.startDate } : {}),
         ...(filter.endDate ? { lte: filter.endDate } : {}),
       };
@@ -140,7 +135,7 @@ export class PrismaSaleQueryAdapter implements SaleQueryPort {
       this.prisma.sale.count({ where }),
       this.prisma.sale.findMany({
         where,
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        orderBy: [{ fechaCreacion: 'desc' }, { id: 'desc' }],
         skip: (filter.page - 1) * filter.pageSize,
         take: filter.pageSize,
         select: summarySelect,
@@ -149,14 +144,14 @@ export class PrismaSaleQueryAdapter implements SaleQueryPort {
     return {
       data: sales.map((sale) => ({
         id: sale.id,
-        folio: sale.folio,
-        status: sale.status,
+        folio: `V-${sale.folio.toString().padStart(6, '0')}`,
+        status: sale.estado,
         total: sale.total.toFixed(2),
-        paymentMethod: sale.payments[0]?.method ?? null,
-        customer: sale.customer,
-        createdBy: sale.createdBy,
-        quoteId: sale.quoteId,
-        createdAt: sale.createdAt.toISOString(),
+        paymentMethod: sale.metodoPago,
+        customer: sale.cliente ? { id: sale.cliente.id, name: sale.cliente.nombre } : null,
+        createdBy: sale.creadoPor ? { id: sale.creadoPor.id, name: sale.creadoPor.nombre } : null,
+        quoteId: sale.cotizacionId,
+        createdAt: sale.fechaCreacion.toISOString(),
       })),
       total,
       page: filter.page,

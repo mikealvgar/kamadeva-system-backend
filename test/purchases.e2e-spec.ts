@@ -8,7 +8,7 @@ import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { setupApp } from '../src/setup-app.js';
 
-const base = '/api/purchases';
+const base = '/api/compras';
 
 describe('Purchases HTTP + PostgreSQL', () => {
   let app: INestApplication<Server> | undefined;
@@ -38,10 +38,10 @@ describe('Purchases HTTP + PostgreSQL', () => {
     ] as const) {
       const user = await prisma.user.create({
         data: {
-          name: 'Purchases test',
+          nombre: `Purchases ${key}`,
           email: `${randomUUID()}@purchases.test`,
           passwordHash: 'unused-test-hash',
-          roles: { create: { role: { connect: { name: role } } } },
+          rol: { connect: { nombre: role } },
         },
       });
       users.push(user.id);
@@ -55,27 +55,27 @@ describe('Purchases HTTP + PostgreSQL', () => {
       )}`;
     }
     const provider = await prisma.provider.create({
-      data: { name: `Proveedor ${randomUUID()}` },
+      data: { nombre: `Proveedor ${randomUUID()}` },
     });
     providerId = provider.id;
     providers.push(provider.id);
     const product = await prisma.product.create({
       data: {
-        barcode: `CB-${randomUUID()}`,
-        name: 'Producto de compra',
-        price: '99.95',
-        cost: '12.34',
+        codigoBarras: `CB-${randomUUID().slice(0, 10)}`,
+        nombre: 'Producto de compra',
+        precioVenta: '99.95',
+        precioCompra: '12.34',
       },
     });
     productId = product.id;
     products.push(product.id);
     await prisma.inventoryMovement.create({
       data: {
-        productId,
-        type: 'ADJUSTMENT_IN',
-        quantityChange: '5.000',
-        createdById: users[0],
-        notes: 'Existencia inicial de prueba',
+        productoId: productId,
+        tipo: 'ADJUSTMENT_IN',
+        cambioExistencias: '5.000',
+        creadoPorId: users[0],
+        notas: 'Existencia inicial de prueba',
       },
     });
   });
@@ -85,12 +85,12 @@ describe('Purchases HTTP + PostgreSQL', () => {
     if (purchases.length) {
       await prisma.inventoryMovement.deleteMany({
         where: {
-          referenceType: 'PURCHASE',
-          referenceId: { in: purchases },
+          tipoReferencia: 'PURCHASE',
+          referenciaId: { in: purchases },
         },
       });
       await prisma.purchaseItem.deleteMany({
-        where: { purchaseId: { in: purchases } },
+        where: { compraId: { in: purchases } },
       });
       await prisma.purchase.deleteMany({ where: { id: { in: purchases } } });
       purchases.length = 0;
@@ -101,11 +101,10 @@ describe('Purchases HTTP + PostgreSQL', () => {
     try {
       if (prisma) {
         await prisma.inventoryMovement.deleteMany({
-          where: { productId: { in: products } },
+          where: { productoId: { in: products } },
         });
         await prisma.product.deleteMany({ where: { id: { in: products } } });
         await prisma.provider.deleteMany({ where: { id: { in: providers } } });
-        await prisma.userRole.deleteMany({ where: { userId: { in: users } } });
         await prisma.user.deleteMany({ where: { id: { in: users } } });
       }
     } finally {
@@ -148,30 +147,30 @@ describe('Purchases HTTP + PostgreSQL', () => {
     });
 
     const movements = await prisma.inventoryMovement.findMany({
-      where: { referenceType: 'PURCHASE', referenceId: purchase.id },
+      where: { tipoReferencia: 'PURCHASE', referenciaId: purchase.id },
     });
     expect(movements).toHaveLength(1);
     expect({
-      type: movements[0]!.type,
-      quantityChange: movements[0]!.quantityChange.toFixed(3),
-      unitCost: movements[0]!.unitCost?.toFixed(2),
-      createdById: movements[0]!.createdById,
+      tipo: movements[0]!.tipo,
+      cambioExistencias: movements[0]!.cambioExistencias.toFixed(3),
+      costoUnitario: movements[0]!.costoUnitario?.toFixed(2),
+      creadoPorId: movements[0]!.creadoPorId,
     }).toEqual({
-      type: 'PURCHASE_IN',
-      quantityChange: '2.000',
-      unitCost: '12.34',
-      createdById: users[0],
+      tipo: 'PURCHASE_IN',
+      cambioExistencias: '2.000',
+      costoUnitario: '12.34',
+      creadoPorId: users[0],
     });
     const stock = await prisma.inventoryMovement.aggregate({
-      where: { productId },
-      _sum: { quantityChange: true },
+      where: { productoId: productId },
+      _sum: { cambioExistencias: true },
     });
-    expect(stock._sum.quantityChange?.toFixed(3)).toBe('7.000');
+    expect(stock._sum.cambioExistencias?.toFixed(3)).toBe('7.000');
     const product = await prisma.product.findUniqueOrThrow({
       where: { id: productId },
     });
-    expect(product.cost?.toFixed(2)).toBe('12.34');
-    expect(product.price.toFixed(2)).toBe('99.95');
+    expect(product.precioCompra?.toFixed(2)).toBe('12.34');
+    expect(product.precioVenta.toFixed(2)).toBe('99.95');
   });
 
   it('allows ADMIN to create and ADMIN/VENDEDOR to list and read purchases', async () => {
@@ -194,12 +193,12 @@ describe('Purchases HTTP + PostgreSQL', () => {
       .set('Authorization', tokens.admin!)
       .expect(200);
     expect(response.body).toMatchObject({ pagina: 1, limite: 1, total: 1 });
-    expect(response.body.items[0].id).toBe(created.body.id);
+    expect(response.body.datos[0].id).toBe(created.body.id);
     await http()
       .get(`${base}?fechaInicio=2027-01-01T00:00:00.000Z`)
       .set('Authorization', tokens.admin!)
       .expect(200)
-      .expect(({ body }) => expect(body.items).toEqual([]));
+      .expect(({ body }) => expect(body.datos).toEqual([]));
   });
 
   it('rejects invalid products, missing acquisition cost, inactive records and bad bodies without stock changes', async () => {
@@ -216,24 +215,24 @@ describe('Purchases HTTP + PostgreSQL', () => {
 
     await prisma.product.update({
       where: { id: productId },
-      data: { cost: null },
+      data: { precioCompra: null },
     });
     await receivePurchase().expect(400);
     await prisma.product.update({
       where: { id: productId },
-      data: { cost: '12.34', isActive: false },
+      data: { precioCompra: '12.34', activo: false },
     });
     await receivePurchase().expect(409);
     await prisma.product.update({
       where: { id: productId },
-      data: { isActive: true },
+      data: { activo: true },
     });
 
     const stock = await prisma.inventoryMovement.aggregate({
-      where: { productId },
-      _sum: { quantityChange: true },
+      where: { productoId: productId },
+      _sum: { cambioExistencias: true },
     });
-    expect(stock._sum.quantityChange?.toFixed(3)).toBe('5.000');
+    expect(stock._sum.cambioExistencias?.toFixed(3)).toBe('5.000');
     expect(await prisma.purchase.count()).toBe(0);
   });
 });

@@ -7,7 +7,6 @@ import {
 import { Prisma } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../../prisma/prisma.service.js';
 import { serializableTransaction } from '../../../prisma/serializable-transaction.js';
-import { slugify } from '../../slugify.js';
 import {
   analyzeSheet,
   ImportFormatError,
@@ -19,6 +18,15 @@ import {
 } from './product-import.analyzer.js';
 import type { ImportReportDto } from './import-products.dto.js';
 import { readFirstSheet, WorkbookError } from './xlsx-reader.js';
+
+function categoryKey(name: string): string {
+  return name
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toUpperCase();
+}
 
 const MAX_ROWS = 5000;
 
@@ -32,11 +40,6 @@ export interface ImportOptions {
 export class ProductImportService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * Create the products of the sheet that do not exist yet. Rows with errors
-   * are reported and skipped; the valid rest is written in one transaction,
-   * so re-importing the same file only creates what is still missing.
-   */
   async import(
     buffer: Buffer,
     options: ImportOptions,
@@ -78,11 +81,11 @@ export class ProductImportService {
     const errors: ImportError[] = [...analysis.errors];
 
     const existing = await tx.product.findMany({
-      where: { barcode: { in: analysis.candidates.map((c) => c.barcode) } },
-      select: { barcode: true, name: true },
+      where: { codigoBarras: { in: analysis.candidates.map((c) => c.barcode) } },
+      select: { codigoBarras: true, nombre: true },
     });
     const existingByBarcode = new Map(
-      existing.map((product) => [product.barcode, product.name]),
+      existing.map((product) => [product.codigoBarras, product.nombre]),
     );
     const toCreate: ParsedProduct[] = [];
     for (const candidate of analysis.candidates) {
@@ -102,16 +105,15 @@ export class ProductImportService {
         });
     }
 
-    // Categories are matched by slug, which ignores case and accents.
-    const namesBySlug = new Map<string, string>();
+    const namesByKey = new Map<string, string>();
     const valid: ParsedProduct[] = [];
     for (const product of toCreate) {
       if (product.category === null) {
         valid.push(product);
         continue;
       }
-      const slug = slugify(product.category);
-      if (!slug) {
+      const desc = product.category.trim().toUpperCase();
+      if (!desc) {
         errors.push({
           row: product.row,
           codigoBarras: product.barcode,
@@ -120,16 +122,20 @@ export class ProductImportService {
         });
         continue;
       }
-      if (!namesBySlug.has(slug)) namesBySlug.set(slug, product.category);
+      const key = categoryKey(product.category);
+      if (!namesByKey.has(key)) namesByKey.set(key, desc);
       valid.push(product);
     }
-    const found = await tx.category.findMany({
-      where: { slug: { in: [...namesBySlug.keys()] } },
-      select: { id: true, slug: true },
+    const allCategories = await tx.category.findMany({
+      select: { id: true, descripcion: true },
     });
-    const categoryIds = new Map(found.map(({ slug, id }) => [slug, id]));
-    const missing = [...namesBySlug].filter(([slug]) => !categoryIds.has(slug));
-    for (const [slug] of missing) categoryIds.set(slug, randomUUID());
+    const categoryIdsByKey = new Map(
+      allCategories.map(({ descripcion, id }) => [categoryKey(descripcion), id]),
+    );
+    const missingKeys = [...namesByKey.keys()].filter(
+      (key) => !categoryIdsByKey.has(key),
+    );
+    for (const key of missingKeys) categoryIdsByKey.set(key, randomUUID());
 
     const report = (created: number): ImportReportDto => ({
       dryRun: options.dryRun,
@@ -137,19 +143,19 @@ export class ProductImportService {
       created,
       skipped: skipped.sort((a, b) => a.row - b.row),
       errors: errors.sort((a, b) => a.row - b.row),
-      categoriesCreated: missing.map(([, name]) => name).sort(),
+      categoriesCreated: missingKeys.map((key) => namesByKey.get(key)!).sort(),
       withoutCategory: valid.filter((p) => p.category === null).length,
     });
     if (options.dryRun) return report(valid.length);
 
-    if (missing.length > 0)
+    if (missingKeys.length > 0)
       await tx.category.createMany({
-        data: missing.map(([slug, name]) => ({
-          id: categoryIds.get(slug)!,
-          name,
-          slug,
+        data: missingKeys.map((key) => ({
+          id: categoryIdsByKey.get(key)!,
+          descripcion: namesByKey.get(key)!,
         })),
       });
+
     const rows = valid.map((product) => ({
       product,
       id: randomUUID(),
@@ -157,28 +163,27 @@ export class ProductImportService {
     await tx.product.createMany({
       data: rows.map(({ product, id }) => ({
         id,
-        barcode: product.barcode,
-        name: product.name,
-        description: product.description,
-        brand: product.brand,
-        price: product.price,
-        cost: product.cost,
-        categoryId:
+        codigoBarras: product.barcode,
+        nombre: product.name,
+        descripcion: product.description,
+        precioVenta: product.price,
+        precioCompra: product.cost,
+        categoriaId:
           product.category === null
             ? null
-            : categoryIds.get(slugify(product.category))!,
+            : categoryIdsByKey.get(categoryKey(product.category))!,
       })),
     });
     const stocked = rows.filter(({ product }) => product.stock.greaterThan(0));
     if (stocked.length > 0)
       await tx.inventoryMovement.createMany({
         data: stocked.map(({ product, id }) => ({
-          productId: id,
-          type: 'ADJUSTMENT_IN' as const,
-          quantityChange: product.stock,
-          referenceType: 'IMPORT',
-          createdById: options.actorId,
-          notes: 'Inventario inicial (importación)',
+          productoId: id,
+          tipo: 'ADJUSTMENT_IN' as const,
+          cambioExistencias: product.stock,
+          tipoReferencia: 'IMPORT',
+          creadoPorId: options.actorId,
+          notas: 'Inventario inicial (importación)',
         })),
       });
     return report(valid.length);

@@ -17,22 +17,22 @@ export class PrismaIdempotencyStore implements IdempotencyStorePort {
     tx?: Prisma.TransactionClient,
   ): Promise<StoredIdempotentResponse | null> {
     const record = await (tx ?? this.prisma).idempotencyKey.findUnique({
-      where: { key_scope: { key, scope } },
+      where: { llave_ambito: { llave: key, ambito: scope } },
       select: {
-        requestHash: true,
-        userId: true,
-        responseStatusCode: true,
-        responseBody: true,
-        expiresAt: true,
+        hashPeticion: true,
+        usuarioId: true,
+        codigoRespuesta: true,
+        cuerpoRespuesta: true,
+        fechaVencimiento: true,
       },
     });
     if (!record) return null;
     return {
-      requestHash: record.requestHash,
-      userId: record.userId,
-      responseStatusCode: record.responseStatusCode ?? 201,
-      responseBody: record.responseBody,
-      expiresAt: record.expiresAt,
+      requestHash: record.hashPeticion,
+      userId: record.usuarioId,
+      responseStatusCode: record.codigoRespuesta ?? 201,
+      responseBody: record.cuerpoRespuesta,
+      expiresAt: record.fechaVencimiento,
     };
   }
 
@@ -42,7 +42,7 @@ export class PrismaIdempotencyStore implements IdempotencyStorePort {
     tx?: Prisma.TransactionClient,
   ): Promise<void> {
     await (tx ?? this.prisma).idempotencyKey.deleteMany({
-      where: { key, scope },
+      where: { llave: key, ambito: scope },
     });
   }
 
@@ -53,14 +53,14 @@ export class PrismaIdempotencyStore implements IdempotencyStorePort {
     try {
       await (tx ?? this.prisma).idempotencyKey.create({
         data: {
-          key: record.key,
-          scope: record.scope,
-          requestHash: record.requestHash,
-          status: 'COMPLETED',
-          responseStatusCode: record.responseStatusCode,
-          responseBody: record.responseBody as Prisma.InputJsonValue,
-          userId: record.userId,
-          expiresAt: record.expiresAt,
+          llave: record.key,
+          ambito: record.scope,
+          hashPeticion: record.requestHash,
+          estado: 'COMPLETED',
+          codigoRespuesta: record.responseStatusCode,
+          cuerpoRespuesta: record.responseBody as Prisma.InputJsonValue,
+          usuarioId: record.userId,
+          fechaVencimiento: record.expiresAt,
         },
         select: { id: true },
       });

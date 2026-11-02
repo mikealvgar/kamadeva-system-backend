@@ -12,6 +12,7 @@ import { SALE_QUERY_PORT } from './application/ports/sale-query.port.js';
 import { SALE_REPOSITORY_PORT } from './application/ports/sale-repository.port.js';
 import { CancelSaleUseCase } from './application/use-cases/cancel-sale.use-case.js';
 import { CreateSaleUseCase } from './application/use-cases/create-sale.use-case.js';
+import { ReturnSaleUseCase } from './application/use-cases/return-sale.use-case.js';
 import {
   GetSaleUseCase,
   ListSalesUseCase,
@@ -33,6 +34,7 @@ import { SalesService } from './sales.service.js';
     RegisterSaleUseCase,
     CreateSaleUseCase,
     CancelSaleUseCase,
+    ReturnSaleUseCase,
     GetSaleUseCase,
     ListSalesUseCase,
     { provide: SALE_REPOSITORY_PORT, useClass: PrismaSaleRepository },

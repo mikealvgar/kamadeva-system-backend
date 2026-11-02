@@ -7,15 +7,84 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { setupApp } from '../src/setup-app.js';
-import type {
-  DashboardSummaryDto,
-  SalesHistoryDto,
-  TopProductsDto,
-} from '../src/dashboard/dto/dashboard.dto.js';
 import type { ProductDto } from '../src/catalog/products/dto/product.dto.js';
 import type { SaleDetailDto } from '../src/sales/dto/sale.dto.js';
 
-const base = '/api/dashboard';
+interface SalesByMethodResponse {
+  CASH: string;
+  CARD: string;
+  TRANSFER: string;
+  OTHER: string;
+}
+
+interface SalesTodayResponse {
+  total: string;
+  count: number;
+  ticketPromedio: string;
+  porMetodo: SalesByMethodResponse;
+}
+
+interface InventorySummaryResponse {
+  productosActivos: number;
+  productosBajoMinimo: number;
+}
+
+interface ExpensesTodayResponse {
+  total: string;
+  desdeCaja: string;
+}
+
+interface EstimatedProfitResponse {
+  ventasNetas: string;
+  costoMercancia: string;
+  expenses: string;
+  profit: string;
+  costoIncompleto: boolean;
+}
+
+interface DashboardSummaryResponse {
+  date: string;
+  timezone: string;
+  ventasHoy: SalesTodayResponse;
+  inventory: InventorySummaryResponse;
+  gastosHoy: ExpensesTodayResponse;
+  utilidadEstimadaHoy: EstimatedProfitResponse | null;
+}
+
+interface TopProductRefResponse {
+  id: string;
+  codigoBarras: string;
+  nombre: string;
+}
+
+interface TopProductResponse {
+  producto: TopProductRefResponse;
+  unidades: string;
+  ingresos: string;
+  cantidadVentas: number;
+}
+
+interface TopProductsResponse {
+  fechaInicio: string;
+  fechaFin: string;
+  ordenarPor: 'units' | 'revenue';
+  datos: TopProductResponse[];
+}
+
+interface SalesHistoryDayResponse {
+  date: string;
+  ventasTotales: string;
+  cantidadVentas: number;
+  gastosTotales: string;
+}
+
+interface SalesHistoryResponse {
+  periodo: 'week' | 'month';
+  timezone: string;
+  days: SalesHistoryDayResponse[];
+}
+
+const base = '/api/tablero';
 const timezone = 'America/Mexico_City';
 const today = () =>
   new Intl.DateTimeFormat('en-CA', {
@@ -53,11 +122,11 @@ describe('Dashboard HTTP + PostgreSQL', () => {
     ] as const) {
       const user = await prisma.user.create({
         data: {
-          name: `Dashboard ${key}`,
+          nombre: `Dashboard ${key}`,
           email: `${randomUUID()}@dashboard.test`,
           passwordHash: 'unused-test-hash',
           ...(role
-            ? { roles: { create: { role: { connect: { name: role } } } } }
+            ? { rol: { connect: { nombre: role } } }
             : {}),
         },
       });
@@ -67,12 +136,12 @@ describe('Dashboard HTTP + PostgreSQL', () => {
     }
     categoryId = (
       await prisma.category.create({
-        data: { name: 'Dashboard', slug: `dashboard-${randomUUID()}` },
+        data: { descripcion: `Dashboard ${randomUUID().slice(0, 8)}` },
       })
     ).id;
     expenseCategoryId = (
       await prisma.expenseCategory.create({
-        data: { name: `Dashboard ${randomUUID().slice(0, 8)}` },
+        data: { nombre: `Dashboard ${randomUUID().slice(0, 8)}` },
       })
     ).id;
   });
@@ -81,20 +150,20 @@ describe('Dashboard HTTP + PostgreSQL', () => {
     if (!prisma) return;
     const userIds = Object.values(users);
     const sales = await prisma.sale.findMany({
-      where: { createdById: { in: userIds } },
+      where: { creadoPorId: { in: userIds } },
       select: { id: true },
     });
     const saleIds = sales.map(({ id }) => id);
     await prisma.inventoryMovement.deleteMany({
-      where: { productId: { in: products } },
+      where: { productoId: { in: products } },
     });
     await prisma.idempotencyKey.deleteMany({
-      where: { userId: { in: userIds } },
+      where: { usuarioId: { in: userIds } },
     });
-    await prisma.payment.deleteMany({ where: { saleId: { in: saleIds } } });
+    await prisma.saleItem.deleteMany({ where: { ventaId: { in: saleIds } } });
     await prisma.sale.deleteMany({ where: { id: { in: saleIds } } });
     await prisma.expense.deleteMany({
-      where: { createdById: { in: userIds } },
+      where: { creadoPorId: { in: userIds } },
     });
     await prisma.product.deleteMany({ where: { id: { in: products } } });
     products.length = 0;
@@ -108,9 +177,6 @@ describe('Dashboard HTTP + PostgreSQL', () => {
           where: { id: expenseCategoryId },
         });
         await prisma.category.deleteMany({ where: { id: categoryId } });
-        await prisma.userRole.deleteMany({
-          where: { userId: { in: userIds } },
-        });
         await prisma.user.deleteMany({ where: { id: { in: userIds } } });
       }
     } finally {
@@ -126,10 +192,10 @@ describe('Dashboard HTTP + PostgreSQL', () => {
   ): Promise<ProductDto> {
     const created = (
       await http()
-        .post('/api/catalog/products')
+        .post('/api/productos')
         .set('Authorization', tokens.admin)
         .send({
-          codigoBarras: `SKU-${randomUUID()}`,
+          codigoBarras: `SKU-${randomUUID().slice(0, 16)}`,
           articulo: 'Pieza',
           precioVenta: price,
           precioCompra: cost,
@@ -142,9 +208,9 @@ describe('Dashboard HTTP + PostgreSQL', () => {
     if (stock > 0)
       await prisma.inventoryMovement.create({
         data: {
-          productId: created.id,
-          type: 'PURCHASE_IN',
-          quantityChange: stock,
+          productoId: created.id,
+          tipo: 'PURCHASE_IN',
+          cambioExistencias: stock,
         },
       });
     return created;
@@ -158,7 +224,7 @@ describe('Dashboard HTTP + PostgreSQL', () => {
   ): Promise<SaleDetailDto> {
     return (
       await http()
-        .post('/api/sales')
+        .post('/api/ventas')
         .set('Authorization', tokens.seller)
         .set('Idempotency-Key', randomUUID())
         .send({
@@ -171,7 +237,7 @@ describe('Dashboard HTTP + PostgreSQL', () => {
 
   async function expense(amount: number, deductFromCash: boolean) {
     await http()
-      .post('/api/expenses')
+      .post('/api/gastos')
       .set('Authorization', tokens.seller)
       .send({
         concept: 'Gasto',
@@ -182,13 +248,13 @@ describe('Dashboard HTTP + PostgreSQL', () => {
       .expect(201);
   }
 
-  async function summary(token: string): Promise<DashboardSummaryDto> {
+  async function summary(token: string): Promise<DashboardSummaryResponse> {
     return (
       await http()
-        .get(`${base}/summary`)
+        .get(`${base}/resumen`)
         .set('Authorization', token)
         .expect(200)
-    ).body as DashboardSummaryDto;
+    ).body as DashboardSummaryResponse;
   }
 
   it('summarizes today in local time, excludes cancelled sales and shows profit only to ADMIN', async () => {
@@ -201,7 +267,7 @@ describe('Dashboard HTTP + PostgreSQL', () => {
     const cancelled = await sell(item.id, 1, 100, 'CASH');
     await sell(item.id, 1, 100, 'CARD');
     await http()
-      .post(`/api/sales/${cancelled.id}/cancel`)
+      .post(`/api/ventas/${cancelled.id}/cancelar`)
       .set('Authorization', tokens.seller)
       .send({ reason: 'Prueba' })
       .expect(200);
@@ -209,25 +275,25 @@ describe('Dashboard HTTP + PostgreSQL', () => {
     await expense(10, false);
 
     const after = await summary(tokens.admin);
-    const delta = (pick: (s: DashboardSummaryDto) => string) =>
+    const delta = (pick: (s: DashboardSummaryResponse) => string) =>
       +(n(pick(after)) - n(pick(before))).toFixed(2);
-    expect(after.salesToday.count - before.salesToday.count).toBe(2);
-    expect(delta((s) => s.salesToday.total)).toBe(200);
-    expect(delta((s) => s.salesToday.byMethod.CASH)).toBe(100);
-    expect(delta((s) => s.salesToday.byMethod.CARD)).toBe(100);
-    expect(delta((s) => s.expensesToday.total)).toBe(35);
-    expect(delta((s) => s.expensesToday.fromCash)).toBe(25);
-    expect(delta((s) => s.estimatedProfitToday!.netSales)).toBe(200);
-    expect(delta((s) => s.estimatedProfitToday!.costOfGoods)).toBe(60);
-    expect(delta((s) => s.estimatedProfitToday!.expenses)).toBe(35);
-    expect(delta((s) => s.estimatedProfitToday!.profit)).toBe(105);
-    expect(after.inventory.activeProducts).toBe(
-      before.inventory.activeProducts,
+    expect(after.ventasHoy.count - before.ventasHoy.count).toBe(2);
+    expect(delta((s) => s.ventasHoy.total)).toBe(200);
+    expect(delta((s) => s.ventasHoy.porMetodo.CASH)).toBe(100);
+    expect(delta((s) => s.ventasHoy.porMetodo.CARD)).toBe(100);
+    expect(delta((s) => s.gastosHoy.total)).toBe(35);
+    expect(delta((s) => s.gastosHoy.desdeCaja)).toBe(25);
+    expect(delta((s) => s.utilidadEstimadaHoy!.ventasNetas)).toBe(200);
+    expect(delta((s) => s.utilidadEstimadaHoy!.costoMercancia)).toBe(60);
+    expect(delta((s) => s.utilidadEstimadaHoy!.expenses)).toBe(35);
+    expect(delta((s) => s.utilidadEstimadaHoy!.profit)).toBe(105);
+    expect(after.inventory.productosActivos).toBe(
+      before.inventory.productosActivos,
     );
 
     const seller = await summary(tokens.seller);
-    expect(seller.estimatedProfitToday).toBeNull();
-    expect(seller.salesToday).toEqual(after.salesToday);
+    expect(seller.utilidadEstimadaHoy).toBeNull();
+    expect(seller.ventasHoy).toEqual(after.ventasHoy);
   });
 
   it('keeps the cost of past sales when the product cost changes later', async () => {
@@ -235,28 +301,28 @@ describe('Dashboard HTTP + PostgreSQL', () => {
     const before = await summary(tokens.admin);
     await sell(item.id, 2, 100);
     await http()
-      .patch(`/api/catalog/products/${item.id}`)
+      .patch(`/api/productos/${item.id}`)
       .set('Authorization', tokens.admin)
       .send({ precioCompra: 90 })
       .expect(200);
     const after = await summary(tokens.admin);
     expect(
       +(
-        n(after.estimatedProfitToday!.costOfGoods) -
-        n(before.estimatedProfitToday!.costOfGoods)
+        n(after.utilidadEstimadaHoy!.costoMercancia) -
+        n(before.utilidadEstimadaHoy!.costoMercancia)
       ).toFixed(2),
     ).toBe(60);
     const stored = await prisma.saleItem.findFirstOrThrow({
-      where: { productId: item.id },
+      where: { productoId: item.id },
     });
-    expect(stored.unitCost?.toFixed(2)).toBe('30.00');
+    expect(stored.costoUnitario?.toFixed(2)).toBe('30.00');
   });
 
   it('flags missing product costs', async () => {
     const item = await product(100, null, 10);
     await sell(item.id, 1, 100);
     expect(
-      (await summary(tokens.admin)).estimatedProfitToday!.costIncomplete,
+      (await summary(tokens.admin)).utilidadEstimadaHoy!.costoIncompleto,
     ).toBe(true);
   });
 
@@ -268,28 +334,28 @@ describe('Dashboard HTTP + PostgreSQL', () => {
     await product(10, 1, 0); // no minimum: not tracked
     const inactive = await product(10, 1, 0, 5);
     await http()
-      .patch(`/api/catalog/products/${inactive.id}`)
+      .patch(`/api/productos/${inactive.id}`)
       .set('Authorization', tokens.admin)
       .send({ isActive: false })
       .expect(200);
     const after = (await summary(tokens.seller)).inventory;
-    expect(after.lowStock - before.lowStock).toBe(1);
-    expect(after.activeProducts - before.activeProducts).toBe(3);
+    expect(after.productosBajoMinimo - before.productosBajoMinimo).toBe(1);
+    expect(after.productosActivos - before.productosActivos).toBe(3);
 
     // Selling one more unit of the product above its minimum makes it low.
     const above = products[1]!;
     await sell(above, 1, 10);
-    expect((await summary(tokens.seller)).inventory.lowStock).toBe(
-      before.lowStock + 2,
+    expect((await summary(tokens.seller)).inventory.productosBajoMinimo).toBe(
+      before.productosBajoMinimo + 2,
     );
     await http()
-      .patch(`/api/catalog/products/${atMinimum.id}`)
+      .patch(`/api/productos/${atMinimum.id}`)
       .set('Authorization', tokens.admin)
       .send({ stockMinimo: null })
       .expect(200)
       .expect(({ body }) => expect(body.stockMinimo).toBeNull());
-    expect((await summary(tokens.seller)).inventory.lowStock).toBe(
-      before.lowStock + 1,
+    expect((await summary(tokens.seller)).inventory.productosBajoMinimo).toBe(
+      before.productosBajoMinimo + 1,
     );
   });
 
@@ -302,7 +368,7 @@ describe('Dashboard HTTP + PostgreSQL', () => {
     await sell(pricey.id, 1, 500);
     const cancelled = await sell(pricey.id, 5, 500);
     await http()
-      .post(`/api/sales/${cancelled.id}/cancel`)
+      .post(`/api/ventas/${cancelled.id}/cancelar`)
       .set('Authorization', tokens.seller)
       .send({ reason: 'Prueba' })
       .expect(200);
@@ -310,35 +376,35 @@ describe('Dashboard HTTP + PostgreSQL', () => {
     const top = async (query: Record<string, string | number>) =>
       (
         await http()
-          .get(`${base}/top-products`)
+          .get(`${base}/productos-mas-vendidos`)
           .query({ startDate, ...query })
           .set('Authorization', tokens.seller)
           .expect(200)
-      ).body as TopProductsDto;
+      ).body as TopProductsResponse;
     const byUnits = await top({});
-    expect(byUnits.sortBy).toBe('units');
-    expect(byUnits.data).toEqual([
+    expect(byUnits.ordenarPor).toBe('units');
+    expect(byUnits.datos).toEqual([
       {
-        product: { id: cheap.id, barcode: cheap.codigoBarras, name: 'Pieza' },
-        units: '3.000',
-        revenue: '300.00',
-        salesCount: 2,
+        producto: { id: cheap.id, codigoBarras: cheap.codigoBarras, nombre: 'Pieza' },
+        unidades: '3.000',
+        ingresos: '300.00',
+        cantidadVentas: 2,
       },
       {
-        product: { id: pricey.id, barcode: pricey.codigoBarras, name: 'Pieza' },
-        units: '1.000',
-        revenue: '500.00',
-        salesCount: 1,
+        producto: { id: pricey.id, codigoBarras: pricey.codigoBarras, nombre: 'Pieza' },
+        unidades: '1.000',
+        ingresos: '500.00',
+        cantidadVentas: 1,
       },
     ]);
     const byRevenue = await top({ sortBy: 'revenue' });
-    expect(byRevenue.data.map(({ product: p }) => p.id)).toEqual([
+    expect(byRevenue.datos.map(({ producto: p }) => p.id)).toEqual([
       pricey.id,
       cheap.id,
     ]);
-    expect((await top({ limit: 1 })).data).toHaveLength(1);
+    expect((await top({ limit: 1 })).datos).toHaveLength(1);
     expect(
-      (await top({ endDate: startDate })).data.map(({ product: p }) => p.id),
+      (await top({ endDate: startDate })).datos.map(({ producto: p }) => p.id),
     ).toEqual([]);
   });
 
@@ -347,12 +413,12 @@ describe('Dashboard HTTP + PostgreSQL', () => {
     const week = async () =>
       (
         await http()
-          .get(`${base}/sales-history`)
+          .get(`${base}/historial-ventas`)
           .set('Authorization', tokens.seller)
           .expect(200)
-      ).body as SalesHistoryDto;
+      ).body as SalesHistoryResponse;
     const before = await week();
-    expect(before.period).toBe('week');
+    expect(before.periodo).toBe('week');
     expect(before.timezone).toBe(timezone);
     expect(before.days).toHaveLength(7);
     const dates = before.days.map(({ date }) => date);
@@ -362,23 +428,23 @@ describe('Dashboard HTTP + PostgreSQL', () => {
     await sell(item.id, 2, 100);
     await expense(15, false);
     const after = await week();
-    const row = (history: SalesHistoryDto) =>
+    const row = (history: SalesHistoryResponse) =>
       history.days.find(({ date }) => date === today())!;
-    expect(row(after).salesCount - row(before).salesCount).toBe(1);
+    expect(row(after).cantidadVentas - row(before).cantidadVentas).toBe(1);
     expect(
-      +(n(row(after).salesTotal) - n(row(before).salesTotal)).toFixed(2),
+      +(n(row(after).ventasTotales) - n(row(before).ventasTotales)).toFixed(2),
     ).toBe(200);
     expect(
-      +(n(row(after).expensesTotal) - n(row(before).expensesTotal)).toFixed(2),
+      +(n(row(after).gastosTotales) - n(row(before).gastosTotales)).toFixed(2),
     ).toBe(15);
 
     const month = (
       await http()
-        .get(`${base}/sales-history`)
+        .get(`${base}/historial-ventas`)
         .query({ period: 'month' })
         .set('Authorization', tokens.seller)
         .expect(200)
-    ).body as SalesHistoryDto;
+    ).body as SalesHistoryResponse;
     const [year, monthNumber] = today().split('-').map(Number);
     expect(month.days).toHaveLength(
       new Date(Date.UTC(year!, monthNumber!, 0)).getUTCDate(),
@@ -392,12 +458,12 @@ describe('Dashboard HTTP + PostgreSQL', () => {
     const history = async () =>
       (
         await http()
-          .get(`${base}/sales-history`)
+          .get(`${base}/historial-ventas`)
           .query({ period: 'month' })
           .set('Authorization', tokens.seller)
           .expect(200)
-      ).body as SalesHistoryDto;
-    const day = (h: SalesHistoryDto, date: string) =>
+      ).body as SalesHistoryResponse;
+    const day = (h: SalesHistoryResponse, date: string) =>
       h.days.find((row) => row.date === date)!;
     const second = `${year}-${month}-02`;
     const third = `${year}-${month}-03`;
@@ -410,19 +476,18 @@ describe('Dashboard HTTP + PostgreSQL', () => {
     ] as const) {
       await prisma.sale.create({
         data: {
-          folio: `V-${randomUUID()}`,
-          status: 'COMPLETED',
-          createdById: users.seller,
+          estado: 'COMPLETED',
+          creadoPorId: users.seller,
           subtotal: total,
           total,
-          createdAt: new Date(createdAt),
+          fechaCreacion: new Date(createdAt),
         },
       });
     }
     const after = await history();
     const delta = (date: string) =>
       +(
-        n(day(after, date).salesTotal) - n(day(before, date).salesTotal)
+        n(day(after, date).ventasTotales) - n(day(before, date).ventasTotales)
       ).toFixed(2);
     expect(delta(second)).toBe(7);
     expect(delta(third)).toBe(11);
@@ -430,15 +495,15 @@ describe('Dashboard HTTP + PostgreSQL', () => {
 
   it('validates queries and requires a role', async () => {
     for (const [path, query] of [
-      ['top-products', { limit: 0 }],
-      ['top-products', { limit: 51 }],
-      ['top-products', { sortBy: 'profit' }],
-      ['top-products', { startDate: 'ayer' }],
+      ['productos-mas-vendidos', { limit: 0 }],
+      ['productos-mas-vendidos', { limit: 51 }],
+      ['productos-mas-vendidos', { sortBy: 'profit' }],
+      ['productos-mas-vendidos', { startDate: 'ayer' }],
       [
-        'top-products',
+        'productos-mas-vendidos',
         { startDate: '2026-10-02T00:00:00Z', endDate: '2026-10-01T00:00:00Z' },
       ],
-      ['sales-history', { period: 'year' }],
+      ['historial-ventas', { period: 'year' }],
     ] as const) {
       await http()
         .get(`${base}/${path}`)
@@ -446,7 +511,11 @@ describe('Dashboard HTTP + PostgreSQL', () => {
         .set('Authorization', tokens.seller)
         .expect(400);
     }
-    for (const path of ['summary', 'top-products', 'sales-history']) {
+    for (const path of [
+      'resumen',
+      'productos-mas-vendidos',
+      'historial-ventas',
+    ]) {
       await http().get(`${base}/${path}`).expect(401);
       await http()
         .get(`${base}/${path}`)

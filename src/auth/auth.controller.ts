@@ -23,13 +23,13 @@ import { RefreshTokenDto } from './dto/refresh-token.dto.js';
 import { AuthResultDto, TokenPairDto } from './dto/auth-result.dto.js';
 import type { AuthResult, TokenPair } from './types/auth-result.type.js';
 
-@ApiTags('auth')
+@ApiTags('autenticacion')
 @ApiBadRequestResponse({ description: 'Datos de entrada inválidos' })
-@Controller('auth')
+@Controller('autenticacion')
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
-  @Post('register')
+  @Post('registro')
   @HttpCode(HttpStatus.CREATED)
   @Header('Cache-Control', 'no-store')
   @ApiOperation({

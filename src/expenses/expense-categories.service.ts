@@ -13,36 +13,54 @@ import type { UpdateExpenseCategoryDto } from './dto/update-expense-category.dto
 
 const categorySelect = {
   id: true,
-  name: true,
-  isActive: true,
+  nombre: true,
+  activo: true,
 } satisfies Prisma.ExpenseCategorySelect;
+type CategoryRecord = Prisma.ExpenseCategoryGetPayload<{
+  select: typeof categorySelect;
+}>;
+
+function toDto(category: CategoryRecord): ExpenseCategoryDto {
+  return {
+    id: category.id,
+    nombre: category.nombre,
+    name: category.nombre,
+    activo: category.activo,
+    isActive: category.activo,
+  };
+}
 
 @Injectable()
 export class ExpenseCategoriesService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateExpenseCategoryDto): Promise<ExpenseCategoryDto> {
-    const name = dto.name.trim();
+    const raw = dto.nombre ?? dto.name;
+    if (!raw || !raw.trim()) {
+      throw new BadRequestException('El nombre de la categoría es obligatorio');
+    }
+    const nombre = raw.trim();
     try {
-      // Serializable read of the name predicate blocks concurrent duplicates.
       return await serializableTransaction(this.prisma, async (tx) => {
-        await this.assertNameFree(name, tx);
-        return tx.expenseCategory.create({
-          data: { name },
+        await this.assertNameFree(nombre, tx);
+        const record = await tx.expenseCategory.create({
+          data: { nombre },
           select: categorySelect,
         });
+        return toDto(record);
       });
     } catch (error) {
       this.rethrow(error);
     }
   }
 
-  findAll(includeInactive = false): Promise<ExpenseCategoryDto[]> {
-    return this.prisma.expenseCategory.findMany({
-      where: includeInactive ? {} : { isActive: true },
-      orderBy: { name: 'asc' },
+  async findAll(includeInactive = false): Promise<ExpenseCategoryDto[]> {
+    const records = await this.prisma.expenseCategory.findMany({
+      where: includeInactive ? {} : { activo: true },
+      orderBy: { nombre: 'asc' },
       select: categorySelect,
     });
+    return records.map(toDto);
   }
 
   async findById(id: string): Promise<ExpenseCategoryDto> {
@@ -50,9 +68,8 @@ export class ExpenseCategoriesService {
       where: { id },
       select: categorySelect,
     });
-    if (!category)
-      throw new NotFoundException('Categoría de gasto inexistente');
-    return category;
+    if (!category) throw new NotFoundException('Categoría inexistente');
+    return toDto(category);
   }
 
   async update(
@@ -62,18 +79,29 @@ export class ExpenseCategoriesService {
     if (Object.values(dto).every((value) => value === undefined)) {
       throw new BadRequestException('Debe enviar al menos un campo');
     }
-    const data: Prisma.ExpenseCategoryUpdateInput = {};
-    if (dto.name !== undefined) data.name = dto.name.trim();
-    if (dto.isActive !== undefined) data.isActive = dto.isActive;
+    const raw = dto.nombre ?? dto.name;
+    const nombre = raw !== undefined ? raw.trim() : undefined;
+    const activo = dto.activo ?? dto.isActive;
+
     try {
       return await serializableTransaction(this.prisma, async (tx) => {
-        if (typeof data.name === 'string')
-          await this.assertNameFree(data.name, tx, id);
-        return tx.expenseCategory.update({
+        const existing = await tx.expenseCategory.findUnique({
+          where: { id },
+          select: { id: true, nombre: true },
+        });
+        if (!existing) throw new NotFoundException('Categoría inexistente');
+        if (nombre && nombre.toLowerCase() !== existing.nombre.toLowerCase()) {
+          await this.assertNameFree(nombre, tx);
+        }
+        const data: Prisma.ExpenseCategoryUpdateInput = {};
+        if (nombre !== undefined) data.nombre = nombre;
+        if (activo !== undefined) data.activo = activo;
+        const record = await tx.expenseCategory.update({
           where: { id },
           data,
           select: categorySelect,
         });
+        return toDto(record);
       });
     } catch (error) {
       this.rethrow(error);
@@ -82,7 +110,6 @@ export class ExpenseCategoriesService {
 
   async delete(id: string): Promise<void> {
     try {
-      // Expenses reference categories with RESTRICT, including races.
       await this.prisma.expenseCategory.delete({
         where: { id },
         select: { id: true },
@@ -93,31 +120,26 @@ export class ExpenseCategoriesService {
   }
 
   private async assertNameFree(
-    name: string,
+    nombre: string,
     tx: Prisma.TransactionClient,
-    exceptId?: string,
   ): Promise<void> {
-    const existing = await tx.expenseCategory.findFirst({
+    const clash = await tx.expenseCategory.findFirst({
       where: {
-        name: { equals: name, mode: 'insensitive' },
-        ...(exceptId ? { NOT: { id: exceptId } } : {}),
+        nombre: { equals: nombre, mode: 'insensitive' },
       },
       select: { id: true },
     });
-    if (existing)
-      throw new ConflictException('La categoría de gasto ya existe');
+    if (clash) throw new ConflictException('La categoría ya existe');
   }
 
   private rethrow(error: unknown): never {
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       if (error.code === 'P2002')
-        throw new ConflictException('La categoría de gasto ya existe');
+        throw new ConflictException('La categoría ya existe');
       if (error.code === 'P2025')
-        throw new NotFoundException('Categoría de gasto inexistente');
+        throw new NotFoundException('Categoría inexistente');
       if (error.code === 'P2003')
-        throw new ConflictException(
-          'La categoría de gasto tiene gastos asociados',
-        );
+        throw new ConflictException('La categoría tiene egresos asociados');
     }
     throw error;
   }

@@ -9,7 +9,19 @@ import { PrismaService } from '../src/prisma/prisma.service.js';
 import { setupApp } from '../src/setup-app.js';
 import type { BusinessConfigDto } from '../src/business-config/dto/business-config.dto.js';
 
-const base = '/api/business-config';
+interface BusinessConfigResponse {
+  nombre: string;
+  direccion: string;
+  colonia: string;
+  municipio: string;
+  estado: string;
+  telefono: string;
+  rfc: string;
+  mensajePie: string;
+  fechaActualizacion: string;
+}
+
+const base = '/api/configuracion-negocio';
 const valid = {
   nombre: 'Kamadeva Boutique & Streetwear',
   direccion: 'Av. Insurgentes Sur #450 Int. 2B',
@@ -47,12 +59,10 @@ describe('Business config HTTP + PostgreSQL', () => {
     ] as const) {
       const user = await prisma.user.create({
         data: {
-          name: `Config ${key}`,
+          nombre: `Config ${key}`,
           email: `${randomUUID()}@config.test`,
           passwordHash: 'unused-test-hash',
-          ...(role
-            ? { roles: { create: { role: { connect: { name: role } } } } }
-            : {}),
+          ...(role ? { rol: { connect: { nombre: role } } } : {}),
         },
       });
       users[key] = user.id;
@@ -66,7 +76,6 @@ describe('Business config HTTP + PostgreSQL', () => {
       if (prisma) {
         await prisma.businessConfig.deleteMany();
         const ids = Object.values(users);
-        await prisma.userRole.deleteMany({ where: { userId: { in: ids } } });
         await prisma.user.deleteMany({ where: { id: { in: ids } } });
       }
     } finally {
@@ -92,8 +101,8 @@ describe('Business config HTTP + PostgreSQL', () => {
         nombre: `  ${valid.nombre}  `,
         rfc: ' kam210315abc ',
       }).expect(200)
-    ).body as BusinessConfigDto;
-    expect(created).toEqual({ ...valid, updatedAt: expect.any(String) });
+    ).body as BusinessConfigResponse;
+    expect(created).toEqual({ ...valid, fechaActualizacion: expect.any(String) });
 
     const replaced = (
       await put({
@@ -101,13 +110,13 @@ describe('Business config HTTP + PostgreSQL', () => {
         telefono: '+52 (55) 8765.4321',
         rfc: 'GODE561231GR8',
       }).expect(200)
-    ).body as BusinessConfigDto;
+    ).body as BusinessConfigResponse;
     expect(replaced).toMatchObject({
       telefono: '+52 (55) 8765.4321',
       rfc: 'GODE561231GR8',
     });
-    expect(Date.parse(replaced.updatedAt)).toBeGreaterThanOrEqual(
-      Date.parse(created.updatedAt),
+    expect(Date.parse(replaced.fechaActualizacion)).toBeGreaterThanOrEqual(
+      Date.parse(created.fechaActualizacion),
     );
     expect(await prisma.businessConfig.count()).toBe(1);
     await http()

@@ -34,7 +34,7 @@ import { PayQuoteDto } from './dto/pay-quote.dto.js';
 import { QuoteDto, SaleDto } from './dto/quote.dto.js';
 import { QuotesService } from './quotes.service.js';
 
-@ApiTags('quotes')
+@ApiTags('cotizaciones')
 @ApiBearerAuth()
 @ApiUnauthorizedResponse({ description: 'Token inválido o usuario inactivo' })
 @ApiForbiddenResponse({ description: 'Permisos insuficientes' })
@@ -45,7 +45,7 @@ import { QuotesService } from './quotes.service.js';
 })
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('ADMIN', 'VENDEDOR')
-@Controller('quotes')
+@Controller('cotizaciones')
 export class QuotesController {
   constructor(private readonly quotes: QuotesService) {}
 
@@ -79,14 +79,14 @@ export class QuotesController {
     return this.quotes.update(id, dto);
   }
 
-  @Post(':id/send')
+  @Post(':id/enviar')
   @HttpCode(200)
   @ApiOkResponse({ type: QuoteDto })
   send(@Param('id', new ParseUUIDPipe()) id: string): Promise<QuoteDto> {
     return this.quotes.send(id);
   }
 
-  @Post(':id/pay')
+  @Post(':id/pagar')
   @HttpCode(200)
   @ApiOkResponse({ type: SaleDto })
   pay(

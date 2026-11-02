@@ -33,13 +33,13 @@ import { CreateCategoryDto } from './dto/create-category.dto.js';
 import { UpdateCategoryDto } from './dto/update-category.dto.js';
 import { ListCategoriesDto } from './dto/list-categories.dto.js';
 
-@ApiTags('catalog/categories')
+@ApiTags('catalogo/categorias')
 @ApiBearerAuth()
 @ApiUnauthorizedResponse({ description: 'Token inválido o usuario inactivo' })
 @ApiForbiddenResponse({ description: 'Permisos insuficientes' })
 @ApiBadRequestResponse({ description: 'Datos, query o UUID inválidos' })
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Controller('catalog/categories')
+@Controller('catalogo/categorias')
 export class CategoriesController {
   constructor(private readonly categories: CategoriesService) {}
 

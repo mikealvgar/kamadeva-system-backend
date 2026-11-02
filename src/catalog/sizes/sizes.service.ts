@@ -10,46 +10,42 @@ import type { CreateSizeDto } from './dto/create-size.dto.js';
 import type { SizeDto } from './dto/size.dto.js';
 import type { UpdateSizeDto } from './dto/update-size.dto.js';
 
-const sizeSelect = {
-  id: true,
-  name: true,
-  sortOrder: true,
-  isActive: true,
-} satisfies Prisma.SizeSelect;
-
 @Injectable()
 export class SizesService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateSizeDto): Promise<SizeDto> {
+    const raw = dto.nombre ?? dto.name;
+    if (!raw || !raw.trim()) {
+      throw new BadRequestException('El nombre de la talla es obligatorio');
+    }
+    const nombre = raw.trim().toUpperCase();
     try {
-      return await this.prisma.size.create({
+      const record = await this.prisma.size.create({
         data: {
-          name: dto.name.trim().toUpperCase(),
-          sortOrder: dto.sortOrder ?? 0,
+          nombre,
         },
-        select: sizeSelect,
       });
+      return this.mapToDto(record);
     } catch (error) {
       this.rethrow(error);
     }
   }
 
   async findAll(includeInactive = false): Promise<SizeDto[]> {
-    return this.prisma.size.findMany({
-      where: includeInactive ? {} : { isActive: true },
-      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-      select: sizeSelect,
+    const records = await this.prisma.size.findMany({
+      where: includeInactive ? {} : { activo: true },
+      orderBy: { nombre: 'asc' },
     });
+    return records.map((r) => this.mapToDto(r));
   }
 
   async findById(id: string): Promise<SizeDto> {
     const size = await this.prisma.size.findUnique({
       where: { id },
-      select: sizeSelect,
     });
     if (!size) throw new NotFoundException('Talla inexistente');
-    return size;
+    return this.mapToDto(size);
   }
 
   async update(id: string, dto: UpdateSizeDto): Promise<SizeDto> {
@@ -57,15 +53,20 @@ export class SizesService {
       throw new BadRequestException('Debe enviar al menos un campo');
     }
     const data: Prisma.SizeUpdateInput = {};
-    if (dto.name !== undefined) data.name = dto.name.trim().toUpperCase();
-    if (dto.sortOrder !== undefined) data.sortOrder = dto.sortOrder;
-    if (dto.isActive !== undefined) data.isActive = dto.isActive;
+    const raw = dto.nombre ?? dto.name;
+    if (raw !== undefined) {
+      data.nombre = raw.trim().toUpperCase();
+    }
+    const activo = dto.activo ?? dto.isActive;
+    if (activo !== undefined) {
+      data.activo = activo;
+    }
     try {
-      return await this.prisma.size.update({
+      const updated = await this.prisma.size.update({
         where: { id },
         data,
-        select: sizeSelect,
       });
+      return this.mapToDto(updated);
     } catch (error) {
       this.rethrow(error);
     }
@@ -73,11 +74,20 @@ export class SizesService {
 
   async delete(id: string): Promise<void> {
     try {
-      // Product, quote item and sale item relations use RESTRICT, including races.
-      await this.prisma.size.delete({ where: { id }, select: { id: true } });
+      await this.prisma.size.delete({ where: { id } });
     } catch (error) {
       this.rethrow(error);
     }
+  }
+
+  private mapToDto(r: { id: string; nombre: string; activo: boolean }): SizeDto {
+    return {
+      id: r.id,
+      nombre: r.nombre,
+      name: r.nombre,
+      activo: r.activo,
+      isActive: r.activo,
+    };
   }
 
   private rethrow(error: unknown): never {

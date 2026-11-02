@@ -33,13 +33,13 @@ import { CreateCustomerDto } from './dto/create-customer.dto.js';
 import { UpdateCustomerDto } from './dto/update-customer.dto.js';
 import { ListCustomersDto } from './dto/list-customers.dto.js';
 
-@ApiTags('customers')
+@ApiTags('clientes')
 @ApiBearerAuth()
 @ApiUnauthorizedResponse({ description: 'Token inválido o usuario inactivo' })
 @ApiForbiddenResponse({ description: 'Permisos insuficientes' })
 @ApiBadRequestResponse({ description: 'Datos, query o UUID inválidos' })
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Controller('customers')
+@Controller('clientes')
 export class CustomersController {
   constructor(private readonly customers: CustomersService) {}
 

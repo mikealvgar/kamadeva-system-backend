@@ -20,7 +20,31 @@ import { serializableTransaction } from '../prisma/serializable-transaction.js';
 import { isRoleName } from '../roles/role-names.js';
 
 type RefreshPayload = { sub: string; jti: string; exp: number };
-type UserWithRoles = NonNullable<Awaited<ReturnType<UsersService['findById']>>>;
+type UserWithRole = NonNullable<Awaited<ReturnType<UsersService['findById']>>>;
+
+const ADMIN_SECTIONS = [
+  'VENTAS',
+  'PRODUCTOS',
+  'CATALOGO',
+  'INVENTARIO',
+  'CLIENTES',
+  'PROVEEDORES',
+  'COMPRAS',
+  'COTIZACIONES',
+  'GASTOS',
+  'CORTES_CAJA',
+  'TABLERO',
+  'USUARIOS',
+  'CONFIGURACION',
+];
+
+const VENDEDOR_SECTIONS = [
+  'VENTAS',
+  'COTIZACIONES',
+  'CLIENTES',
+  'PRODUCTOS',
+  'INVENTARIO',
+];
 
 @Injectable()
 export class AuthService {
@@ -40,31 +64,44 @@ export class AuthService {
       dto.password,
       this.config.getOrThrow<number>('BCRYPT_ROUNDS'),
     );
-    const user: AuthUser = {
-      id: randomUUID(),
-      name: dto.name.trim(),
-      email,
-      roles: [],
-    };
+
     try {
       return await serializableTransaction(this.prisma, async (tx) => {
-        const name = (await tx.user.count()) === 0 ? 'ADMIN' : 'VENDEDOR';
-        const role = await tx.role.findUnique({ where: { name } });
-        if (!role?.isActive)
+        const isFirst = (await tx.user.count()) === 0;
+        let role = null;
+
+        if (isFirst) {
+          role = await tx.role.findUnique({ where: { nombre: 'ADMIN' } });
+        } else if (dto.rolId) {
+          role = await tx.role.findUnique({ where: { id: dto.rolId } });
+        } else {
+          role = await tx.role.findUnique({ where: { nombre: 'VENDEDOR' } });
+        }
+
+        if (!role || !role.activo) {
           throw new InternalServerErrorException(
             'Rol inicial no configurado o inactivo',
           );
-        user.roles = [name];
-        const session = await this.issueSession(user);
-        await this.users.create(
-          { id: user.id, name: user.name, email, passwordHash },
-          tx,
-        );
-        await tx.userRole.create({
-          data: { userId: user.id, roleId: role.id },
+        }
+
+        const userId = randomUUID();
+        const createdUser = await tx.user.create({
+          data: {
+            id: userId,
+            nombre: dto.name.trim(),
+            email,
+            passwordHash,
+            telefono: dto.telefono ? dto.telefono.trim() : null,
+            rolId: role.id,
+            activo: true,
+          },
+          include: { rol: true },
         });
+
+        const user = this.publicUser(createdUser);
+        const session = await this.issueSession(user);
         await tx.refreshToken.create({ data: session.record });
-        return { user, ...session.tokens };
+        return { user, usuario: user, ...session.tokens };
       });
     } catch (error) {
       if (
@@ -82,14 +119,14 @@ export class AuthService {
     if (
       !user ||
       !(await bcrypt.compare(dto.password, user.passwordHash)) ||
-      !user.isActive
+      !user.activo
     ) {
       throw new UnauthorizedException('Credenciales inválidas');
     }
     const publicUser = this.publicUser(user);
     const session = await this.issueSession(publicUser);
     await this.prisma.refreshToken.create({ data: session.record });
-    return { user: publicUser, ...session.tokens };
+    return { user: publicUser, usuario: publicUser, ...session.tokens };
   }
 
   async refresh(token: string): Promise<TokenPair> {
@@ -100,28 +137,26 @@ export class AuthService {
     });
     if (
       !record ||
-      record.userId !== payload.sub ||
-      record.revokedAt ||
-      record.expiresAt <= new Date() ||
+      record.usuarioId !== payload.sub ||
+      record.fechaRevocacion ||
+      record.fechaVencimiento <= new Date() ||
       !this.matchesHash(token, record.tokenHash)
     ) {
       throw new UnauthorizedException('Sesión inválida');
     }
     const user = await this.users.findById(payload.sub);
-    if (!user?.isActive) throw new UnauthorizedException('Sesión inválida');
+    if (!user || !user.activo) throw new UnauthorizedException('Sesión inválida');
     const session = await this.issueSession(this.publicUser(user));
     await this.prisma.$transaction(async (tx) => {
-      // PostgreSQL rechecks this predicate after a concurrent update commits.
-      // Exactly one caller consumes the old session; failures roll back revocation.
       const consumed = await tx.refreshToken.updateMany({
         where: {
           id: record.id,
-          userId: user.id,
-          revokedAt: null,
-          expiresAt: { gt: new Date() },
-          user: { isActive: true },
+          usuarioId: user.id,
+          fechaRevocacion: null,
+          fechaVencimiento: { gt: new Date() },
+          usuario: { activo: true },
         },
-        data: { revokedAt: new Date() },
+        data: { fechaRevocacion: new Date() },
       });
       if (consumed.count !== 1)
         throw new UnauthorizedException('Sesión inválida');
@@ -131,28 +166,34 @@ export class AuthService {
   }
 
   async logout(token: string): Promise<void> {
-    // Invalid/expired tokens are a successful no-op, as required by the contract.
     const payload = await this.verifyRefresh(token);
     if (!payload) return;
     await this.prisma.refreshToken.updateMany({
       where: {
         id: payload.jti,
-        userId: payload.sub,
+        usuarioId: payload.sub,
         tokenHash: this.hashToken(token),
-        revokedAt: null,
+        fechaRevocacion: null,
       },
-      data: { revokedAt: new Date() },
+      data: { fechaRevocacion: new Date() },
     });
   }
 
-  private publicUser(user: UserWithRoles): AuthUser {
+  private publicUser(user: UserWithRole): AuthUser {
+    const rolNombre = user.rol?.activo && isRoleName(user.rol.nombre) ? user.rol.nombre : '';
+    const hasAdmin = rolNombre === 'ADMIN';
     return {
       id: user.id,
-      name: user.name,
+      nombre: user.nombre,
+      name: user.nombre,
       email: user.email,
-      roles: user.roles
-        .filter(({ role }) => role.isActive && isRoleName(role.name))
-        .map(({ role }) => role.name),
+      telefono: user.telefono,
+      activo: user.activo,
+      rol: rolNombre,
+      rolId: user.rolId,
+      roles: rolNombre ? [rolNombre] : [],
+      hasAdmin,
+      seccionesPermitidas: hasAdmin ? ADMIN_SECTIONS : rolNombre ? VENDEDOR_SECTIONS : [],
     };
   }
 
@@ -179,9 +220,9 @@ export class AuthService {
       tokens: { accessToken, refreshToken },
       record: {
         id,
-        userId: user.id,
+        usuarioId: user.id,
         tokenHash: this.hashToken(refreshToken),
-        expiresAt: new Date((issuedAt + lifetime) * 1000),
+        fechaVencimiento: new Date((issuedAt + lifetime) * 1000),
       },
     };
   }

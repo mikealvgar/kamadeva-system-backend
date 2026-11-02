@@ -1,44 +1,30 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import {
-  IsNotEmpty,
-  IsString,
-  Matches,
-  MaxLength,
-  ValidateIf,
-} from 'class-validator';
-import { SLUG_PATTERN } from '../slugify.js';
+import { IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class CreateCategoryDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: 'ANILLOS',
     maxLength: 100,
-    description: 'Se guarda en mayúsculas',
+    description: 'Descripción de la categoría',
   })
+  @IsOptional()
   @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim() : value,
+    typeof value === 'string' ? value.trim().toUpperCase() : value,
   )
   @IsString()
-  @IsNotEmpty()
   @MaxLength(100)
-  name: string;
-
-  @ApiPropertyOptional({ example: 'anillos', pattern: SLUG_PATTERN.source })
-  @ValidateIf((_object, value: unknown) => value !== undefined)
-  @IsString()
-  @Matches(SLUG_PATTERN)
-  slug?: string;
+  descripcion?: string;
 
   @ApiPropertyOptional({
-    type: String,
-    nullable: true,
-    maxLength: 500,
-    example: 'Joyería de anillos',
+    example: 'ANILLOS',
+    maxLength: 100,
   })
-  @ValidateIf(
-    (_object, value: unknown) => value !== undefined && value !== null,
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toUpperCase() : value,
   )
   @IsString()
-  @MaxLength(500)
-  description?: string | null;
+  @MaxLength(100)
+  name?: string;
 }

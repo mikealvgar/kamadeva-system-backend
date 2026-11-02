@@ -33,13 +33,13 @@ import { ProviderDto } from './dto/provider.dto.js';
 import { UpdateProviderDto } from './dto/update-provider.dto.js';
 import { ProvidersService } from './providers.service.js';
 
-@ApiTags('providers')
+@ApiTags('proveedores')
 @ApiBearerAuth()
 @ApiUnauthorizedResponse({ description: 'Token inválido o usuario inactivo' })
 @ApiForbiddenResponse({ description: 'Permisos insuficientes' })
 @ApiBadRequestResponse({ description: 'Datos, query o UUID inválidos' })
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Controller('providers')
+@Controller('proveedores')
 export class ProvidersController {
   constructor(private readonly providers: ProvidersService) {}
 

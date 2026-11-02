@@ -32,13 +32,13 @@ import { ExpenseDto, ExpensePageDto } from './dto/expense.dto.js';
 import { ListExpensesDto } from './dto/list-expenses.dto.js';
 import { ExpensesService } from './expenses.service.js';
 
-@ApiTags('expenses')
+@ApiTags('gastos')
 @ApiBearerAuth()
 @ApiUnauthorizedResponse({ description: 'Token inválido o usuario inactivo' })
 @ApiForbiddenResponse({ description: 'Permisos insuficientes' })
 @ApiBadRequestResponse({ description: 'Body, query o UUID inválidos' })
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Controller('expenses')
+@Controller('gastos')
 export class ExpensesController {
   constructor(private readonly expenses: ExpensesService) {}
 

@@ -33,14 +33,6 @@ enum SaleStatus {
   REFUNDED
 }
 
-enum PaymentStatus {
-  PENDING
-  PAID
-  FAILED
-  CANCELLED
-  REFUNDED
-}
-
 enum PaymentMethod {
   CASH
   CARD
@@ -60,575 +52,504 @@ enum IdempotencyStatus {
 }
 
 model User {
-  id           String  @id @default(uuid()) @db.Uuid
-  name         String
-  email        String  @unique
+  id           String   @id @default(uuid()) @db.Uuid
+  nombre       String
+  email        String   @unique
   passwordHash String
-  isActive     Boolean @default(true)
+  telefono     String?
+  activo       Boolean  @default(true)
 
-  roles         UserRole[]
-  refreshTokens RefreshToken[]
+  rolId String? @db.Uuid
+  rol   Role?   @relation(fields: [rolId], references: [id])
 
+  refreshTokens      RefreshToken[]
   quotes             Quote[]             @relation("QuoteCreatedBy")
   sales              Sale[]              @relation("SaleCreatedBy")
   cancelledSales     Sale[]              @relation("SaleCancelledBy")
   expenses           Expense[]
   purchases          Purchase[]          @relation("PurchaseCreatedBy")
   cashClosures       CashClosure[]       @relation("CashClosureClosedBy")
-  payments           Payment[]           @relation("PaymentCreatedBy")
   inventoryMovements InventoryMovement[] @relation("InventoryMovementCreatedBy")
   idempotencyKeys    IdempotencyKey[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  fechaCreacion      DateTime @default(now())
+  fechaActualizacion DateTime @updatedAt
 
   @@map("users")
 }
 
 model Role {
-  id          String  @id @default(uuid()) @db.Uuid
-  name        String  @unique
-  description String?
-  isActive    Boolean @default(true)
+  id          String   @id @default(uuid()) @db.Uuid
+  nombre      String   @unique
+  descripcion String?
+  activo      Boolean  @default(true)
 
-  users UserRole[]
+  users User[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  fechaCreacion      DateTime @default(now())
+  fechaActualizacion DateTime @updatedAt
 
   @@map("roles")
 }
 
-model UserRole {
-  userId String @db.Uuid
-  roleId String @db.Uuid
-
-  user User @relation(fields: [userId], references: [id])
-  role Role @relation(fields: [roleId], references: [id])
-
-  createdAt DateTime @default(now())
-
-  @@id([userId, roleId])
-  @@map("user_roles")
-}
-
 model RefreshToken {
-  id        String @id @default(uuid()) @db.Uuid
-  tokenHash String
-  userId    String @db.Uuid
-  user      User   @relation(fields: [userId], references: [id])
+  id               String    @id @default(uuid()) @db.Uuid
+  tokenHash        String
+  usuarioId        String    @db.Uuid
+  usuario          User      @relation(fields: [usuarioId], references: [id])
 
-  expiresAt DateTime
-  revokedAt DateTime?
+  fechaVencimiento DateTime
+  fechaRevocacion  DateTime?
+  fechaCreacion    DateTime  @default(now())
 
-  createdAt DateTime @default(now())
-
-  @@index([userId])
+  @@index([usuarioId])
   @@map("refresh_tokens")
 }
 
 model Category {
-  id          String  @id @default(uuid()) @db.Uuid
-  name        String
-  slug        String  @unique
-  description String?
-  isActive    Boolean @default(true)
+  id          String   @id @default(uuid()) @db.Uuid
+  descripcion String   @unique
+  activo      Boolean  @default(true)
 
   products Product[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  fechaCreacion      DateTime @default(now())
+  fechaActualizacion DateTime @updatedAt
 
   @@map("categories")
 }
 
-model Product {
+model Brand {
   id          String   @id @default(uuid()) @db.Uuid
-  // Product identifier (replaces the former SKU); stored upper-case.
-  barcode     String   @unique
-  name        String
-  description String?
-  brand       String?
-  imageUrl    String?
-  price       Decimal  @db.Decimal(12, 2)
-  cost        Decimal? @db.Decimal(12, 2)
-  // Low-stock threshold for the dashboard; null = not tracked.
-  minStock    Decimal? @db.Decimal(14, 3)
-  isActive    Boolean  @default(true)
+  descripcion String   @unique
+  activo      Boolean  @default(true)
 
-  categoryId String?   @db.Uuid
-  category   Category? @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  products Product[]
 
-  sizes              ProductSize[]
+  fechaCreacion      DateTime @default(now())
+  fechaActualizacion DateTime @updatedAt
+
+  @@map("brands")
+}
+
+model Size {
+  id     String  @id @default(uuid()) @db.Uuid
+  nombre String  @unique
+  activo Boolean @default(true)
+
+  quoteItems QuoteItem[]
+  saleItems  SaleItem[]
+
+  @@map("sizes")
+}
+
+model Product {
+  id               String   @id @default(uuid()) @db.Uuid
+  codigoBarras     String   @unique
+  nombre           String
+  descripcion      String?
+  imageUrl         String?
+  precioVenta      Decimal  @db.Decimal(12, 2)
+  precioCompra     Decimal? @db.Decimal(12, 2)
+  existenciaMinima Decimal? @db.Decimal(14, 3)
+  activo           Boolean  @default(true)
+
+  categoriaId String?   @db.Uuid
+  categoria   Category? @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
+
+  marcaId String? @db.Uuid
+  marca   Brand?  @relation(fields: [marcaId], references: [id], onDelete: Restrict)
+
   quoteItems         QuoteItem[]
   saleItems          SaleItem[]
   purchaseItems      PurchaseItem[]
   inventoryMovements InventoryMovement[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  fechaCreacion      DateTime @default(now())
+  fechaActualizacion DateTime @updatedAt
 
-  @@index([categoryId])
+  @@index([categoriaId])
+  @@index([marcaId])
   @@map("products")
 }
 
-model Size {
-  id        String  @id @default(uuid()) @db.Uuid
-  name      String  @unique
-  sortOrder Int     @default(0)
-  isActive  Boolean @default(true)
-
-  products   ProductSize[]
-  quoteItems QuoteItem[]
-  saleItems  SaleItem[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([sortOrder, name])
-  @@map("sizes")
-}
-
-model ProductSize {
-  productId String  @db.Uuid
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-
-  sizeId String @db.Uuid
-  size   Size   @relation(fields: [sizeId], references: [id], onDelete: Restrict)
-
-  createdAt DateTime @default(now())
-
-  @@id([productId, sizeId])
-  @@index([sizeId])
-  @@map("product_sizes")
-}
-
-model FolioCounter {
-  prefix    String @id
-  lastValue Int    @default(0)
-
-  updatedAt DateTime @updatedAt
-
-  @@map("folio_counters")
-}
-
 model Customer {
-  id        String  @id @default(uuid()) @db.Uuid
-  name      String
-  phone     String?
-  email     String?
-  isActive  Boolean @default(true)
-  isDefault Boolean @default(false)
+  id               String   @id @default(uuid()) @db.Uuid
+  nombre           String
+  telefono         String?
+  correo           String?
+  activo           Boolean  @default(true)
+  esPredeterminado Boolean  @default(false)
 
   quotes Quote[]
   sales  Sale[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  fechaCreacion      DateTime @default(now())
+  fechaActualizacion DateTime @updatedAt
 
-  @@index([email])
+  @@index([correo])
   @@map("customers")
 }
 
 model InventoryMovement {
-  id        String  @id @default(uuid()) @db.Uuid
-  productId String  @db.Uuid
-  product   Product @relation(fields: [productId], references: [id])
+  id                String                @id @default(uuid()) @db.Uuid
+  productoId        String                @db.Uuid
+  producto          Product               @relation(fields: [productoId], references: [id])
 
-  type           InventoryMovementType
-  quantityChange Decimal               @db.Decimal(14, 3)
-  unitCost       Decimal?              @db.Decimal(12, 2)
+  tipo              InventoryMovementType
+  cambioExistencias Decimal               @db.Decimal(14, 3)
+  costoUnitario     Decimal?              @db.Decimal(12, 2)
 
-  referenceType String?
-  referenceId   String?
+  tipoReferencia String?
+  referenciaId   String?
 
-  saleItemId String?   @db.Uuid
-  saleItem   SaleItem? @relation(fields: [saleItemId], references: [id])
+  renglonVentaId String?   @db.Uuid
+  renglonVenta   SaleItem? @relation(fields: [renglonVentaId], references: [id])
 
-  createdById String? @db.Uuid
-  createdBy   User?   @relation("InventoryMovementCreatedBy", fields: [createdById], references: [id])
+  creadoPorId String? @db.Uuid
+  creadoPor   User?   @relation("InventoryMovementCreatedBy", fields: [creadoPorId], references: [id])
 
-  notes     String?
-  createdAt DateTime @default(now())
+  notas         String?
+  fechaCreacion DateTime @default(now())
 
-  @@index([productId])
-  @@index([type])
-  @@index([referenceType, referenceId])
-  @@index([saleItemId])
+  @@index([productoId])
+  @@index([tipo])
+  @@index([tipoReferencia, referenciaId])
+  @@index([renglonVentaId])
   @@map("inventory_movements")
 }
 
-/// A received supplier purchase. Its inventory movements are created atomically.
 model Purchase {
-  id String @id @default(uuid()) @db.Uuid
+  id             String   @id @default(uuid()) @db.Uuid
 
-  providerId String   @db.Uuid
-  provider   Provider @relation(fields: [providerId], references: [id], onDelete: Restrict)
+  proveedorId    String   @db.Uuid
+  proveedor      Provider @relation(fields: [proveedorId], references: [id], onDelete: Restrict)
 
-  receivedAt    DateTime @default(now())
-  supplierFolio String?
-  notes         String?
-  total         Decimal  @db.Decimal(12, 2)
+  fechaRecepcion DateTime @default(now())
+  folioProveedor String?
+  notas          String?
+  total          Decimal  @db.Decimal(12, 2)
 
-  createdById String @db.Uuid
-  createdBy   User   @relation("PurchaseCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  creadoPorId String @db.Uuid
+  creadoPor   User   @relation("PurchaseCreatedBy", fields: [creadoPorId], references: [id], onDelete: Restrict)
 
-  items     PurchaseItem[]
-  createdAt DateTime       @default(now())
+  items         PurchaseItem[]
+  fechaCreacion DateTime       @default(now())
 
-  @@index([providerId, receivedAt])
-  @@index([receivedAt])
+  @@index([proveedorId, fechaRecepcion])
+  @@index([fechaRecepcion])
   @@map("purchases")
 }
 
 model PurchaseItem {
-  id String @id @default(uuid()) @db.Uuid
+  id             String   @id @default(uuid()) @db.Uuid
 
-  purchaseId String   @db.Uuid
-  purchase   Purchase @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  compraId       String   @db.Uuid
+  compra         Purchase @relation(fields: [compraId], references: [id], onDelete: Restrict)
 
-  productId String  @db.Uuid
-  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  productoId     String  @db.Uuid
+  producto       Product @relation(fields: [productoId], references: [id], onDelete: Restrict)
 
-  position     Int
-  productName  String
-  barcode      String
-  quantity     Decimal @db.Decimal(14, 3)
-  unitCost     Decimal @db.Decimal(12, 2)
-  lineSubtotal Decimal @db.Decimal(12, 2)
+  posicion        Int
+  nombreProducto  String
+  codigoBarras    String
+  cantidad        Decimal @db.Decimal(14, 3)
+  costoUnitario   Decimal @db.Decimal(12, 2)
+  subtotalRenglon Decimal @db.Decimal(12, 2)
 
-  @@unique([purchaseId, position])
-  @@index([productId])
+  @@unique([compraId, posicion])
+  @@index([productoId])
   @@map("purchase_items")
 }
 
 model Quote {
-  id     String      @id @default(uuid()) @db.Uuid
-  folio  String      @unique
-  status QuoteStatus @default(DRAFT)
+  id               String      @id @default(uuid()) @db.Uuid
+  folio            Int         @unique @default(autoincrement())
+  estado           QuoteStatus @default(DRAFT)
 
-  customerId String   @db.Uuid
-  customer   Customer @relation(fields: [customerId], references: [id])
+  clienteId        String   @db.Uuid
+  cliente          Customer @relation(fields: [clienteId], references: [id])
 
   items QuoteItem[]
 
-  subtotal Decimal @db.Decimal(12, 2)
-  discount Decimal @default(0) @db.Decimal(12, 2)
-  tax      Decimal @default(0) @db.Decimal(12, 2)
-  total    Decimal @db.Decimal(12, 2)
+  subtotal  Decimal @db.Decimal(12, 2)
+  descuento Decimal @default(0) @db.Decimal(12, 2)
+  total     Decimal @db.Decimal(12, 2)
 
-  notes     String?
-  expiresAt DateTime?
+  notas            String?
+  fechaVencimiento DateTime?
 
-  createdById String? @db.Uuid
-  createdBy   User?   @relation("QuoteCreatedBy", fields: [createdById], references: [id])
+  creadoPorId String? @db.Uuid
+  creadoPor   User?   @relation("QuoteCreatedBy", fields: [creadoPorId], references: [id])
 
   convertedSale Sale?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  fechaCreacion      DateTime @default(now())
+  fechaActualizacion DateTime @updatedAt
 
-  @@index([customerId])
-  @@index([status])
+  @@index([clienteId])
+  @@index([estado])
   @@map("quotes")
 }
 
 model QuoteItem {
-  id String @id @default(uuid()) @db.Uuid
+  id             String  @id @default(uuid()) @db.Uuid
 
-  quoteId String @db.Uuid
-  quote   Quote  @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  cotizacionId   String  @db.Uuid
+  cotizacion     Quote   @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
 
-  productId String  @db.Uuid
-  product   Product @relation(fields: [productId], references: [id])
+  productoId     String  @db.Uuid
+  producto       Product @relation(fields: [productoId], references: [id])
 
-  sizeId String? @db.Uuid
-  size   Size?   @relation(fields: [sizeId], references: [id], onDelete: Restrict)
+  tallaId String? @db.Uuid
+  talla   Size?   @relation(fields: [tallaId], references: [id], onDelete: Restrict)
 
-  quantity  Decimal @db.Decimal(14, 3)
-  unitPrice Decimal @db.Decimal(12, 2)
-  discount  Decimal @default(0) @db.Decimal(12, 2)
-  tax       Decimal @default(0) @db.Decimal(12, 2)
-  total     Decimal @db.Decimal(12, 2)
+  cantidad       Decimal @db.Decimal(14, 3)
+  precioUnitario Decimal @db.Decimal(12, 2)
+  descuento      Decimal @default(0) @db.Decimal(12, 2)
+  total          Decimal @db.Decimal(12, 2)
 
-  createdAt DateTime @default(now())
+  fechaCreacion DateTime @default(now())
 
-  @@index([sizeId])
-  @@index([quoteId])
-  @@index([productId])
+  @@index([tallaId])
+  @@index([cotizacionId])
+  @@index([productoId])
   @@map("quote_items")
 }
 
 model Sale {
-  id     String     @id @default(uuid()) @db.Uuid
-  folio  String     @unique
-  status SaleStatus @default(PENDING)
+  id         String        @id @default(uuid()) @db.Uuid
+  folio      Int           @unique @default(autoincrement())
+  estado     SaleStatus    @default(PENDING)
+  metodoPago PaymentMethod @default(CASH)
+  fechaPago  DateTime?
 
-  customerId String?   @db.Uuid
-  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  clienteId String?   @db.Uuid
+  cliente   Customer? @relation(fields: [clienteId], references: [id], onDelete: Restrict)
 
-  quoteId String? @unique @db.Uuid
-  quote   Quote?  @relation(fields: [quoteId], references: [id])
+  cotizacionId String? @unique @db.Uuid
+  cotizacion   Quote?  @relation(fields: [cotizacionId], references: [id])
 
-  items    SaleItem[]
-  payments Payment[]
+  items SaleItem[]
 
-  subtotal Decimal @db.Decimal(12, 2)
-  discount Decimal @default(0) @db.Decimal(12, 2)
-  tax      Decimal @default(0) @db.Decimal(12, 2)
-  total    Decimal @db.Decimal(12, 2)
+  subtotal  Decimal @db.Decimal(12, 2)
+  descuento Decimal @default(0) @db.Decimal(12, 2)
+  total     Decimal @db.Decimal(12, 2)
 
-  createdById String? @db.Uuid
-  createdBy   User?   @relation("SaleCreatedBy", fields: [createdById], references: [id])
+  creadoPorId String? @db.Uuid
+  creadoPor   User?   @relation("SaleCreatedBy", fields: [creadoPorId], references: [id])
 
-  notes String?
+  corteCajaId String?      @db.Uuid
+  corteCaja   CashClosure? @relation("CashClosureSales", fields: [corteCajaId], references: [id], onDelete: Restrict)
 
-  cancelledAt   DateTime?
-  cancelledById String?   @db.Uuid
-  cancelledBy   User?     @relation("SaleCancelledBy", fields: [cancelledById], references: [id])
-  cancelReason  String?
+  notas String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  fechaCancelacion  DateTime?
+  canceladoPorId    String?   @db.Uuid
+  canceladoPor      User?     @relation("SaleCancelledBy", fields: [canceladoPorId], references: [id])
+  motivoCancelacion String?
 
-  @@index([customerId])
-  @@index([status])
-  @@index([createdAt])
+  idempotencyKeys IdempotencyKey[]
+
+  fechaCreacion      DateTime @default(now())
+  fechaActualizacion DateTime @updatedAt
+
+  @@index([clienteId])
+  @@index([estado])
+  @@index([corteCajaId])
+  @@index([fechaCreacion])
   @@map("sales")
 }
 
 model SaleItem {
-  id String @id @default(uuid()) @db.Uuid
+  id            String   @id @default(uuid()) @db.Uuid
 
-  saleId String @db.Uuid
-  sale   Sale   @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  ventaId       String   @db.Uuid
+  venta         Sale     @relation(fields: [ventaId], references: [id], onDelete: Cascade)
 
-  productId String  @db.Uuid
-  product   Product @relation(fields: [productId], references: [id])
+  productoId    String   @db.Uuid
+  producto      Product  @relation(fields: [productoId], references: [id])
 
-  sizeId String? @db.Uuid
-  size   Size?   @relation(fields: [sizeId], references: [id], onDelete: Restrict)
+  tallaId String? @db.Uuid
+  talla   Size?   @relation(fields: [tallaId], references: [id], onDelete: Restrict)
 
-  quantity  Decimal  @db.Decimal(14, 3)
-  unitPrice Decimal  @db.Decimal(12, 2)
-  discount  Decimal  @default(0) @db.Decimal(12, 2)
-  tax       Decimal  @default(0) @db.Decimal(12, 2)
-  total     Decimal  @db.Decimal(12, 2)
-  // Product.cost when sold; null for sales recorded before the snapshot.
-  unitCost  Decimal? @db.Decimal(12, 2)
+  cantidad       Decimal  @db.Decimal(14, 3)
+  precioUnitario Decimal  @db.Decimal(12, 2)
+  descuento      Decimal  @default(0) @db.Decimal(12, 2)
+  total          Decimal  @db.Decimal(12, 2)
+  costoUnitario  Decimal? @db.Decimal(12, 2)
 
   inventoryMovements InventoryMovement[]
 
-  createdAt DateTime @default(now())
+  fechaCreacion DateTime @default(now())
 
-  @@index([sizeId])
-  @@index([saleId])
-  @@index([productId])
+  @@index([tallaId])
+  @@index([ventaId])
+  @@index([productoId])
   @@map("sale_items")
-}
-
-model Payment {
-  id String @id @default(uuid()) @db.Uuid
-
-  saleId String @db.Uuid
-  sale   Sale   @relation(fields: [saleId], references: [id])
-
-  amount Decimal       @db.Decimal(12, 2)
-  method PaymentMethod
-  status PaymentStatus @default(PENDING)
-
-  provider          String?
-  providerReference String? @unique
-
-  createdById String? @db.Uuid
-  createdBy   User?   @relation("PaymentCreatedBy", fields: [createdById], references: [id])
-
-  idempotencyKeys IdempotencyKey[]
-
-  // Closure that counted the incoming money / the refund outflow.
-  cashClosureId   String?      @db.Uuid
-  cashClosure     CashClosure? @relation("CashClosurePayments", fields: [cashClosureId], references: [id], onDelete: Restrict)
-  refundClosureId String?      @db.Uuid
-  refundClosure   CashClosure? @relation("CashClosureRefunds", fields: [refundClosureId], references: [id], onDelete: Restrict)
-
-  paidAt    DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-
-  @@index([saleId])
-  @@index([status])
-  @@index([cashClosureId])
-  @@index([refundClosureId])
-  @@map("payments")
 }
 
 model IdempotencyKey {
   id String @id @default(uuid()) @db.Uuid
 
-  key         String
-  scope       String
-  requestHash String
-  status      IdempotencyStatus @default(PENDING)
+  llave        String
+  ambito       String
+  hashPeticion String
+  estado       IdempotencyStatus @default(PENDING)
 
-  responseStatusCode Int?
-  responseBody       Json?
-  errorMessage       String?
+  codigoRespuesta Int?
+  cuerpoRespuesta Json?
+  mensajeError    String?
 
-  userId String? @db.Uuid
-  user   User?   @relation(fields: [userId], references: [id])
+  usuarioId String? @db.Uuid
+  usuario   User?   @relation(fields: [usuarioId], references: [id])
 
-  paymentId String?  @db.Uuid
-  payment   Payment? @relation(fields: [paymentId], references: [id])
+  ventaId String? @db.Uuid
+  venta   Sale?   @relation(fields: [ventaId], references: [id])
 
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  fechaVencimiento   DateTime
+  fechaCreacion      DateTime @default(now())
+  fechaActualizacion DateTime @updatedAt
 
-  @@unique([key, scope])
-  @@index([userId])
-  @@index([paymentId])
-  @@index([expiresAt])
+  @@unique([llave, ambito])
+  @@index([usuarioId])
+  @@index([ventaId])
+  @@index([fechaVencimiento])
   @@map("idempotency_keys")
 }
 
 model ExpenseCategory {
-  id       String  @id @default(uuid()) @db.Uuid
-  name     String  @unique
-  isActive Boolean @default(true)
+  id     String  @id @default(uuid()) @db.Uuid
+  nombre String  @unique
+  activo Boolean @default(true)
 
   expenses Expense[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  fechaCreacion      DateTime @default(now())
+  fechaActualizacion DateTime @updatedAt
 
   @@map("expense_categories")
 }
 
 model Expense {
-  id             String  @id @default(uuid()) @db.Uuid
-  concept        String
-  amount         Decimal @db.Decimal(12, 2)
-  deductFromCash Boolean @default(false)
-  notes          String?
+  id              String   @id @default(uuid()) @db.Uuid
+  concepto        String
+  monto           Decimal  @db.Decimal(12, 2)
+  descontarDeCaja Boolean  @default(false)
+  notas           String?
 
-  spentAt DateTime @default(now())
+  fechaGasto DateTime @default(now())
 
-  categoryId String          @db.Uuid
-  category   ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  categoriaId String          @db.Uuid
+  categoria   ExpenseCategory @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
 
-  createdById String @db.Uuid
-  createdBy   User   @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  creadoPorId String @db.Uuid
+  creadoPor   User   @relation(fields: [creadoPorId], references: [id], onDelete: Restrict)
 
-  cashClosureId String?      @db.Uuid
-  cashClosure   CashClosure? @relation(fields: [cashClosureId], references: [id], onDelete: Restrict)
+  corteCajaId String?      @db.Uuid
+  corteCaja   CashClosure? @relation(fields: [corteCajaId], references: [id], onDelete: Restrict)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  fechaCreacion      DateTime @default(now())
+  fechaActualizacion DateTime @updatedAt
 
-  @@index([cashClosureId])
-  @@index([spentAt])
-  @@index([categoryId])
-  @@index([createdById])
+  @@index([corteCajaId])
+  @@index([fechaGasto])
+  @@index([categoriaId])
+  @@index([creadoPorId])
   @@map("expenses")
 }
 
 model CashClosure {
   id String @id @default(uuid()) @db.Uuid
 
-  // Chain of closures; unique so two closures cannot follow the same one.
-  previousClosureId String?      @unique @db.Uuid
-  previousClosure   CashClosure? @relation("CashClosureChain", fields: [previousClosureId], references: [id], onDelete: Restrict)
-  nextClosure       CashClosure? @relation("CashClosureChain")
+  corteAnteriorId String?      @unique @db.Uuid
+  corteAnterior   CashClosure? @relation("CashClosureChain", fields: [corteAnteriorId], references: [id], onDelete: Restrict)
+  siguienteCorte  CashClosure? @relation("CashClosureChain")
 
-  periodStart DateTime?
-  closedAt    DateTime  @default(now())
+  inicioPeriodo DateTime?
+  fechaCierre   DateTime  @default(now())
 
-  closedById String @db.Uuid
-  closedBy   User   @relation("CashClosureClosedBy", fields: [closedById], references: [id], onDelete: Restrict)
+  cerradoPorId String @db.Uuid
+  cerradoPor   User   @relation("CashClosureClosedBy", fields: [cerradoPorId], references: [id], onDelete: Restrict)
 
-  openingFloat   Decimal @db.Decimal(12, 2)
-  salesCount     Int
-  cashSales      Decimal @db.Decimal(12, 2)
-  cardSales      Decimal @db.Decimal(12, 2)
-  transferSales  Decimal @db.Decimal(12, 2)
-  otherSales     Decimal @db.Decimal(12, 2)
-  cashRefunds    Decimal @db.Decimal(12, 2)
-  totalRefunds   Decimal @db.Decimal(12, 2)
-  expensesCount  Int
-  cashExpenses   Decimal @db.Decimal(12, 2)
-  totalExpenses  Decimal @db.Decimal(12, 2)
-  adjustmentsIn  Decimal @db.Decimal(12, 2)
-  adjustmentsOut Decimal @db.Decimal(12, 2)
-  expectedCash   Decimal @db.Decimal(12, 2)
-  countedCash    Decimal @db.Decimal(12, 2)
-  difference     Decimal @db.Decimal(12, 2)
-  floatLeft      Decimal @db.Decimal(12, 2)
-  denominations  Json
-  notes          String?
+  fondoInicial        Decimal @db.Decimal(12, 2)
+  cantidadVentas      Int
+  ventasEfectivo      Decimal @db.Decimal(12, 2)
+  ventasTarjeta       Decimal @db.Decimal(12, 2)
+  ventasTransferencia Decimal @db.Decimal(12, 2)
+  otrasVentas         Decimal @db.Decimal(12, 2)
+  reembolsosEfectivo  Decimal @db.Decimal(12, 2)
+  reembolsosTotales   Decimal @db.Decimal(12, 2)
+  cantidadGastos      Int
+  gastosEfectivo      Decimal @db.Decimal(12, 2)
+  gastosTotales       Decimal @db.Decimal(12, 2)
+  ajustesEntrada      Decimal @db.Decimal(12, 2)
+  ajustesSalida       Decimal @db.Decimal(12, 2)
+  efectivoEsperado    Decimal @db.Decimal(12, 2)
+  efectivoContado     Decimal @db.Decimal(12, 2)
+  diferencia          Decimal @db.Decimal(12, 2)
+  fondoDejado         Decimal @db.Decimal(12, 2)
+  denominaciones      Json
+  notas               String?
 
   adjustments CashClosureAdjustment[]
-  payments    Payment[]               @relation("CashClosurePayments")
-  refunds     Payment[]               @relation("CashClosureRefunds")
+  sales       Sale[]                  @relation("CashClosureSales")
   expenses    Expense[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  fechaCreacion      DateTime @default(now())
+  fechaActualizacion DateTime @updatedAt
 
-  @@index([closedAt])
+  @@index([fechaCierre])
   @@map("cash_closures")
 }
 
 model CashClosureAdjustment {
   id String @id @default(uuid()) @db.Uuid
 
-  cashClosureId String      @db.Uuid
-  cashClosure   CashClosure @relation(fields: [cashClosureId], references: [id], onDelete: Cascade)
+  corteCajaId String      @db.Uuid
+  corteCaja   CashClosure @relation(fields: [corteCajaId], references: [id], onDelete: Cascade)
 
-  // Order in which the cashier entered it.
-  position    Int
-  type        CashAdjustmentType
-  amount      Decimal            @db.Decimal(12, 2)
-  description String
+  posicion    Int
+  tipo        CashAdjustmentType
+  monto       Decimal            @db.Decimal(12, 2)
+  descripcion String
 
-  createdAt DateTime @default(now())
+  fechaCreacion DateTime @default(now())
 
-  @@unique([cashClosureId, position])
+  @@unique([corteCajaId, posicion])
   @@map("cash_closure_adjustments")
 }
 
-/// Single-row business identity printed on tickets; always key = "default".
-/// Public API keeps the Spanish names (nombre, direccion, ...).
 model BusinessConfig {
-  key          String @id @default("default")
-  name         String
-  address      String
-  neighborhood String
-  municipality String
-  state        String
-  phone        String
-  taxId        String
-  ticketFooter String
+  clave      String @id @default("default")
+  nombre     String
+  direccion  String
+  colonia    String
+  municipio  String
+  estado     String
+  telefono   String
+  rfc        String
+  mensajePie String
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  fechaCreacion      DateTime @default(now())
+  fechaActualizacion DateTime @updatedAt
 
   @@map("business_config")
 }
 
-/// Supplier directory. Public API keeps the Spanish names (nombre, telefono, ...).
 model Provider {
-  id          String  @id @default(uuid()) @db.Uuid
-  name        String  @unique
-  phone       String?
-  email       String?
-  contactName String?
-  address     String?
-  isActive    Boolean @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             String  @id @default(uuid()) @db.Uuid
+  nombre         String  @unique
+  telefono       String?
+  correo         String?
+  nombreContacto String?
+  direccion      String?
+  activo         Boolean @default(true)
 
   purchases Purchase[]
+
+  fechaCreacion      DateTime @default(now())
+  fechaActualizacion DateTime @updatedAt
 
   @@map("providers")
 }

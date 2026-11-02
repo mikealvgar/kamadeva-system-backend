@@ -37,17 +37,20 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     }
     const user = await this.usersService.findById(payload.sub);
 
-    if (!user || !user.isActive) {
+    if (!user || !user.activo) {
       throw new UnauthorizedException('Usuario no autorizado');
     }
+
+    const rolNombre =
+      user.rol?.activo && isRoleName(user.rol.nombre) ? user.rol.nombre : null;
 
     return {
       id: user.id,
       email: user.email,
-      name: user.name,
-      roles: user.roles
-        .filter(({ role }) => role.isActive && isRoleName(role.name))
-        .map((userRole) => userRole.role.name),
+      name: user.nombre,
+      nombre: user.nombre,
+      rol: rolNombre,
+      roles: rolNombre ? [rolNombre] : [],
     };
   }
 }

@@ -33,17 +33,18 @@ import type { AuthUser } from '../auth/types/auth-user.type.js';
 import { CancelSaleDto } from './dto/cancel-sale.dto.js';
 import { CreateSaleDto } from './dto/create-sale.dto.js';
 import { ListSalesDto } from './dto/list-sales.dto.js';
+import { ReturnSaleDto } from './dto/return-sale.dto.js';
 import { SaleDetailDto, SalePageDto } from './dto/sale.dto.js';
 import { SalesService } from './sales.service.js';
 
-@ApiTags('sales')
+@ApiTags('ventas')
 @ApiBearerAuth()
 @ApiUnauthorizedResponse({ description: 'Token inválido o usuario inactivo' })
 @ApiForbiddenResponse({ description: 'Permisos insuficientes' })
 @ApiBadRequestResponse({ description: 'Body, UUID, query o header inválidos' })
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('ADMIN', 'VENDEDOR')
-@Controller('sales')
+@Controller('ventas')
 export class SalesController {
   constructor(private readonly sales: SalesService) {}
 
@@ -91,7 +92,7 @@ export class SalesController {
     return this.sales.findById(id);
   }
 
-  @Post(':id/cancel')
+  @Post(':id/cancelar')
   @HttpCode(200)
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiOkResponse({
@@ -107,5 +108,26 @@ export class SalesController {
     @Req() req: { user: AuthUser },
   ): Promise<SaleDetailDto> {
     return this.sales.cancel(id, dto, req.user.id);
+  }
+
+  @Post(':id/devolucion')
+  @HttpCode(200)
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiOkResponse({
+    type: SaleDetailDto,
+    description:
+      'Devolución parcial o total registrada: stock regresado con RETURN_IN y reembolso registrado en pagos',
+  })
+  @ApiNotFoundResponse({ description: 'Venta inexistente' })
+  @ApiConflictResponse({
+    description:
+      'La venta no admite devolución o la cantidad a devolver excede lo disponible',
+  })
+  returnSale(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() dto: ReturnSaleDto,
+    @Req() req: { user: AuthUser },
+  ): Promise<SaleDetailDto> {
+    return this.sales.returnSale(id, dto, req.user.id);
   }
 }

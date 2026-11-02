@@ -1,68 +1,97 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
   IsBoolean,
   IsISO8601,
-  IsNotEmpty,
   IsNumber,
+  IsOptional,
   IsPositive,
   IsString,
   IsUUID,
   Max,
   MaxLength,
-  ValidateIf,
 } from 'class-validator';
 
 const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
-const optional = (_object: unknown, value: unknown): boolean =>
-  value !== undefined;
 
 export class CreateExpenseDto {
-  @ApiProperty({ example: 'Artículos de limpieza', maxLength: 255 })
+  @ApiPropertyOptional({ example: 'Artículos de limpieza', maxLength: 255 })
+  @IsOptional()
   @Transform(trim)
   @IsString()
-  @IsNotEmpty()
   @MaxLength(255)
-  concept: string;
+  concepto?: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({ example: 'Artículos de limpieza', maxLength: 255 })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(255)
+  concept?: string;
+
+  @ApiPropertyOptional({
     example: 355.5,
     minimum: 0.01,
     maximum: 9999999999.99,
-    multipleOf: 0.01,
   })
+  @IsOptional()
   @IsNumber({ maxDecimalPlaces: 2 })
   @IsPositive()
   @Max(9999999999.99)
-  amount: number;
-
-  @ApiProperty({
-    format: 'uuid',
-    description: 'Categoría activa del catálogo de gastos',
-  })
-  @IsUUID()
-  categoryId: string;
+  monto?: number;
 
   @ApiPropertyOptional({
-    default: false,
-    description: 'true si el dinero sale de la caja física del turno',
+    example: 355.5,
+    minimum: 0.01,
+    maximum: 9999999999.99,
   })
-  @ValidateIf(optional)
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @IsPositive()
+  @Max(9999999999.99)
+  amount?: number;
+
+  @ApiPropertyOptional({ format: 'uuid' })
+  @IsOptional()
+  @IsUUID()
+  categoriaId?: string;
+
+  @ApiPropertyOptional({ format: 'uuid' })
+  @IsOptional()
+  @IsUUID()
+  categoryId?: string;
+
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @IsBoolean()
+  descontarDeCaja?: boolean;
+
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
   @IsBoolean()
   deductFromCash?: boolean;
 
-  @ApiPropertyOptional({
-    format: 'date-time',
-    description: 'Fecha del gasto; por defecto ahora. No puede ser futura',
-  })
-  @ValidateIf(optional)
+  @ApiPropertyOptional({ format: 'date-time' })
+  @IsOptional()
+  @IsISO8601({ strict: true })
+  fechaGasto?: string;
+
+  @ApiPropertyOptional({ format: 'date-time' })
+  @IsOptional()
   @IsISO8601({ strict: true })
   spentAt?: string;
 
   @ApiPropertyOptional({ maxLength: 500 })
+  @IsOptional()
   @Transform(trim)
-  @ValidateIf(optional)
+  @IsString()
+  @MaxLength(500)
+  notas?: string;
+
+  @ApiPropertyOptional({ maxLength: 500 })
+  @IsOptional()
+  @Transform(trim)
   @IsString()
   @MaxLength(500)
   notes?: string;

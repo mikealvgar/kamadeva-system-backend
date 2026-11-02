@@ -1,7 +1,9 @@
 import { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { CategoriesService } from './categories.service.js';
-import { slugify } from './slugify.js';
+import {
+  CategoriesService,
+  normalizeCategoryDescription,
+} from './categories.service.js';
 
 describe('CategoriesService', () => {
   const prisma = {
@@ -14,19 +16,22 @@ describe('CategoriesService', () => {
     },
   };
   const service = new CategoriesService(prisma as unknown as PrismaService);
-  const category = {
+  const now = new Date('2026-09-19T10:00:00.000Z');
+  const record = {
     id: 'category',
-    name: 'Anillos',
-    slug: 'anillos',
-    description: null,
-    isActive: true,
+    descripcion: 'ANILLOS',
+    activo: true,
+    fechaCreacion: now,
+    fechaActualizacion: now,
   };
-  const select = {
-    id: true,
-    name: true,
-    slug: true,
-    description: true,
+  const dto = {
+    id: 'category',
+    descripcion: 'ANILLOS',
+    name: 'ANILLOS',
+    activo: true,
     isActive: true,
+    fechaCreacion: now.toISOString(),
+    fechaActualizacion: now.toISOString(),
   };
   const failure = (code: string) =>
     new Prisma.PrismaClientKnownRequestError('Database failure', {
@@ -36,138 +41,131 @@ describe('CategoriesService', () => {
 
   beforeEach(() => {
     vi.resetAllMocks();
-    prisma.category.create.mockResolvedValue(category);
-    prisma.category.update.mockResolvedValue(category);
-    prisma.category.findUnique.mockResolvedValue(category);
-    prisma.category.findMany.mockResolvedValue([category]);
+    prisma.category.create.mockResolvedValue(record);
+    prisma.category.update.mockResolvedValue(record);
+    prisma.category.findUnique.mockResolvedValue(record);
+    prisma.category.findMany.mockResolvedValue([record]);
   });
 
-  it.each([
-    ['  Ánillos & colección! ', 'anillos-coleccion'],
-    ['Niño -- oro 24', 'nino-oro-24'],
-    ['!!!', ''],
-  ])('slugifies %s', (name, expected) => expect(slugify(name)).toBe(expected));
+  it('normalizes category description to uppercase and trims multiple whitespace', () => {
+    expect(normalizeCategoryDescription('  anillos   de compromiso  ')).toBe(
+      'ANILLOS DE COMPROMISO',
+    );
+  });
 
-  it('creates upper-case names, normalized fields and relies on the unique constraint', async () => {
-    expect(
-      await service.create({ name: ' Ánillos ', description: '  ' }),
-    ).toEqual(category);
+  it('creates upper-case descriptions, normalized fields and relies on the unique constraint', async () => {
+    expect(await service.create({ descripcion: ' anillos ' })).toEqual(dto);
     expect(prisma.category.create).toHaveBeenCalledWith({
-      data: { name: 'ÁNILLOS', slug: 'anillos', description: null },
-      select,
+      data: { descripcion: 'ANILLOS' },
     });
   });
-  it('preserves an explicit slug and trims the description', async () => {
-    await service.create({
-      name: 'Anillos',
-      slug: 'joyas',
-      description: ' Oro ',
-    });
+
+  it('accepts name alias as description on create', async () => {
+    expect(await service.create({ name: ' anillos ' })).toEqual(dto);
     expect(prisma.category.create).toHaveBeenCalledWith({
-      data: { name: 'ANILLOS', slug: 'joyas', description: 'Oro' },
-      select,
+      data: { descripcion: 'ANILLOS' },
     });
   });
-  it('rejects names that cannot produce a valid slug before writing', async () => {
-    await expect(service.create({ name: '!!!' })).rejects.toMatchObject({
+
+  it('rejects empty or whitespace descriptions before writing', async () => {
+    await expect(service.create({ descripcion: '   ' })).rejects.toMatchObject({
       status: 400,
+      message: 'La descripción es obligatoria',
     });
     expect(prisma.category.create).not.toHaveBeenCalled();
   });
+
   it.each([false, true])(
-    'lists public fields with includeInactive=%s in name order',
+    'lists public fields with includeInactive=%s in description order',
     async (includeInactive) => {
-      expect(await service.findAll(includeInactive)).toEqual([category]);
+      expect(await service.findAll(includeInactive)).toEqual([dto]);
       expect(prisma.category.findMany).toHaveBeenCalledWith({
-        where: includeInactive ? {} : { isActive: true },
-        orderBy: { name: 'asc' },
-        select,
+        where: includeInactive ? {} : { activo: true },
+        orderBy: { descripcion: 'asc' },
       });
     },
   );
+
   it('finds a public category and reports missing IDs', async () => {
-    expect(await service.findById(category.id)).toEqual(category);
+    expect(await service.findById(record.id)).toEqual(dto);
     expect(prisma.category.findUnique).toHaveBeenCalledWith({
-      where: { id: category.id },
-      select,
+      where: { id: record.id },
     });
     prisma.category.findUnique.mockResolvedValue(null);
     await expect(service.findById('missing')).rejects.toMatchObject({
       status: 404,
+      message: 'Categoría inexistente',
     });
   });
-  it('regenerates slug on rename and returns the updated public category', async () => {
-    expect(await service.update(category.id, { name: ' Oro   rosa ' })).toEqual(
-      category,
+
+  it('normalizes description on update and returns the updated category', async () => {
+    expect(await service.update(record.id, { descripcion: ' Oro   rosa ' })).toEqual(
+      dto,
     );
     expect(prisma.category.update).toHaveBeenCalledWith({
-      where: { id: category.id },
-      data: { name: 'ORO ROSA', slug: 'oro-rosa' },
-      select,
+      where: { id: record.id },
+      data: { descripcion: 'ORO ROSA' },
     });
   });
-  it('uses explicit slug when renaming', async () => {
-    await service.update(category.id, { name: 'Oro', slug: 'mi-oro' });
-    expect(prisma.category.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { name: 'ORO', slug: 'mi-oro' } }),
-    );
+
+  it('updates active status', async () => {
+    await service.update(record.id, { activo: false });
+    expect(prisma.category.update).toHaveBeenCalledWith({
+      where: { id: record.id },
+      data: { activo: false },
+    });
   });
-  it.each(['', '   ', null])(
-    'clears description %s without changing name or slug',
-    async (description) => {
-      await service.update(category.id, { description, isActive: false });
-      expect(prisma.category.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: { description: null, isActive: false },
-        }),
-      );
-    },
-  );
+
   it('rejects an empty update', async () => {
-    await expect(service.update(category.id, {})).rejects.toMatchObject({
+    await expect(service.update(record.id, {})).rejects.toMatchObject({
       status: 400,
+      message: 'Debe enviar al menos un campo',
     });
     expect(prisma.category.update).not.toHaveBeenCalled();
   });
+
   it('deletes with no response body', async () => {
-    await expect(service.delete(category.id)).resolves.toBeUndefined();
+    await expect(service.delete(record.id)).resolves.toBeUndefined();
     expect(prisma.category.delete).toHaveBeenCalledWith({
-      where: { id: category.id },
-      select: { id: true },
+      where: { id: record.id },
     });
   });
+
   it.each(['create', 'update'] as const)(
     'maps duplicate constraint races from %s to 409',
     async (method) => {
       prisma.category[method].mockRejectedValue(failure('P2002'));
       await expect(
         method === 'create'
-          ? service.create({ name: 'Anillos' })
-          : service.update(category.id, { slug: 'anillos' }),
-      ).rejects.toMatchObject({ status: 409, message: 'El slug ya existe' });
+          ? service.create({ descripcion: 'Anillos' })
+          : service.update(record.id, { descripcion: 'Anillos' }),
+      ).rejects.toMatchObject({ status: 409, message: 'La categoría ya existe' });
     },
   );
+
   it.each(['update', 'delete'] as const)(
     'maps missing records from %s to 404',
     async (method) => {
       prisma.category[method].mockRejectedValue(failure('P2025'));
       await expect(
         method === 'update'
-          ? service.update('missing', { name: 'Oro' })
+          ? service.update('missing', { descripcion: 'Oro' })
           : service.delete('missing'),
-      ).rejects.toMatchObject({ status: 404 });
+      ).rejects.toMatchObject({ status: 404, message: 'Categoría inexistente' });
     },
   );
+
   it('maps foreign key conflicts to 409', async () => {
     prisma.category.delete.mockRejectedValue(failure('P2003'));
-    await expect(service.delete(category.id)).rejects.toMatchObject({
+    await expect(service.delete('has-products')).rejects.toMatchObject({
       status: 409,
       message: 'La categoría tiene productos asociados',
     });
   });
+
   it('preserves unexpected infrastructure failures', async () => {
-    const error = new Error('Connection lost');
+    const error = new Error('database offline');
     prisma.category.create.mockRejectedValue(error);
-    await expect(service.create({ name: 'Oro' })).rejects.toBe(error);
+    await expect(service.create({ descripcion: 'Anillos' })).rejects.toBe(error);
   });
 });

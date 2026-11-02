@@ -9,9 +9,32 @@ import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { setupApp } from '../src/setup-app.js';
 import { PRODUCT_IMAGES } from '../src/catalog/products/product-images.service.js';
-import type { ImportReportDto } from '../src/catalog/products/import/import-products.dto.js';
 
-const base = '/api/catalog/products/import';
+interface ImportSkipResponse {
+  row: number;
+  codigoBarras: string | null;
+  articulo: string | null;
+  motivo: string;
+}
+
+interface ImportErrorResponse {
+  row: number;
+  codigoBarras: string | null;
+  articulo: string | null;
+  message: string;
+}
+
+interface ImportReportResponse {
+  vistaPrevia: boolean;
+  totalRenglones: number;
+  created: number;
+  skipped: ImportSkipResponse[];
+  errors: ImportErrorResponse[];
+  categoriasCreadas: string[];
+  sinCategoria: number;
+}
+
+const base = '/api/productos/importacion';
 const HEADERS = [
   'articulo*',
   'Descripción',
@@ -57,10 +80,10 @@ describe('Product import HTTP + PostgreSQL', () => {
     ] as const) {
       const user = await prisma.user.create({
         data: {
-          name: `Import ${key}`,
+          nombre: `Import ${key}`,
           email: `${randomUUID()}@import.test`,
           passwordHash: 'unused-test-hash',
-          roles: { create: { role: { connect: { name: role } } } },
+          rol: { connect: { nombre: role } },
         },
       });
       users[key] = user.id;
@@ -76,16 +99,16 @@ describe('Product import HTTP + PostgreSQL', () => {
   afterEach(async () => {
     if (!prisma) return;
     const products = await prisma.product.findMany({
-      where: { barcode: { startsWith: `T${tag}` } },
+      where: { codigoBarras: { startsWith: `T${tag}` } },
       select: { id: true },
     });
     const ids = products.map(({ id }) => id);
     await prisma.inventoryMovement.deleteMany({
-      where: { productId: { in: ids } },
+      where: { productoId: { in: ids } },
     });
     await prisma.product.deleteMany({ where: { id: { in: ids } } });
     await prisma.category.deleteMany({
-      where: { slug: { startsWith: `cat-${tag.toLowerCase()}` } },
+      where: { descripcion: { startsWith: `CAT ${tag}` } },
     });
   });
 
@@ -93,7 +116,6 @@ describe('Product import HTTP + PostgreSQL', () => {
     try {
       if (prisma) {
         const ids = Object.values(users);
-        await prisma.userRole.deleteMany({ where: { userId: { in: ids } } });
         await prisma.user.deleteMany({ where: { id: { in: ids } } });
       }
     } finally {
@@ -147,14 +169,14 @@ describe('Product import HTTP + PostgreSQL', () => {
     ]);
 
     const preview = (await upload(file, { dryRun: 'true' }).expect(200))
-      .body as ImportReportDto;
+      .body as ImportReportResponse;
     expect(preview).toMatchObject({
-      dryRun: true,
-      totalRows: 6,
+      vistaPrevia: true,
+      totalRenglones: 6,
       created: 2,
-      withoutCategory: 0,
+      sinCategoria: 0,
     });
-    expect(preview.categoriesCreated).toEqual([
+    expect(preview.categoriasCreadas).toEqual([
       category('lencería').toUpperCase(),
     ]);
     expect(preview.skipped.map(({ row }) => row)).toEqual([4]);
@@ -165,60 +187,59 @@ describe('Product import HTTP + PostgreSQL', () => {
     ]);
     expect(
       await prisma.product.count({
-        where: { barcode: { startsWith: `T${tag}` } },
+        where: { codigoBarras: { startsWith: `T${tag}` } },
       }),
     ).toBe(0);
 
-    const report = (await upload(file).expect(200)).body as ImportReportDto;
-    expect(report).toEqual({ ...preview, dryRun: false });
+    const report = (await upload(file).expect(200)).body as ImportReportResponse;
+    expect(report).toEqual({ ...preview, vistaPrevia: false });
 
     const stored = await prisma.product.findUniqueOrThrow({
-      where: { barcode: code('-1') },
-      include: { category: true, inventoryMovements: true },
+      where: { codigoBarras: code('-1') },
+      include: { categoria: true, inventoryMovements: true },
     });
     expect(stored).toMatchObject({
-      name: 'Anillo de plata',
-      description: 'Fino',
-      brand: 'Marca',
-      cost: null,
-      category: { name: category('lencería').toUpperCase() },
+      nombre: 'Anillo de plata',
+      descripcion: 'Fino',
+      precioCompra: null,
+      categoria: { descripcion: category('lencería').toUpperCase() },
     });
-    expect(stored.price.toFixed(2)).toBe('99.90');
+    expect(stored.precioVenta.toFixed(2)).toBe('99.90');
     expect(stored.inventoryMovements).toEqual([
       expect.objectContaining({
-        type: 'ADJUSTMENT_IN',
-        referenceType: 'IMPORT',
-        createdById: users.admin,
-        notes: 'Inventario inicial (importación)',
+        tipo: 'ADJUSTMENT_IN',
+        tipoReferencia: 'IMPORT',
+        creadoPorId: users.admin,
+        notas: 'Inventario inicial (importación)',
       }),
     ]);
-    expect(stored.inventoryMovements[0]!.quantityChange.toFixed(3)).toBe(
+    expect(stored.inventoryMovements[0]!.cambioExistencias.toFixed(3)).toBe(
       '2.000',
     );
     // Stock 0 creates no movement.
     expect(
       await prisma.inventoryMovement.count({
-        where: { product: { barcode: code('-2') } },
+        where: { producto: { codigoBarras: code('-2') } },
       }),
     ).toBe(0);
 
-    const again = (await upload(file).expect(200)).body as ImportReportDto;
-    expect(again).toMatchObject({ created: 0, categoriesCreated: [] });
+    const again = (await upload(file).expect(200)).body as ImportReportResponse;
+    expect(again).toMatchObject({ created: 0, categoriasCreadas: [] });
     expect(
       again.skipped
-        .filter(({ reason }) => reason === 'Ya existe en el catálogo')
+        .filter(({ motivo }) => motivo === 'Ya existe en el catálogo')
         .map(({ row }) => row),
     ).toEqual([2, 3]);
     expect(
       await prisma.product.count({
-        where: { barcode: { startsWith: `T${tag}` } },
+        where: { codigoBarras: { startsWith: `T${tag}` } },
       }),
     ).toBe(2);
   });
 
   it('reuses existing categories ignoring case and accents, and applies the category map', async () => {
     const existing = await http()
-      .post('/api/catalog/categories')
+      .post('/api/catalogo/categorias')
       .set('Authorization', tokens.admin)
       .send({ name: category('lenceria') })
       .expect(201);
@@ -232,26 +253,26 @@ describe('Product import HTTP + PostgreSQL', () => {
       DILDO: null,
     });
     const report = (await upload(file, { categoryMap: map }).expect(200))
-      .body as ImportReportDto;
+      .body as ImportReportResponse;
     expect(report).toMatchObject({
       created: 3,
-      withoutCategory: 1,
-      categoriesCreated: [category('fetish').toUpperCase()],
+      sinCategoria: 1,
+      categoriasCreadas: [category('fetish').toUpperCase()],
       errors: [],
     });
     const products = await prisma.product.findMany({
-      where: { barcode: { startsWith: `T${tag}` } },
-      orderBy: { barcode: 'asc' },
-      select: { categoryId: true, category: { select: { name: true } } },
+      where: { codigoBarras: { startsWith: `T${tag}` } },
+      orderBy: { codigoBarras: 'asc' },
+      select: { categoriaId: true, categoria: { select: { descripcion: true } } },
     });
-    expect(products[0]!.categoryId).toBe(existing.body.id);
-    expect(products[1]!.category?.name).toBe(category('fetish').toUpperCase());
-    expect(products[2]!.categoryId).toBeNull();
+    expect(products[0]!.categoriaId).toBe(existing.body.id);
+    expect(products[1]!.categoria?.descripcion).toBe(category('fetish').toUpperCase());
+    expect(products[2]!.categoriaId).toBeNull();
   });
 
   it('reports codes that already belong to a different product', async () => {
     await http()
-      .post('/api/catalog/products')
+      .post('/api/productos')
       .set('Authorization', tokens.admin)
       .send({ codigoBarras: code('-1'), articulo: 'Original', precioVenta: 5 })
       .expect(201);
@@ -260,7 +281,7 @@ describe('Product import HTTP + PostgreSQL', () => {
       ['original', null, code('-1'), 1, category('X'), null, null, 10],
     ]);
     // Same code, different names in the file → both rejected as a group.
-    const shared = (await upload(file).expect(200)).body as ImportReportDto;
+    const shared = (await upload(file).expect(200)).body as ImportReportResponse;
     expect(shared.created).toBe(0);
     expect(shared.errors).toHaveLength(2);
 
@@ -270,7 +291,7 @@ describe('Product import HTTP + PostgreSQL', () => {
           ['Otro nombre', null, code('-1'), 1, category('X'), null, null, 10],
         ]),
       ).expect(200)
-    ).body as ImportReportDto;
+    ).body as ImportReportResponse;
     expect(conflict.errors).toEqual([
       {
         row: 2,
@@ -279,7 +300,7 @@ describe('Product import HTTP + PostgreSQL', () => {
         message: 'El código ya pertenece a otro producto: Original',
       },
     ]);
-    expect(conflict.categoriesCreated).toEqual([]);
+    expect(conflict.categoriasCreadas).toEqual([]);
   });
 
   it('rejects bad files, headers and category maps', async () => {

@@ -25,32 +25,32 @@ const STALE_SUMMARY = 'Ya se registró otro corte; consulte de nuevo el resumen'
 
 const closureSelect = {
   id: true,
-  previousClosureId: true,
-  periodStart: true,
-  closedAt: true,
-  closedBy: { select: { id: true, name: true } },
-  openingFloat: true,
-  salesCount: true,
-  cashSales: true,
-  cardSales: true,
-  transferSales: true,
-  otherSales: true,
-  cashRefunds: true,
-  totalRefunds: true,
-  expensesCount: true,
-  cashExpenses: true,
-  totalExpenses: true,
-  adjustmentsIn: true,
-  adjustmentsOut: true,
-  expectedCash: true,
-  countedCash: true,
-  difference: true,
-  floatLeft: true,
-  denominations: true,
-  notes: true,
+  corteAnteriorId: true,
+  inicioPeriodo: true,
+  fechaCierre: true,
+  cerradoPor: { select: { id: true, nombre: true } },
+  fondoInicial: true,
+  cantidadVentas: true,
+  ventasEfectivo: true,
+  ventasTarjeta: true,
+  ventasTransferencia: true,
+  otrasVentas: true,
+  reembolsosEfectivo: true,
+  reembolsosTotales: true,
+  cantidadGastos: true,
+  gastosEfectivo: true,
+  gastosTotales: true,
+  ajustesEntrada: true,
+  ajustesSalida: true,
+  efectivoEsperado: true,
+  efectivoContado: true,
+  diferencia: true,
+  fondoDejado: true,
+  denominaciones: true,
+  notas: true,
   adjustments: {
-    orderBy: { position: 'asc' },
-    select: { id: true, type: true, amount: true, description: true },
+    orderBy: { posicion: 'asc' },
+    select: { id: true, tipo: true, monto: true, descripcion: true },
   },
 } satisfies Prisma.CashClosureSelect;
 type ClosureRecord = Prisma.CashClosureGetPayload<{
@@ -62,12 +62,11 @@ interface MoneyRow {
   amount: Prisma.Decimal;
 }
 
-/** Everything not yet counted by a closure, read in one transaction. */
 interface Pending {
-  previous: { id: string; closedAt: Date; floatLeft: Prisma.Decimal } | null;
-  payments: Array<MoneyRow & { method: PaymentMethod; saleId: string }>;
-  refunds: Array<MoneyRow & { method: PaymentMethod }>;
-  expenses: Array<MoneyRow & { deductFromCash: boolean }>;
+  previous: { id: string; fechaCierre: Date; fondoDejado: Prisma.Decimal } | null;
+  sales: Array<MoneyRow & { metodoPago: PaymentMethod; id: string }>;
+  refunds: Array<MoneyRow & { metodoPago: PaymentMethod }>;
+  expenses: Array<MoneyRow & { descontarDeCaja: boolean }>;
 }
 
 interface Totals {
@@ -87,28 +86,28 @@ const money = (value: Prisma.Decimal) => value.toFixed(2);
 function totalsOf(pending: Pending): Totals {
   const byMethod = (method: PaymentMethod) =>
     sum(
-      pending.payments
-        .filter((payment) => payment.method === method)
+      pending.sales
+        .filter((sale) => sale.metodoPago === method)
         .map(({ amount }) => amount),
     );
   const cashExpenses = sum(
     pending.expenses
-      .filter((expense) => expense.deductFromCash)
+      .filter((expense) => expense.descontarDeCaja)
       .map(({ amount }) => amount),
   );
   return {
-    openingFloat: pending.previous?.floatLeft ?? new Prisma.Decimal(0),
-    salesCount: new Set(pending.payments.map(({ saleId }) => saleId)).size,
+    openingFloat: pending.previous?.fondoDejado ?? new Prisma.Decimal(0),
+    salesCount: pending.sales.length,
     bySalesMethod: {
       CASH: byMethod('CASH'),
       CARD: byMethod('CARD'),
       TRANSFER: byMethod('TRANSFER'),
       OTHER: byMethod('OTHER'),
     },
-    salesTotal: sum(pending.payments.map(({ amount }) => amount)),
+    salesTotal: sum(pending.sales.map(({ amount }) => amount)),
     cashRefunds: sum(
       pending.refunds
-        .filter((refund) => refund.method === 'CASH')
+        .filter((refund) => refund.metodoPago === 'CASH')
         .map(({ amount }) => amount),
     ),
     totalRefunds: sum(pending.refunds.map(({ amount }) => amount)),
@@ -129,48 +128,50 @@ function parseDate(value: string | undefined): Date | undefined {
 function toDto(closure: ClosureRecord): CashClosureDto {
   return {
     id: closure.id,
-    previousClosureId: closure.previousClosureId,
-    periodStart: closure.periodStart?.toISOString() ?? null,
-    closedAt: closure.closedAt.toISOString(),
-    closedBy: closure.closedBy,
-    openingFloat: money(closure.openingFloat),
+    previousClosureId: closure.corteAnteriorId,
+    periodStart: closure.inicioPeriodo?.toISOString() ?? null,
+    closedAt: closure.fechaCierre.toISOString(),
+    closedBy: { id: closure.cerradoPor.id, name: closure.cerradoPor.nombre },
+    openingFloat: money(closure.fondoInicial),
     sales: {
-      count: closure.salesCount,
-      cash: money(closure.cashSales),
-      card: money(closure.cardSales),
-      transfer: money(closure.transferSales),
-      other: money(closure.otherSales),
+      count: closure.cantidadVentas,
+      cash: money(closure.ventasEfectivo),
+      card: money(closure.ventasTarjeta),
+      transfer: money(closure.ventasTransferencia),
+      other: money(closure.otrasVentas),
       total: money(
         sum([
-          closure.cashSales,
-          closure.cardSales,
-          closure.transferSales,
-          closure.otherSales,
+          closure.ventasEfectivo,
+          closure.ventasTarjeta,
+          closure.ventasTransferencia,
+          closure.otrasVentas,
         ]),
       ),
     },
     refunds: {
-      cash: money(closure.cashRefunds),
-      total: money(closure.totalRefunds),
+      cash: money(closure.reembolsosEfectivo),
+      total: money(closure.reembolsosTotales),
     },
     expenses: {
-      count: closure.expensesCount,
-      cash: money(closure.cashExpenses),
-      total: money(closure.totalExpenses),
+      count: closure.cantidadGastos,
+      cash: money(closure.gastosEfectivo),
+      total: money(closure.gastosTotales),
     },
     adjustments: closure.adjustments.map((adjustment) => ({
-      ...adjustment,
-      amount: money(adjustment.amount),
+      id: adjustment.id,
+      type: adjustment.tipo,
+      amount: money(adjustment.monto),
+      description: adjustment.descripcion,
     })),
-    adjustmentsIn: money(closure.adjustmentsIn),
-    adjustmentsOut: money(closure.adjustmentsOut),
-    expectedCash: money(closure.expectedCash),
-    denominations: closure.denominations as Record<string, number>,
-    countedCash: money(closure.countedCash),
-    difference: money(closure.difference),
-    floatLeft: money(closure.floatLeft),
-    cashWithdrawn: money(closure.countedCash.minus(closure.floatLeft)),
-    notes: closure.notes,
+    adjustmentsIn: money(closure.ajustesEntrada),
+    adjustmentsOut: money(closure.ajustesSalida),
+    expectedCash: money(closure.efectivoEsperado),
+    denominations: closure.denominaciones as Record<string, number>,
+    countedCash: money(closure.efectivoContado),
+    difference: money(closure.diferencia),
+    floatLeft: money(closure.fondoDejado),
+    cashWithdrawn: money(closure.efectivoContado.minus(closure.fondoDejado)),
+    notes: closure.notas,
   };
 }
 
@@ -185,7 +186,7 @@ export class CashClosuresService {
     const totals = totalsOf(pending);
     return {
       previousClosureId: pending.previous?.id ?? null,
-      periodStart: pending.previous?.closedAt.toISOString() ?? null,
+      periodStart: pending.previous?.fechaCierre.toISOString() ?? null,
       generatedAt: new Date().toISOString(),
       openingFloat: money(totals.openingFloat),
       sales: {
@@ -237,22 +238,21 @@ export class CashClosuresService {
       );
     }
     const adjustments = (dto.adjustments ?? []).map((adjustment, position) => ({
-      position,
-      type: adjustment.type,
-      amount: new Prisma.Decimal(adjustment.amount),
-      description: adjustment.description.trim(),
+      posicion: position,
+      tipo: adjustment.type,
+      monto: new Prisma.Decimal(adjustment.amount),
+      descripcion: adjustment.description.trim(),
     }));
     const adjustmentsIn = sum(
-      adjustments.filter((a) => a.type === 'INCOME').map((a) => a.amount),
+      adjustments.filter((a) => a.tipo === 'INCOME').map((a) => a.monto),
     );
     const adjustmentsOut = sum(
-      adjustments.filter((a) => a.type === 'WITHDRAWAL').map((a) => a.amount),
+      adjustments.filter((a) => a.tipo === 'WITHDRAWAL').map((a) => a.monto),
     );
 
     try {
       return await serializableTransaction(this.prisma, async (tx) => {
         const pending = await this.pending(tx);
-        // Optimistic check against the summary the cashier saw.
         if ((pending.previous?.id ?? null) !== dto.previousClosureId) {
           throw new ConflictException(STALE_SUMMARY);
         }
@@ -267,47 +267,43 @@ export class CashClosuresService {
         });
         const closure = await tx.cashClosure.create({
           data: {
-            previousClosureId: pending.previous?.id ?? null,
-            periodStart: pending.previous?.closedAt ?? null,
-            closedAt: new Date(),
-            closedById: actorId,
-            openingFloat: totals.openingFloat,
-            salesCount: totals.salesCount,
-            cashSales: totals.bySalesMethod.CASH,
-            cardSales: totals.bySalesMethod.CARD,
-            transferSales: totals.bySalesMethod.TRANSFER,
-            otherSales: totals.bySalesMethod.OTHER,
-            cashRefunds: totals.cashRefunds,
-            totalRefunds: totals.totalRefunds,
-            expensesCount: totals.expensesCount,
-            cashExpenses: totals.cashExpenses,
-            totalExpenses: totals.totalExpenses,
-            adjustmentsIn,
-            adjustmentsOut,
-            expectedCash: expected,
-            countedCash: count.counted,
-            difference: count.counted.minus(expected),
-            floatLeft,
-            denominations: count.denominations,
-            notes: dto.notes?.trim() || null,
+            corteAnteriorId: pending.previous?.id ?? null,
+            inicioPeriodo: pending.previous?.fechaCierre ?? null,
+            fechaCierre: new Date(),
+            cerradoPorId: actorId,
+            fondoInicial: totals.openingFloat,
+            cantidadVentas: totals.salesCount,
+            ventasEfectivo: totals.bySalesMethod.CASH,
+            ventasTarjeta: totals.bySalesMethod.CARD,
+            ventasTransferencia: totals.bySalesMethod.TRANSFER,
+            otrasVentas: totals.bySalesMethod.OTHER,
+            reembolsosEfectivo: totals.cashRefunds,
+            reembolsosTotales: totals.totalRefunds,
+            cantidadGastos: totals.expensesCount,
+            gastosEfectivo: totals.cashExpenses,
+            gastosTotales: totals.totalExpenses,
+            ajustesEntrada: adjustmentsIn,
+            ajustesSalida: adjustmentsOut,
+            efectivoEsperado: expected,
+            efectivoContado: count.counted,
+            diferencia: count.counted.minus(expected),
+            fondoDejado: floatLeft,
+            denominaciones: count.denominations,
+            notas: dto.notes?.trim() || null,
             adjustments: { create: adjustments },
           },
           select: { id: true },
         });
-        // Link exactly the rows this closure counted; anything committed
-        // later stays pending for the next closure.
-        await tx.payment.updateMany({
-          where: { id: { in: pending.payments.map(({ id }) => id) } },
-          data: { cashClosureId: closure.id },
-        });
-        await tx.payment.updateMany({
-          where: { id: { in: pending.refunds.map(({ id }) => id) } },
-          data: { refundClosureId: closure.id },
+
+        await tx.sale.updateMany({
+          where: { id: { in: pending.sales.map(({ id }) => id) } },
+          data: { corteCajaId: closure.id },
         });
         await tx.expense.updateMany({
           where: { id: { in: pending.expenses.map(({ id }) => id) } },
-          data: { cashClosureId: closure.id },
+          data: { corteCajaId: closure.id },
         });
+
         return toDto(
           await tx.cashClosure.findUniqueOrThrow({
             where: { id: closure.id },
@@ -316,7 +312,6 @@ export class CashClosuresService {
         );
       });
     } catch (error) {
-      // Two closures chained to the same previous one.
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2002'
@@ -337,7 +332,7 @@ export class CashClosuresService {
     const where: Prisma.CashClosureWhereInput =
       startDate || endDate
         ? {
-            closedAt: {
+            fechaCierre: {
               ...(startDate ? { gte: startDate } : {}),
               ...(endDate ? { lte: endDate } : {}),
             },
@@ -349,7 +344,7 @@ export class CashClosuresService {
       this.prisma.cashClosure.count({ where }),
       this.prisma.cashClosure.findMany({
         where,
-        orderBy: [{ closedAt: 'desc' }, { id: 'desc' }],
+        orderBy: [{ fechaCierre: 'desc' }, { id: 'desc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
         select: closureSelect,
@@ -368,26 +363,35 @@ export class CashClosuresService {
   }
 
   private async pending(tx: Prisma.TransactionClient): Promise<Pending> {
-    const amountSelect = { id: true, amount: true } as const;
-    const [previous, payments, refunds, expenses] = await Promise.all([
-      // The chain head: the closure no other closure follows.
-      tx.cashClosure.findFirst({
-        where: { nextClosure: null },
-        select: { id: true, closedAt: true, floatLeft: true },
+    const previous = await tx.cashClosure.findFirst({
+      where: { siguienteCorte: null },
+      select: { id: true, fechaCierre: true, fondoDejado: true },
+    });
+    const [sales, refunds, expenses] = await Promise.all([
+      tx.sale.findMany({
+        where: { corteCajaId: null, estado: { in: ['COMPLETED', 'CANCELLED', 'REFUNDED'] } },
+        select: { id: true, total: true, metodoPago: true },
       }),
-      tx.payment.findMany({
-        where: { cashClosureId: null, status: { in: ['PAID', 'REFUNDED'] } },
-        select: { ...amountSelect, method: true, saleId: true },
-      }),
-      tx.payment.findMany({
-        where: { refundClosureId: null, status: 'REFUNDED' },
-        select: { ...amountSelect, method: true },
+      tx.sale.findMany({
+        where: {
+          estado: { in: ['CANCELLED', 'REFUNDED'] },
+          OR: [
+            { corteCajaId: null },
+            ...(previous ? [{ fechaCancelacion: { gte: previous.fechaCierre } }] : []),
+          ],
+        },
+        select: { id: true, total: true, metodoPago: true },
       }),
       tx.expense.findMany({
-        where: { cashClosureId: null },
-        select: { ...amountSelect, deductFromCash: true },
+        where: { corteCajaId: null },
+        select: { id: true, monto: true, descontarDeCaja: true },
       }),
     ]);
-    return { previous, payments, refunds, expenses };
+    return {
+      previous,
+      sales: sales.map((s) => ({ id: s.id, amount: s.total, metodoPago: s.metodoPago })),
+      refunds: refunds.map((r) => ({ id: r.id, amount: r.total, metodoPago: r.metodoPago })),
+      expenses: expenses.map((e) => ({ id: e.id, amount: e.monto, descontarDeCaja: e.descontarDeCaja })),
+    };
   }
 }

@@ -37,12 +37,12 @@ const fileLimit = 5 * 1024 * 1024;
 const XLSX_MIME =
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
-@ApiTags('catalog/products')
+@ApiTags('productos')
 @ApiBearerAuth()
 @ApiUnauthorizedResponse({ description: 'Token inválido o usuario inactivo' })
 @ApiForbiddenResponse({ description: 'Permisos insuficientes' })
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Controller('catalog/products/import')
+@Controller('productos/importacion')
 export class ProductImportController {
   constructor(private readonly importer: ProductImportService) {}
 

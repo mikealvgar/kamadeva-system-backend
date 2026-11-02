@@ -17,12 +17,12 @@ import {
   UpdateBusinessConfigDto,
 } from './dto/business-config.dto.js';
 
-@ApiTags('business-config')
+@ApiTags('configuracion-negocio')
 @ApiBearerAuth()
 @ApiUnauthorizedResponse({ description: 'Token inválido o usuario inactivo' })
 @ApiForbiddenResponse({ description: 'Permisos insuficientes' })
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Controller('business-config')
+@Controller('configuracion-negocio')
 export class BusinessConfigController {
   constructor(private readonly config: BusinessConfigService) {}
 

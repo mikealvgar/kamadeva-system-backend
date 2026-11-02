@@ -30,7 +30,7 @@ import { CreateInventoryMovementDto } from './dto/create-inventory-movement.dto.
 import { ListInventoryMovementsDto } from './dto/list-inventory-movements.dto.js';
 import { InventoryMovementsService } from './inventory.service.js';
 
-@ApiTags('inventory')
+@ApiTags('inventario')
 @ApiBearerAuth()
 @ApiUnauthorizedResponse({ description: 'Token inválido o usuario inactivo' })
 @ApiForbiddenResponse({ description: 'Permisos insuficientes' })
@@ -41,20 +41,20 @@ import { InventoryMovementsService } from './inventory.service.js';
 export class InventoryController {
   constructor(private readonly movements: InventoryMovementsService) {}
 
-  @Post('catalog/products/:id/movements')
+  @Post('productos/:productoId/movimientos')
   @Roles('ADMIN')
   @ApiOperation({ summary: 'Crear movimiento manual (ADMIN)' })
-  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiParam({ name: 'productoId', format: 'uuid' })
   @ApiCreatedResponse({ type: InventoryMovementDto })
   create(
-    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Param('productoId', new ParseUUIDPipe({ version: '4' })) productoId: string,
     @Body() dto: CreateInventoryMovementDto,
     @Req() req: { user: AuthUser },
   ): Promise<InventoryMovementDto> {
-    return this.movements.create(id, dto, req.user.id);
+    return this.movements.create(productoId, dto, req.user.id);
   }
 
-  @Get('inventory/movements')
+  @Get('inventario/movimientos')
   @Roles('ADMIN', 'VENDEDOR')
   @ApiOperation({ summary: 'Listar movimientos (ADMIN o VENDEDOR)' })
   @ApiOkResponse({ type: [InventoryMovementDto] })

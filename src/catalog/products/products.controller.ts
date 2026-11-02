@@ -52,7 +52,7 @@ import { ProductImageSizeFilter } from './product-image-size.filter.js';
 const imageLimit = 5 * 1024 * 1024;
 const imageTypes = /^image\/(jpeg|png|webp)$/;
 
-@ApiTags('catalog/products')
+@ApiTags('productos')
 @ApiBearerAuth()
 @ApiUnauthorizedResponse({ description: 'Token inválido o usuario inactivo' })
 @ApiForbiddenResponse({ description: 'Permisos insuficientes' })
@@ -60,7 +60,7 @@ const imageTypes = /^image\/(jpeg|png|webp)$/;
   description: 'Datos, query, UUID o archivo inválidos',
 })
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Controller('catalog/products')
+@Controller('productos')
 export class ProductsController {
   constructor(private readonly products: ProductsService) {}
 
@@ -94,7 +94,7 @@ export class ProductsController {
     return this.products.findById(id);
   }
 
-  @Get(':id/movements')
+  @Get(':id/movimientos')
   @Roles('ADMIN', 'VENDEDOR')
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiOkResponse({ type: [InventoryMovementDto] })

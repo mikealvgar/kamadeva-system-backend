@@ -1,9 +1,16 @@
 import { ValidationPipe, type INestApplication } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import {
+  SpanishApiResponseInterceptor,
+  spanishApiMiddleware,
+  translateOpenApiSchemas,
+} from './common/validation/spanish-api-contract.js';
 
 /** Shared HTTP configuration for the server and E2E tests. */
 export function setupApp(app: INestApplication) {
   app.setGlobalPrefix('api');
+  app.use(spanishApiMiddleware);
+  app.useGlobalInterceptors(new SpanishApiResponseInterceptor());
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -20,6 +27,7 @@ export function setupApp(app: INestApplication) {
     .addBearerAuth()
     .build();
   const document = SwaggerModule.createDocument(app, config);
+  translateOpenApiSchemas(document);
   SwaggerModule.setup('api/docs', app, document);
   return document;
 }

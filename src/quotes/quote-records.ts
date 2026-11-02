@@ -4,49 +4,63 @@ import type { QuoteDto, SaleDto } from './dto/quote.dto.js';
 
 const customerSelect = {
   id: true,
-  name: true,
-  phone: true,
-  email: true,
-  isActive: true,
-  createdAt: true,
-  updatedAt: true,
+  nombre: true,
+  telefono: true,
+  correo: true,
+  activo: true,
+  esPredeterminado: true,
+  fechaCreacion: true,
+  fechaActualizacion: true,
 } satisfies Prisma.CustomerSelect;
+
 const economicSelect = {
   id: true,
   folio: true,
-  status: true,
+  estado: true,
   subtotal: true,
-  discount: true,
-  tax: true,
+  descuento: true,
   total: true,
-  notes: true,
-  createdAt: true,
-  updatedAt: true,
-  customer: { select: customerSelect },
+  notas: true,
+  fechaCreacion: true,
+  fechaActualizacion: true,
+  cliente: { select: customerSelect },
 } as const;
+
 export const quoteSelect = {
   ...economicSelect,
-  expiresAt: true,
+  fechaVencimiento: true,
   items: {
-    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    orderBy: [{ fechaCreacion: 'asc' }, { id: 'asc' }],
     select: {
       id: true,
-      quantity: true,
-      unitPrice: true,
-      discount: true,
-      tax: true,
+      cantidad: true,
+      precioUnitario: true,
+      descuento: true,
       total: true,
-      product: {
-        select: { id: true, barcode: true, name: true, imageUrl: true },
+      producto: {
+        select: { id: true, codigoBarras: true, nombre: true, imageUrl: true },
       },
-      size: { select: { id: true, name: true } },
+      talla: { select: { id: true, nombre: true } },
     },
   },
 } satisfies Prisma.QuoteSelect;
+
 export const saleSelect = {
-  ...economicSelect,
-  quoteId: true,
+  id: true,
+  folio: true,
+  estado: true,
+  metodoPago: true,
+  fechaPago: true,
+  subtotal: true,
+  descuento: true,
+  total: true,
+  notas: true,
+  fechaCreacion: true,
+  fechaActualizacion: true,
+  cliente: { select: customerSelect },
+  cotizacionId: true,
 } satisfies Prisma.SaleSelect;
+
 export type QuoteRecord = Prisma.QuoteGetPayload<{
   select: typeof quoteSelect;
 }>;
@@ -57,50 +71,73 @@ type CustomerRecord = Prisma.CustomerGetPayload<{
 
 function customerDto(customer: CustomerRecord): CustomerDto {
   return {
-    ...customer,
-    createdAt: customer.createdAt.toISOString(),
-    updatedAt: customer.updatedAt.toISOString(),
+    id: customer.id,
+    nombre: customer.nombre,
+    name: customer.nombre,
+    telefono: customer.telefono,
+    phone: customer.telefono,
+    correo: customer.correo,
+    email: customer.correo,
+    activo: customer.activo,
+    isActive: customer.activo,
+    esPredeterminado: customer.esPredeterminado,
+    fechaCreacion: customer.fechaCreacion.toISOString(),
+    fechaActualizacion: customer.fechaActualizacion.toISOString(),
+    createdAt: customer.fechaCreacion.toISOString(),
+    updatedAt: customer.fechaActualizacion.toISOString(),
   };
 }
-function economics(record: QuoteRecord | SaleRecord) {
-  return {
-    id: record.id,
-    folio: record.folio,
-    subtotal: record.subtotal.toFixed(2),
-    discount: record.discount.toFixed(2),
-    tax: record.tax.toFixed(2),
-    total: record.total.toFixed(2),
-    notes: record.notes,
-    createdAt: record.createdAt.toISOString(),
-    updatedAt: record.updatedAt.toISOString(),
-  };
-}
+
 export function quoteDto(quote: QuoteRecord): QuoteDto {
+  const folioFormatted = `C-${quote.folio.toString().padStart(6, '0')}`;
   return {
-    ...economics(quote),
-    status: quote.status,
-    customer: customerDto(quote.customer),
-    expiresAt: quote.expiresAt?.toISOString() ?? null,
+    id: quote.id,
+    folio: folioFormatted,
+    status: quote.estado,
+    customer: customerDto(quote.cliente),
+    expiresAt: quote.fechaVencimiento?.toISOString() ?? null,
     canPay:
-      (quote.status === 'DRAFT' || quote.status === 'SENT') &&
-      (quote.expiresAt === null || quote.expiresAt.getTime() > Date.now()),
+      (quote.estado === 'DRAFT' || quote.estado === 'SENT') &&
+      (quote.fechaVencimiento === null || quote.fechaVencimiento.getTime() > Date.now()),
     items: quote.items.map((item) => ({
       id: item.id,
-      product: item.product,
-      size: item.size,
-      quantity: item.quantity.toFixed(3),
-      unitPrice: item.unitPrice.toFixed(2),
-      discount: item.discount.toFixed(2),
-      tax: item.tax.toFixed(2),
+      product: {
+        id: item.producto.id,
+        barcode: item.producto.codigoBarras,
+        name: item.producto.nombre,
+        imageUrl: item.producto.imageUrl,
+      },
+      size: item.talla ? { id: item.talla.id, nombre: item.talla.nombre, name: item.talla.nombre } : null,
+      quantity: item.cantidad.toFixed(3),
+      unitPrice: item.precioUnitario.toFixed(2),
+      discount: item.descuento.toFixed(2),
+      tax: '0.00',
       total: item.total.toFixed(2),
     })),
+    subtotal: quote.subtotal.toFixed(2),
+    discount: quote.descuento.toFixed(2),
+    tax: '0.00',
+    total: quote.total.toFixed(2),
+    notes: quote.notas,
+    createdAt: quote.fechaCreacion.toISOString(),
+    updatedAt: quote.fechaActualizacion.toISOString(),
   };
 }
+
 export function saleDto(sale: SaleRecord): SaleDto {
+  const folioFormatted = `V-${sale.folio.toString().padStart(6, '0')}`;
   return {
-    ...economics(sale),
-    status: sale.status,
-    quoteId: sale.quoteId,
-    customer: sale.customer ? customerDto(sale.customer) : null,
+    id: sale.id,
+    folio: folioFormatted,
+    status: sale.estado,
+    customer: sale.cliente ? customerDto(sale.cliente) : null,
+    quoteId: sale.cotizacionId,
+    subtotal: sale.subtotal.toFixed(2),
+    discount: sale.descuento.toFixed(2),
+    tax: '0.00',
+    total: sale.total.toFixed(2),
+    notes: sale.notas,
+    createdAt: sale.fechaCreacion.toISOString(),
+    updatedAt: sale.fechaActualizacion.toISOString(),
   };
 }

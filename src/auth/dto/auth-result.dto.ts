@@ -5,29 +5,58 @@ import { ROLE_NAMES } from '../../roles/role-names.js';
 
 export class AuthUserDto implements AuthUser {
   @ApiProperty({ format: 'uuid' })
-  id: string;
+  id!: string;
+
   @ApiProperty({ example: 'Juan Pérez' })
-  name: string;
+  nombre!: string;
+
+  @ApiProperty({ example: 'Juan Pérez', required: false })
+  name?: string;
+
   @ApiProperty({ example: 'juan@kamadeva.com' })
-  email: string;
+  email!: string;
+
+  @ApiProperty({ example: '8112345678', nullable: true, required: false })
+  telefono?: string | null;
+
+  @ApiProperty({ example: true, required: false })
+  activo?: boolean;
+
+  @ApiProperty({ example: 'ADMIN' })
+  rol!: string;
+
+  @ApiProperty({ format: 'uuid', nullable: true, required: false })
+  rolId?: string | null;
+
   @ApiProperty({
     enum: ROLE_NAMES,
     isArray: true,
     example: ['ADMIN'],
-    description:
-      'Roles activos. Registro: ADMIN para el primer usuario y VENDEDOR para los siguientes.',
   })
-  roles: string[];
+  roles!: string[];
+
+  @ApiProperty({ example: true })
+  hasAdmin!: boolean;
+
+  @ApiProperty({
+    example: ['VENTAS', 'CATALOGO', 'CLIENTES', 'TABLERO'],
+    isArray: true,
+  })
+  seccionesPermitidas!: string[];
 }
 
 export class TokenPairDto implements TokenPair {
   @ApiProperty()
-  accessToken: string;
+  accessToken!: string;
+
   @ApiProperty()
-  refreshToken: string;
+  refreshToken!: string;
 }
 
 export class AuthResultDto extends TokenPairDto implements AuthResult {
   @ApiProperty({ type: AuthUserDto })
-  user: AuthUserDto;
+  user!: AuthUserDto;
+
+  @ApiProperty({ type: AuthUserDto, required: false })
+  usuario?: AuthUserDto;
 }

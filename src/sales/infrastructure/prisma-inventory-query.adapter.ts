@@ -12,14 +12,14 @@ export class PrismaInventoryQueryAdapter implements InventoryQueryPort {
     tx?: Prisma.TransactionClient,
   ): Promise<Map<string, Prisma.Decimal>> {
     const stock = await (tx ?? this.prisma).inventoryMovement.groupBy({
-      by: ['productId'],
-      where: { productId: { in: productIds } },
-      _sum: { quantityChange: true },
+      by: ['productoId'],
+      where: { productoId: { in: productIds } },
+      _sum: { cambioExistencias: true },
     });
     return new Map(
       stock.map((row) => [
-        row.productId,
-        row._sum.quantityChange ?? new Prisma.Decimal(0),
+        row.productoId,
+        row._sum.cambioExistencias ?? new Prisma.Decimal(0),
       ]),
     );
   }

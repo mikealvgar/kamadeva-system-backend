@@ -1,24 +1,41 @@
 # Especificación Técnica de Servicios, Entidades y Campos: Kamadeva System Backend
 
-**Versión:** 1.0.0  
-**Fecha:** Octubre 2026  
+**Versión:** 2.0.0  
+**Fecha:** Noviembre 2026  
 **Sistema:** Kamadeva System (Punto de Venta e Inventario Retail Multiplataforma)  
-**Stack de Referencia:** NestJS (TypeScript), PostgreSQL (Motor Transaccional ACID), Prisma / TypeORM, OpenAPI 3.0 (Swagger), JWT (Access / Refresh Tokens)  
-**URL Base local:** `http://localhost:3000/api`
+**Stack de Referencia:** NestJS 12 (TypeScript, Node.js ESM), PostgreSQL 15+, Prisma ORM 7 (`@prisma/adapter-pg`), OpenAPI 3.0 (Swagger en `/api/docs`), JWT (Access / Refresh Tokens hasheados con rotación atómica)  
+**URL Base local:** `http://localhost:3000/api`  
+**Documentación Swagger interactiva:** `http://localhost:3000/api/docs`
 
 ---
 
 ## 1. Visión General y Arquitectura de Datos
 
-El backend de **Kamadeva System** está estructurado bajo una arquitectura modular por dominios (Domain-Driven Design / NestJS Modules), alineada estrictamente con los contratos REST consumidos por el cliente Flutter (`lib/core/network/api_client.dart` y los DataSources remotos en `lib/features/*/data/datasources/`).
+El backend de **Kamadeva System** implementa una arquitectura modular limpia orientada a dominio sobre NestJS. Para asegurar máxima compatibilidad y consistencia con las aplicaciones cliente (Flutter / Web / Móvil), expone un **contrato público totalmente en español**.
 
-### 1.1 Principios de Integridad y Transaccionalidad
-1. **Consistencia ACID Estricta:** Las operaciones de venta (`/checkout/sales`), ajustes de stock (`/inventory/products/:id/adjust-stock`) y registro de movimientos de Kardex deben ejecutarse dentro de transacciones de base de datos con bloqueo pesimista o nivel de aislamiento que prevenga ventas de inventario inexistente (condición de carrera).
-2. **Idempotencia Transaccional:** El endpoint de checkout requiere la cabecera/campo `idempotencyKey` (UUID v4) para evitar la duplicación de folios, cobros y deducciones de stock ante reintentos de red.
-3. **Auditoría e Inmutabilidad de Caja:** Los cortes de caja cerrados no se actualizan ni se eliminan; son registros inmutables para fines de auditoría y arqueo de turnos.
+### 1.1 Capa de Adaptación de Contrato en Español
+Mediante el middleware `spanishApiMiddleware`, el interceptor `SpanishApiResponseInterceptor` y el transformador de esquemas Swagger `translateOpenApiSchemas` (`src/common/validation/spanish-api-contract.ts`):
+1. **Traducción Bidireccional Transparente:** Las peticiones entrantes traducen queries, parámetros de ruta y payloads JSON desde las claves públicas en español a los nombres internos del dominio y modelos de Prisma.
+2. **Serialización Estandarizada:** Todas las respuestas HTTP retornan las entidades con claves unificadas en español (`nombre`, `correo`, `contrasena`, `tokenAcceso`, `tokenRenovacion`, `existencias`, `existenciaMinima`, `precioVenta`, `precioCompra`, `urlImagen`, `fechaCreacion`, `fechaActualizacion`, etc.).
+3. **Esquema OpenAPI Fiel:** Los esquemas generados en `/api/docs` exponen exclusivamente los campos públicos en español.
+
+### 1.2 Principios de Integridad, Transaccionalidad y Concurrencia
+1. **Inventario Derivado (Event Sourcing / Kardex):**
+   - El inventario físico de una tienda retail no debe depender de actualizaciones planas (`UPDATE products SET stock = ...`).
+   - Las existencias (`existencias`) se derivan matemáticamente de la sumatoria auditada de movimientos en `InventoryMovement`:
+     $$\text{existencias} = \sum \text{quantityChange} \quad (\text{PURCHASE\_IN, SALE\_OUT, RETURN\_IN, ADJUSTMENT\_IN, ADJUSTMENT\_OUT})$$
+   - Toda alteración de stock ejecuta transacciones serializables en PostgreSQL con bloqueo pesimista (`SELECT FOR UPDATE`).
+2. **Idempotencia Transaccional en Cobro (`/api/ventas`):**
+   - El endpoint de venta exige la cabecera obligatoria `Idempotency-Key` (UUID v4).
+   - Si una petición de cobro se reintenta por desconexión o fallo de red, el sistema intercepta la clave persistida en `IdempotencyKey`, evitando folios duplicados, dobles cobros y deducciones indebidas de existencias.
+   - Las respuestas reenviadas por idempotencia incorporan la cabecera HTTP `Idempotent-Replayed: true`.
+3. **Cortes de Caja en Cadena e Inmutabilidad (`/api/cortes-caja`):**
+   - No se permiten turnos solapados ni ediciones retroactivas.
+   - Los cortes implementan una cadena estricta (`previousClosureId @unique`).
+   - El fondo dejado en caja (`fondoDejado`) al sellar un turno se convierte automáticamente en el fondo inicial (`fondoInicial`) del siguiente arqueo.
 4. **Control de Acceso Basado en Roles (RBAC):**
-   - **`admin`**: Acceso sin restricciones a todos los recursos, configuraciones fiscales y gestión de personal.
-   - **`seller`**: Acceso restringido al checkout, cotizaciones, inventario (lectura/consulta) y corte de su propio turno según su arreglo de `seccionesPermitidas`.
+   - **`ADMIN`:** Control total del sistema: catálogos, personal, auditoría, configuración fiscal, compras a proveedores, costos y utilidad estimada del tablero.
+   - **`VENDEDOR`:** Operaciones de mostrador: punto de venta, cotizaciones, consulta de productos, registro de gastos de turno y arqueo de corte de caja propio. No tiene visibilidad del margen ni costo de mercancía.
 
 ---
 
@@ -26,175 +43,317 @@ El backend de **Kamadeva System** está estructurado bajo una arquitectura modul
 
 ```mermaid
 erDiagram
-    USERS ||--o{ SALES : "registra"
-    USERS ||--o{ EXPENSES : "registra"
-    USERS ||--o{ CASH_CLOSURES : "realiza"
-    USERS ||--o{ STOCK_MOVEMENTS : "ejecuta"
-    
-    CLIENTS ||--o{ SALES : "recibe"
-    CLIENTS ||--o{ QUOTES : "solicita"
+    User ||--o{ UserRole : "tiene"
+    Role ||--o{ UserRole : "asignado_a"
+    User ||--o{ RefreshToken : "sesiones"
+    User ||--o{ Sale : "crea"
+    User ||--o{ Sale : "cancela"
+    User ||--o{ Quote : "crea"
+    User ||--o{ Purchase : "registra"
+    User ||--o{ SupplierOrder : "ordena"
+    User ||--o{ Expense : "registra"
+    User ||--o{ CashClosure : "cierra"
+    User ||--o{ InventoryMovement : "autoriza"
 
-    CATEGORIES ||--o{ PRODUCTS : "clasifica"
-    PROVIDERS ||--o{ PRODUCTS : "suministra"
+    Customer ||--o{ Sale : "asociado_a"
+    Customer ||--o{ Quote : "solicita"
 
-    PRODUCTS ||--o{ SALE_ITEMS : "incluido_en"
-    PRODUCTS ||--o{ QUOTE_ITEMS : "incluido_en"
-    PRODUCTS ||--o{ STOCK_MOVEMENTS : "registra_historial"
+    Provider ||--o{ Purchase : "surte"
+    Provider ||--o{ SupplierOrder : "recibe_pedido"
 
-    SALES ||--|{ SALE_ITEMS : "contiene"
-    QUOTES ||--|{ QUOTE_ITEMS : "contiene"
+    Category ||--o{ Product : "clasifica"
+    Product ||--o{ ProductSize : "disponible_en"
+    Size ||--o{ ProductSize : "aplica_a"
 
-    CASH_CLOSURES ||--o{ EXPENSES : "concilia"
+    Product ||--o{ SaleItem : "vendido_en"
+    Product ||--o{ QuoteItem : "cotizado_en"
+    Product ||--o{ PurchaseItem : "comprado_en"
+    Product ||--o{ SupplierOrderItem : "pedido_en"
+    Product ||--o{ InventoryMovement : "movimiento_kardex"
 
-    BUSINESS_CONFIG {
-        uuid id PK
-        string nombre
-        string direccion
-        string colonia
-        string municipio
-        string estado
-        string telefono
-        string rfc
-        string mensajePie
+    Size ||--o{ SaleItem : "talla_vendida"
+    Size ||--o{ QuoteItem : "talla_cotizada"
+
+    Sale ||--|{ SaleItem : "contiene"
+    Sale ||--|{ Payment : "liquidada_con"
+    Quote ||--|{ QuoteItem : "contiene"
+    Quote ||--o| Sale : "convertida_en"
+
+    SupplierOrder ||--|{ SupplierOrderItem : "solicita"
+    SupplierOrder ||--o{ Purchase : "recepciones"
+    Purchase ||--|{ PurchaseItem : "detalla"
+    SupplierOrderItem ||--o{ PurchaseItem : "recibido_en"
+
+    ExpenseCategory ||--o{ Expense : "clasifica"
+    CashClosure ||--o{ CashClosureAdjustment : "desglosa_ajustes"
+    CashClosure ||--o{ Payment : "arquea_cobros"
+    CashClosure ||--o{ Payment : "arquea_reembolsos"
+    CashClosure ||--o{ Expense : "absorbe_gastos"
+    CashClosure ||--o| CashClosure : "cadena_turno_anterior"
+
+    BusinessConfig {
+        string key PK
+        string name
+        string address
+        string neighborhood
+        string municipality
+        string state
+        string phone
+        string taxId
+        string ticketFooter
     }
 
-    USERS {
+    User {
         uuid id PK
-        string nombre
+        string name
         string email UK
-        string telefono
-        string password
-        string rol
-        jsonb seccionesPermitidas
-        uuid creadoPorAdminId FK
-        boolean activo
+        string passwordHash
+        boolean isActive
     }
 
-    CATEGORIES {
+    Role {
         uuid id PK
-        string nombre UK
-        string descripcion
-        boolean activo
+        string name UK
+        string description
+        boolean isActive
     }
 
-    PRODUCTS {
+    RefreshToken {
         uuid id PK
-        string articulo
-        string descripcion
-        string codigoBarras UK
-        integer stock
-        string categoria
-        string marca
-        decimal precioCompra
-        decimal precioVenta
-        jsonb tallas
+        string tokenHash
+        uuid userId FK
+        timestamp expiresAt
+        timestamp revokedAt
+    }
+
+    Category {
+        uuid id PK
+        string name
+        string slug UK
+        string description
+        boolean isActive
+    }
+
+    Size {
+        uuid id PK
+        string name UK
+        int sortOrder
+        boolean isActive
+    }
+
+    Product {
+        uuid id PK
+        string barcode UK
+        string name
+        string description
+        string brand
         string imageUrl
-        boolean activo
+        decimal price
+        decimal cost
+        decimal minStock
+        boolean isActive
+        uuid categoryId FK
     }
 
-    STOCK_MOVEMENTS {
+    Customer {
+        uuid id PK
+        string name
+        string phone
+        string email
+        boolean isActive
+        boolean isDefault
+    }
+
+    Provider {
+        uuid id PK
+        string name UK
+        string phone
+        string email
+        string contactName
+        string address
+        boolean isActive
+    }
+
+    InventoryMovement {
         uuid id PK
         uuid productId FK
-        string productoNombre
-        string tipo
-        integer cantidad
-        integer stockPrevio
-        integer stockNuevo
-        string motivo
-        timestamp fecha
-        uuid usuarioId FK
-        string usuarioNombre
+        string type
+        decimal quantityChange
+        decimal unitCost
+        string referenceType
+        string referenceId
+        uuid createdById FK
+        string notes
     }
 
-    SALES {
+    Purchase {
         uuid id PK
-        integer folio UK
-        timestamp fecha
-        string metodoPago
+        uuid providerId FK
+        timestamp receivedAt
+        string supplierFolio
+        string notes
         decimal total
-        uuid vendedorId FK
-        string vendedorNombre
-        uuid clienteId FK
-        uuid idempotencyKey UK
-        string status
+        uuid supplierOrderId FK
+        uuid createdById FK
     }
 
-    SALE_ITEMS {
+    PurchaseItem {
+        uuid id PK
+        uuid purchaseId FK
+        uuid productId FK
+        int position
+        string productName
+        string barcode
+        decimal quantity
+        decimal unitCost
+        decimal lineSubtotal
+    }
+
+    SupplierOrder {
+        uuid id PK
+        uuid providerId FK
+        timestamp orderedAt
+        timestamp expectedAt
+        string supplierFolio
+        string notes
+        decimal total
+        string status
+        uuid createdById FK
+    }
+
+    SupplierOrderItem {
+        uuid id PK
+        uuid orderId FK
+        uuid productId FK
+        int position
+        string productName
+        string barcode
+        decimal quantity
+        decimal receivedQuantity
+        decimal unitCost
+        decimal lineSubtotal
+    }
+
+    Sale {
+        uuid id PK
+        string folio UK
+        string status
+        uuid customerId FK
+        uuid quoteId FK
+        decimal subtotal
+        decimal discount
+        decimal tax
+        decimal total
+        uuid createdById FK
+        string notes
+        timestamp cancelledAt
+        uuid cancelledById FK
+        string cancelReason
+    }
+
+    SaleItem {
         uuid id PK
         uuid saleId FK
         uuid productId FK
-        string articulo
-        integer cantidad
-        decimal precioVenta
-        string talla
-        decimal subtotal
-    }
-
-    QUOTES {
-        uuid id PK
-        timestamp fecha
-        timestamp fechaCaducidad
-        string clienteNombre
-        uuid clienteId FK
+        uuid sizeId FK
+        decimal quantity
+        decimal unitPrice
+        decimal discount
+        decimal tax
         decimal total
-        string status
+        decimal unitCost
     }
 
-    QUOTE_ITEMS {
+    Payment {
+        uuid id PK
+        uuid saleId FK
+        decimal amount
+        string method
+        string status
+        uuid createdById FK
+        uuid cashClosureId FK
+        uuid refundClosureId FK
+        timestamp paidAt
+    }
+
+    Quote {
+        uuid id PK
+        string folio UK
+        string status
+        uuid customerId FK
+        decimal subtotal
+        decimal discount
+        decimal tax
+        decimal total
+        string notes
+        timestamp expiresAt
+        uuid createdById FK
+    }
+
+    QuoteItem {
         uuid id PK
         uuid quoteId FK
         uuid productId FK
-        string articulo
-        integer cantidad
-        decimal precioVenta
-        string talla
+        uuid sizeId FK
+        decimal quantity
+        decimal unitPrice
+        decimal discount
+        decimal tax
+        decimal total
     }
 
-    EXPENSES {
+    ExpenseCategory {
         uuid id PK
-        timestamp fecha
-        string concepto
-        decimal monto
-        boolean descontarDeCaja
-        string categoria
-        uuid vendedorId FK
-        string vendedorNombre
+        string name UK
+        boolean isActive
+    }
+
+    Expense {
+        uuid id PK
+        string concept
+        decimal amount
+        boolean deductFromCash
+        string notes
+        timestamp spentAt
+        uuid categoryId FK
+        uuid createdById FK
         uuid cashClosureId FK
     }
 
-    CASH_CLOSURES {
+    CashClosure {
         uuid id PK
-        timestamp fecha
-        uuid vendedorId FK
-        string vendedorNombre
-        decimal cajaInicial
+        uuid previousClosureId UK
+        timestamp periodStart
+        timestamp closedAt
+        uuid closedById FK
+        decimal openingFloat
+        int salesCount
+        decimal cashSales
+        decimal cardSales
+        decimal transferSales
+        decimal otherSales
+        decimal cashRefunds
+        decimal totalRefunds
+        int expensesCount
+        decimal cashExpenses
+        decimal totalExpenses
+        decimal adjustmentsIn
+        decimal adjustmentsOut
+        decimal expectedCash
+        decimal countedCash
+        decimal difference
+        decimal floatLeft
         jsonb denominations
-        decimal totalCalculado
-        decimal totalVentasEfectivo
-        decimal totalGastosDescontados
-        decimal esperadoEnCaja
-        decimal diferencia
-        string observaciones
-        string status
+        string notes
     }
 
-    CLIENTS {
+    CashClosureAdjustment {
         uuid id PK
-        string nombre
-        string telefono
-        string email
-        string direccion
-        string rfc
-        string notas
-    }
-
-    PROVIDERS {
-        uuid id PK
-        string nombre
-        string telefono
-        string email
-        string contacto
-        string direccion
+        uuid cashClosureId FK
+        int position
+        string type
+        decimal amount
+        string description
     }
 ```
 
@@ -204,509 +363,910 @@ erDiagram
 
 ---
 
-### MÓDULO 1: Autenticación y Usuarios (Auth & RBAC Service)
-- **Base Endpoint:** `/api/auth`
-- **Propósito:** Manejo del ciclo de vida del usuario, inicio de sesión seguro mediante JWT, verificación de rol de administrador inicial y delegación de permisos por sección.
+### MÓDULO 1: Autenticación (`/api/autenticacion`)
+- **Base Endpoint:** `/api/autenticacion`
+- **Controlador:** [`AuthController`](file:///Users/mike/Documents/kamadeva-system-backend/src/auth/auth.controller.ts)
+- **Propósito:** Registro inicial de usuarios, autenticación segura con bcrypt, emisión de tokens JWT, rotación atómica de refresh tokens y revocación de sesión.
 
-#### Tabla / Entidad: `users`
-| Campo | Tipo PostgreSQL | Restricción | Nullable | Descripción |
-| :--- | :--- | :--- | :---: | :--- |
-| `id` | `UUID` | PK, `gen_random_uuid()` | No | Identificador único del usuario |
-| `nombre` | `VARCHAR(150)` | - | No | Nombre completo del vendedor o administrador |
-| `email` | `VARCHAR(180)` | UNIQUE, INDEX | Sí | Correo electrónico de acceso |
-| `telefono` | `VARCHAR(30)` | - | Sí | Teléfono móvil o de contacto del empleado |
-| `password` | `VARCHAR(255)` | Hash Argon2 / Bcrypt | No | Contraseña cifrada en un solo sentido |
-| `rol` | `VARCHAR(20)` | `CHECK (rol IN ('admin', 'seller'))` | No | Rol del usuario en el sistema |
-| `seccionesPermitidas` | `JSONB` | Default `'[]'::jsonb` | No | Lista de slugs: `["home", "products", "categories", "clients", "providers", "quotes", "sales_history", "expenses", "cash_closure", "sellers"]` |
-| `creadoPorAdminId` | `UUID` | FK -> `users(id)` | Sí | Identificador del admin que dio de alta al usuario |
-| `activo` | `BOOLEAN` | Default `true` | No | Soft-delete / Desactivación de cuenta |
-| `createdAt` | `TIMESTAMPTZ` | Default `NOW()` | No | Fecha de registro |
-| `updatedAt` | `TIMESTAMPTZ` | Default `NOW()` | No | Última modificación |
+#### Mapeo de Campos Públicos
+| Campo Público (API) | Campo Interno (Prisma / BD) | Tipo | Descripción |
+| :--- | :--- | :--- | :--- |
+| `nombre` | `name` | `string` | Nombre del usuario registrado |
+| `correo` | `email` | `string` | Correo normalizado a minúsculas |
+| `contrasena` | `password` / `passwordHash` | `string` | Contraseña en texto claro (recibida) / Hash bcrypt (almacenada) |
+| `tokenAcceso` | `accessToken` | `string` | JWT de corta duración (firmado con `JWT_ACCESS_SECRET`) |
+| `tokenRenovacion` | `refreshToken` | `string` | Token de rotación opaco persistido hasheado en BD |
+| `usuario` | `user` | `object` | Snapshot público del usuario autenticado |
+| `roles` | `roles` | `string[]` | Roles asignados: `['ADMIN']`, `['VENDEDOR']` |
+| `activo` | `isActive` | `boolean` | Estado de habilitación de la cuenta |
+| `fechaCreacion` | `createdAt` | `string (ISO)` | Marca de tiempo de registro |
 
-#### Endpoints del Servicio:
-* `POST /api/auth/login`
-  - **Body:** `{ "email": string, "password": string }`
-  - **Respuesta (200):**
-    ```json
-    {
-      "accessToken": "eyJhbGciOi...",
-      "refreshToken": "eyJhbGciOi...",
-      "user": {
-        "id": "uuid-001",
-        "nombre": "Carlos López",
-        "email": "carlos@kamadeva.com",
-        "telefono": "5551112233",
-        "rol": "seller",
-        "seccionesPermitidas": ["home", "products", "sales_history", "cash_closure"]
-      }
-    }
-    ```
-* `POST /api/auth/register` (Requiere rol `admin` salvo durante el primer bootstrap)
-  - **Body:** `{ "nombre": string, "email": string?, "telefono": string?, "password": string, "rol": "admin"|"seller", "seccionesPermitidas": string[] }`
-  - **Respuesta (201):** Objeto de usuario creado (sin devolver el hash de `password`).
-* `GET /api/auth/has-admin`
-  - **Respuesta (200):** `{ "hasAdmin": boolean }` (Permite al frontend determinar si debe redirigir a configuración inicial).
-* `GET /api/auth/:id`
-  - **Respuesta (200):** DTO del usuario solicitado.
-* `PUT /api/auth/:id`
-  - **Body:** Campos opcionales a modificar (`nombre`, `email`, `telefono`, `password`, `seccionesPermitidas`, `rol`).
-* `DELETE /api/auth/:id`
-  - **Respuesta (200 / 204):** Desactivación o borrado del vendedor.
+#### Endpoints
+1. **`POST /api/autenticacion/registro`**
+   - **Permisos:** Público. El primer usuario registrado adquiere automáticamente rol `ADMIN`; los posteriores se asignan como `VENDEDOR`.
+   - **Request Body:**
+     ```json
+     {
+       "nombre": "Carlos López",
+       "correo": "carlos@kamadeva.com",
+       "contrasena": "Password123!"
+     }
+     ```
+   - **Respuesta (201 Created):**
+     ```json
+     {
+       "tokenAcceso": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+       "tokenRenovacion": "7a3a9df8-01bf-4e2b-8a88-888888888888",
+       "usuario": {
+         "id": "c1f7b020-0000-4000-a000-000000000001",
+         "nombre": "Carlos López",
+         "correo": "carlos@kamadeva.com",
+         "roles": ["ADMIN"],
+         "activo": true,
+         "fechaCreacion": "2026-10-30T10:00:00.000Z"
+       }
+     }
+     ```
+   - **Errores:** `400 Bad Request` (contraseña menor a 8 caracteres, correo inválido), `409 Conflict` (correo ya registrado).
 
----
+2. **`POST /api/autenticacion/login`**
+   - **Request Body:** `{ "correo": "carlos@kamadeva.com", "contrasena": "Password123!" }`
+   - **Respuesta (200 OK):** Misma estructura `{ tokenAcceso, tokenRenovacion, usuario }`.
+   - **Errores:** `401 Unauthorized` (credenciales incorrectas o usuario con `activo: false`).
 
-### MÓDULO 2: Configuración del Negocio (Business Config Service)
-- **Base Endpoint:** `/api/core-config/business`
-- **Propósito:** Mantiene la identidad comercial de la sucursal o matriz, impresa en la cabecera y pie de página de los tickets térmicos y facturas.
+3. **`POST /api/autenticacion/refresh`**
+   - **Request Body:** `{ "tokenRenovacion": "7a3a9df8-01bf-4e2b-8a88-888888888888" }`
+   - **Respuesta (200 OK):**
+     ```json
+     {
+       "tokenAcceso": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.nuevo...",
+       "tokenRenovacion": "8b4b0ef9-12cf-5f3c-9b99-999999999999"
+     }
+     ```
+   - **Lógica:** Valida firma, vigencia, usuario activo y ausencia de revocación; revoca el token actual y emite uno nuevo atómicamente.
+   - **Errores:** `401 Unauthorized` (token expirado, revocado o inválido).
 
-#### Tabla / Entidad: `business_config`
-| Campo | Tipo PostgreSQL | Restricción | Nullable | Descripción |
-| :--- | :--- | :--- | :---: | :--- |
-| `id` | `UUID` | PK, `gen_random_uuid()` | No | Identificador del registro de configuración |
-| `nombre` | `VARCHAR(150)` | - | No | Nombre comercial (ej. "Kamadeva Boutique & Streetwear") |
-| `direccion` | `VARCHAR(255)` | - | No | Calle y número exterior/interior |
-| `colonia` | `VARCHAR(100)` | - | No | Colonia o barrio |
-| `municipio` | `VARCHAR(100)` | - | No | Municipio, Alcaldía o Ciudad |
-| `estado` | `VARCHAR(100)` | - | No | Estado o Provincia |
-| `telefono` | `VARCHAR(50)` | - | No | Teléfono de atención al cliente |
-| `rfc` | `VARCHAR(20)` | - | No | Identificador fiscal (RFC / CIF / Tax ID) |
-| `mensajePie` | `TEXT` | - | No | Texto de cortesía y redes sociales al final del ticket |
-| `createdAt` | `TIMESTAMPTZ` | Default `NOW()` | No | Creación |
-| `updatedAt` | `TIMESTAMPTZ` | Default `NOW()` | No | Modificación |
-
-#### Endpoints del Servicio:
-* `GET /api/core-config/business`
-  - **Respuesta (200):**
-    ```json
-    {
-      "nombre": "Kamadeva Boutique & Streetwear",
-      "direccion": "Av. Insurgentes Sur #450 Int. 2B",
-      "colonia": "Roma Sur",
-      "municipio": "Cuauhtémoc",
-      "estado": "Ciudad de México",
-      "telefono": "55-1234-5678",
-      "rfc": "KAM210315ABC",
-      "mensajePie": "¡GRACIAS POR SU COMPRA! SÍGUENOS EN @KAMADEVA_MX"
-    }
-    ```
-* `PUT /api/core-config/business` (Solo `admin`)
-  - **Body:** `{ "nombre": string, "direccion": string, "colonia": string, "municipio": string, "estado": string, "telefono": string, "rfc": string, "mensajePie": string }`
-  - **Respuesta (200):** Configuración actualizada.
+4. **`POST /api/autenticacion/logout`**
+   - **Request Body:** `{ "tokenRenovacion": "string" }`
+   - **Respuesta (204 No Content):** Revoca el refresh token. Operación idempotente (repetir devuelve 204).
 
 ---
 
-### MÓDULO 3: Catálogo de Categorías (Categories Service)
-- **Base Endpoint:** `/api/core-config/categories`
-- **Propósito:** Agrupación y clasificación departamental de productos del catálogo.
+### MÓDULO 2: Usuarios y Roles (`/api/usuarios` y `/api/roles`)
+- **Base Endpoints:** `/api/usuarios`, `/api/roles`
+- **Controladores:** [`UsersController`](file:///Users/mike/Documents/kamadeva-system-backend/src/users/users.controller.ts), [`RolesController`](file:///Users/mike/Documents/kamadeva-system-backend/src/roles/roles.controller.ts)
+- **Permisos:** Requiere token Bearer con rol `ADMIN`.
 
-#### Tabla / Entidad: `categories`
-| Campo | Tipo PostgreSQL | Restricción | Nullable | Descripción |
-| :--- | :--- | :--- | :---: | :--- |
-| `id` | `UUID` | PK, `gen_random_uuid()` | No | Identificador único de categoría |
-| `nombre` | `VARCHAR(100)` | UNIQUE | No | Nombre de la categoría (ej. "Playeras", "Calzado") |
-| `descripcion` | `TEXT` | Default `''` | No | Detalle o notas de la categoría |
-| `activo` | `BOOLEAN` | Default `true` | No | Estado de activación |
-| `createdAt` | `TIMESTAMPTZ` | Default `NOW()` | No | Fecha de creación |
-| `updatedAt` | `TIMESTAMPTZ` | Default `NOW()` | No | Última actualización |
+#### Mapeo de Campos Públicos
+| Campo Público (API) | Campo Interno | Tipo | Descripción |
+| :--- | :--- | :--- | :--- |
+| `datos` | `data` / `items` | `UserDto[]` | Arreglo de usuarios devuelto en la paginación |
+| `pagina` | `page` | `number` | Número de página (1-based) |
+| `limite` | `pageSize` | `number` | Tamaño de página (1 a 100) |
+| `busqueda` | `search` | `string` | Búsqueda por coincidencia en nombre o correo |
+| `incluirInactivos`| `includeInactive` | `boolean` | Incluye usuarios con `activo: false` |
+| `nombreRol` | `roleName` | `'ADMIN' \| 'VENDEDOR'` | Identificador de rol en parámetros de ruta |
+| `roles` | `roles` | `string[]` | Roles asignados al usuario |
 
-#### Endpoints del Servicio:
-* `GET /api/core-config/categories`
-* `POST /api/core-config/categories` (`{ "nombre": string, "descripcion": string }`)
-* `PUT /api/core-config/categories/:id` (`{ "nombre"?: string, "descripcion"?: string }`)
-* `DELETE /api/core-config/categories/:id`
-
----
-
-### MÓDULO 4: Directorio de Clientes (Clients Directory Service)
-- **Base Endpoint:** `/api/core-config/clients`
-- **Propósito:** Registro y fidelización de clientes para emisión de cotizaciones y facturas/tickets personalizados.
-
-#### Tabla / Entidad: `clients`
-| Campo | Tipo PostgreSQL | Restricción | Nullable | Descripción |
-| :--- | :--- | :--- | :---: | :--- |
-| `id` | `UUID` | PK, `gen_random_uuid()` | No | Identificador único del cliente |
-| `nombre` | `VARCHAR(150)` | INDEX | No | Nombre o Razón Social |
-| `telefono` | `VARCHAR(30)` | - | Sí | Teléfono de contacto |
-| `email` | `VARCHAR(150)` | - | Sí | Correo electrónico |
-| `direccion` | `VARCHAR(255)` | - | Sí | Dirección de envío o fiscal |
-| `rfc` | `VARCHAR(20)` | - | Sí | Registro fiscal del contribuyente |
-| `notas` | `TEXT` | - | Sí | Observaciones adicionales |
-| `createdAt` | `TIMESTAMPTZ` | Default `NOW()` | No | Fecha de registro |
-| `updatedAt` | `TIMESTAMPTZ` | Default `NOW()` | No | Última actualización |
-
-#### Endpoints del Servicio:
-* `GET /api/core-config/clients`
-* `POST /api/core-config/clients` (`{ "nombre": string, "telefono"?: string, "email"?: string }`)
-* `PUT /api/core-config/clients/:id`
-* `DELETE /api/core-config/clients/:id`
-
----
-
-### MÓDULO 5: Directorio de Proveedores (Providers Directory Service)
-- **Base Endpoint:** `/api/core-config/providers`
-- **Propósito:** Gestión de contactos mayoristas y fabricantes de mercancía.
-
-#### Tabla / Entidad: `providers`
-| Campo | Tipo PostgreSQL | Restricción | Nullable | Descripción |
-| :--- | :--- | :--- | :---: | :--- |
-| `id` | `UUID` | PK, `gen_random_uuid()` | No | Identificador único del proveedor |
-| `nombre` | `VARCHAR(150)` | - | No | Razón social de la empresa proveedora |
-| `telefono` | `VARCHAR(30)` | - | Sí | Teléfono comercial |
-| `email` | `VARCHAR(150)` | - | Sí | Correo de cotización y pedidos |
-| `contacto` | `VARCHAR(100)` | - | Sí | Nombre del agente o ejecutivo de cuenta |
-| `direccion` | `VARCHAR(255)` | - | Sí | Ubicación o bodega del proveedor |
-| `createdAt` | `TIMESTAMPTZ` | Default `NOW()` | No | Fecha de creación |
-| `updatedAt` | `TIMESTAMPTZ` | Default `NOW()` | No | Última actualización |
-
-#### Endpoints del Servicio:
-* `GET /api/core-config/providers`
-* `POST /api/core-config/providers` (`{ "nombre": string, "telefono"?: string, "email"?: string }`)
-* `PUT /api/core-config/providers/:id`
-* `DELETE /api/core-config/providers/:id`
+#### Endpoints
+1. **`GET /api/usuarios`**
+   - **Query Parameters:** `pagina=1`, `limite=20`, `busqueda=carlos`, `incluirInactivos=true`, `rol=ADMIN`.
+   - **Respuesta (200 OK):**
+     ```json
+     {
+       "datos": [
+         {
+           "id": "c1f7b020-0000-4000-a000-000000000001",
+           "nombre": "Carlos López",
+           "correo": "carlos@kamadeva.com",
+           "roles": ["ADMIN"],
+           "activo": true,
+           "fechaCreacion": "2026-10-30T10:00:00.000Z",
+           "fechaActualizacion": "2026-10-30T10:00:00.000Z"
+         }
+       ],
+       "total": 1,
+       "pagina": 1,
+       "limite": 20
+     }
+     ```
+2. **`GET /api/usuarios/:usuarioId/roles`** -> Retorna `{ "roles": ["ADMIN"] }`.
+3. **`PUT /api/usuarios/:usuarioId/roles`** -> Body: `{ "roles": ["ADMIN", "VENDEDOR"] }`. Protege contra desasignar al último administrador existente.
+4. **`DELETE /api/usuarios/:usuarioId/roles/:nombreRol`** -> Remueve un rol (`ADMIN` o `VENDEDOR`). Retorna 204.
+5. **`DELETE /api/usuarios/:usuarioId`** -> Elimina el usuario y revoca sesiones. Falla con 409 si es el último admin o tiene cotizaciones, ventas, compras o movimientos asociados.
+6. **`GET /api/roles`** -> Retorna el listado oficial de roles del sistema `[{ "id": "uuid", "nombre": "ADMIN", "descripcion": "Administrador", "activo": true }]`.
 
 ---
 
-### MÓDULO 6: Catálogo de Productos e Inventario (Products & Inventory Service)
-- **Base Endpoint:** `/api/inventory/products`
-- **Propósito:** Administración de existencias, control de precios, soporte de código de barras para escaneo físico, tallas y sincronización masiva Excel.
+### MÓDULO 3: Configuración del Negocio (`/api/configuracion-negocio`)
+- **Base Endpoint:** `/api/configuracion-negocio`
+- **Controlador:** [`BusinessConfigController`](file:///Users/mike/Documents/kamadeva-system-backend/src/business-config/business-config.controller.ts)
+- **Propósito:** Mantiene la identidad legal, comercial y fiscal de la tienda, impresa en tickets térmicos y cotizaciones. Registro único (`key = 'default'`).
 
-#### Tabla / Entidad: `products`
-| Campo | Tipo PostgreSQL | Restricción | Nullable | Descripción |
-| :--- | :--- | :--- | :---: | :--- |
-| `id` | `UUID` | PK, `gen_random_uuid()` | No | Identificador único del producto |
-| `articulo` | `VARCHAR(255)` | INDEX | No | Nombre descriptivo del producto comercial |
-| `descripcion` | `TEXT` | Default `''` | No | Ficha técnica o detalles del artículo |
-| `codigoBarras` | `VARCHAR(100)` | UNIQUE, INDEX | No | Código de barras legible por escáner de hardware/cámara |
-| `stock` | `INTEGER` | `CHECK (stock >= 0)` | No | Existencia física disponible en tienda |
-| `categoria` | `VARCHAR(100)` | INDEX | No | Nombre o slug de categoría |
-| `marca` | `VARCHAR(100)` | - | No | Marca o fabricante de la prenda/artículo |
-| `precioCompra` | `NUMERIC(12, 2)`| `CHECK (precioCompra >= 0)` | No | Costo unitario de adquisición |
-| `precioVenta` | `NUMERIC(12, 2)`| `CHECK (precioVenta >= 0)` | No | Precio público para mostrador y ticket |
-| `tallas` | `JSONB` | Default `'[]'::jsonb` | Sí | Lista de tallas admitidas (ej. `["CH", "M", "G", "XG"]` o `["28", "30"]`) |
-| `imageUrl` | `VARCHAR(500)` | - | Sí | URL de imagen ilustrativa |
-| `activo` | `BOOLEAN` | Default `true` | No | Soft-delete del producto |
-| `createdAt` | `TIMESTAMPTZ` | Default `NOW()` | No | Creación |
-| `updatedAt` | `TIMESTAMPTZ` | Default `NOW()` | No | Última actualización |
+#### Mapeo de Campos Públicos
+| Campo Público (API) | Campo Interno (Prisma) | Tipo | Restricción | Descripción |
+| :--- | :--- | :--- | :--- | :--- |
+| `nombre` | `name` | `string` | Máx. 150 car. | Nombre comercial del establecimiento |
+| `direccion` | `address` | `string` | Máx. 255 car. | Calle y número exterior/interior |
+| `colonia` | `neighborhood` | `string` | Máx. 100 car. | Colonia o asentamiento |
+| `municipio` | `municipality` | `string` | Máx. 100 car. | Municipio / Alcaldía |
+| `estado` | `state` | `string` | Máx. 100 car. | Entidad federativa o estado |
+| `telefono` | `phone` | `string` | Máx. 50 car. | Teléfono de atención al cliente |
+| `rfc` | `taxId` | `string` | 12 o 13 car. | RFC validado (moral 12, física 13) |
+| `mensajePie` | `ticketFooter` | `string` | Máx. 500 car. | Leyenda de cortesía y redes sociales |
+| `fechaActualizacion` | `updatedAt` | `string (ISO)` | - | Fecha de última edición |
 
-#### Endpoints del Servicio:
-* `GET /api/inventory/products`
-  - **Filtros opcionales (Query):** `?query=...&categoria=...&lowStock=true`
-* `POST /api/inventory/products`
-  - **Body:** `{ "articulo": string, "descripcion": string, "codigoBarras": string, "stock": int, "categoria": string, "marca": string, "precioCompra": number, "precioVenta": number, "tallas"?: string[], "imageUrl"?: string }`
-* `PUT /api/inventory/products/:id`
-* `DELETE /api/inventory/products/:id`
-* `POST /api/inventory/products/bulk`
-  - **Propósito:** Ingesta masiva desde archivos `.xlsx`.
-  - **Body:** `{ "productos": [ { ... campos de producto ... } ] }`
-* `POST /api/inventory/products/:id/adjust-stock`
-  - **Body:**
-    ```json
-    {
-      "tipo": "ajuste",
-      "cantidad": 5,
-      "motivo": "Corrección de conteo físico en anaquel",
-      "usuarioNombre": "Administrador"
-    }
-    ```
+#### Endpoints
+1. **`GET /api/configuracion-negocio`**
+   - **Permisos:** `ADMIN` y `VENDEDOR`.
+   - **Respuesta (200 OK):**
+     ```json
+     {
+       "nombre": "Kamadeva Boutique & Streetwear",
+       "direccion": "Av. Insurgentes Sur #450 Int. 2B",
+       "colonia": "Roma Sur",
+       "municipio": "Cuauhtémoc",
+       "estado": "Ciudad de México",
+       "telefono": "55-1234-5678",
+       "rfc": "KAM210315ABC",
+       "mensajePie": "¡GRACIAS POR SU COMPRA! SÍGUENOS EN @KAMADEVA_MX",
+       "fechaActualizacion": "2026-10-30T10:00:00.000Z"
+     }
+     ```
+2. **`PUT /api/configuracion-negocio`**
+   - **Permisos:** Exclusivo `ADMIN`.
+   - **Request Body:** Objeto con los 8 campos anteriores. Retorna la entidad actualizada.
 
 ---
 
-### MÓDULO 7: Auditoría y Movimientos de Stock (Kardex Service)
-- **Base Endpoint:** `/api/inventory/kardex`
-- **Propósito:** Registro cronológico e inmutable de entradas, salidas, mermas y ventas de almacén para auditoría de inventario.
+### MÓDULO 4: Catálogo de Categorías (`/api/catalogo/categorias`)
+- **Base Endpoint:** `/api/catalogo/categorias`
+- **Controlador:** [`CategoriesController`](file:///Users/mike/Documents/kamadeva-system-backend/src/catalog/categories.controller.ts)
+- **Propósito:** Agrupación departamental de productos con slug único automático o provisto.
 
-#### Tabla / Entidad: `stock_movements`
-| Campo | Tipo PostgreSQL | Restricción | Nullable | Descripción |
-| :--- | :--- | :--- | :---: | :--- |
-| `id` | `UUID` | PK, `gen_random_uuid()` | No | Identificador del movimiento de kardex |
-| `productId` | `UUID` | FK -> `products(id)`, INDEX | No | Producto afectado |
-| `productoNombre` | `VARCHAR(255)` | - | No | Snapshot del nombre del artículo al momento del movimiento |
-| `tipo` | `VARCHAR(20)` | `CHECK (tipo IN ('entrada', 'salida', 'ajuste', 'venta'))` | No | Clasificación del movimiento |
-| `cantidad` | `INTEGER` | - | No | Número de unidades modificadas (positivo o negativo) |
-| `stockPrevio` | `INTEGER` | - | No | Cantidad en existencia antes de la operación |
-| `stockNuevo` | `INTEGER` | - | No | Cantidad en existencia tras la operación |
-| `motivo` | `VARCHAR(255)` | - | No | Justificación del movimiento o referencia a ticket |
-| `fecha` | `TIMESTAMPTZ` | Default `NOW()` | No | Momento exacto del registro |
-| `usuarioId` | `UUID` | FK -> `users(id)` | Sí | Empleado responsable |
-| `usuarioNombre` | `VARCHAR(150)` | - | No | Nombre del usuario que ejecutó la acción |
+#### Mapeo de Campos Públicos
+| Campo Público (API) | Campo Interno (Prisma) | Tipo | Descripción |
+| :--- | :--- | :--- | :--- |
+| `id` | `id` | `string (UUID)` | Identificador único de categoría |
+| `nombre` | `name` | `string` | Nombre comercial (se guarda normalizado en mayúsculas) |
+| `descripcion` | `description` | `string \| null` | Detalle o notas |
+| `slug` | `slug` | `string` | Identificador amigable único en minúsculas |
+| `activo` | `isActive` | `boolean` | Estado de visibilidad |
+| `fechaCreacion` | `createdAt` | `string (ISO)` | Fecha de alta |
+| `fechaActualizacion` | `updatedAt` | `string (ISO)` | Fecha de modificación |
 
-#### Endpoints del Servicio:
-* `GET /api/inventory/kardex`
-  - **Query:** `?productId=uuid&tipo=entrada&startDate=...&endDate=...`
-* `POST /api/inventory/kardex`
-  - Registra una entrada manual por compra a proveedor o ajuste extraordinario.
-
----
-
-### MÓDULO 8: Punto de Venta y Transacciones (Sales & Checkout Service)
-- **Base Endpoint:** `/api/checkout/sales`
-- **Propósito:** Procesamiento central de ventas de mostrador con generación de folio correlativo único, cobro en efectivo/tarjeta y reducción atómica de existencias.
-
-#### Tabla / Entidad: `sales`
-| Campo | Tipo PostgreSQL | Restricción | Nullable | Descripción |
-| :--- | :--- | :--- | :---: | :--- |
-| `id` | `UUID` | PK, `gen_random_uuid()` | No | Identificador único de la venta |
-| `folio` | `SERIAL / INT` | UNIQUE, INDEX | No | Folio numérico incremental de auditoría e impresión |
-| `fecha` | `TIMESTAMPTZ` | Default `NOW()` | No | Fecha y hora de cobro |
-| `metodoPago` | `VARCHAR(20)` | `CHECK (metodoPago IN ('CASH', 'CARD', 'TRANSFER'))` | No | Forma de pago utilizada |
-| `total` | `NUMERIC(12, 2)`| `CHECK (total >= 0)` | No | Importe monetario total del ticket |
-| `vendedorId` | `UUID` | FK -> `users(id)` | No | Vendedor que cobró la transacción |
-| `vendedorNombre` | `VARCHAR(150)` | - | No | Nombre del vendedor para el ticket impreso |
-| `clienteId` | `UUID` | FK -> `clients(id)` | Sí | Cliente asignado a la venta (opcional) |
-| `idempotencyKey` | `UUID` | UNIQUE, INDEX | No | Llave única para evitar duplicidades por cortes de red |
-| `status` | `VARCHAR(20)` | `CHECK (status IN ('COMPLETED', 'CANCELLED'))` | No | Estado de la venta |
-| `createdAt` | `TIMESTAMPTZ` | Default `NOW()` | No | Creación |
-| `updatedAt` | `TIMESTAMPTZ` | Default `NOW()` | No | Modificación |
-
-#### Tabla / Entidad: `sale_items` (Detalle de Venta)
-| Campo | Tipo PostgreSQL | Restricción | Nullable | Descripción |
-| :--- | :--- | :--- | :---: | :--- |
-| `id` | `UUID` | PK, `gen_random_uuid()` | No | Identificador del renglón |
-| `saleId` | `UUID` | FK -> `sales(id)` ON DELETE CASCADE | No | Relación con la venta cabecera |
-| `productId` | `UUID` | FK -> `products(id)` | No | Producto vendido |
-| `articulo` | `VARCHAR(255)` | - | No | Snapshot del nombre del artículo |
-| `cantidad` | `INTEGER` | `CHECK (cantidad > 0)` | No | Unidades vendidas |
-| `precioVenta` | `NUMERIC(12, 2)`| `CHECK (precioVenta >= 0)` | No | Precio unitario al que se vendió |
-| `talla` | `VARCHAR(50)` | - | Sí | Talla seleccionada (ej. 'M', '32') |
-| `subtotal` | `NUMERIC(12, 2)`| - | No | `cantidad * precioVenta` |
-
-#### Endpoints del Servicio:
-* `POST /api/checkout/sales`
-  - **Body:**
-    ```json
-    {
-      "idempotencyKey": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
-      "metodoPago": "CASH",
-      "productos": [
-        {
-          "productId": "prod-001",
-          "cantidad": 2,
-          "talla": "M"
-        }
-      ]
-    }
-    ```
-  - **Proceso Interno Backend:** Inicia transacción DB -> Valida y bloquea filas de stock (`SELECT FOR UPDATE`) -> Verifica existencias -> Descuenta existencias -> Genera `stock_movements` (tipo 'venta') -> Calcula total -> Asigna siguiente `folio` -> Inserta cabecera y renglones -> Commit.
-  - **Respuesta (201):**
-    ```json
-    {
-      "id": "sale-uuid-999",
-      "folio": 1042,
-      "total": 598.00,
-      "fecha": "2026-10-21T01:30:00Z"
-    }
-    ```
-* `GET /api/checkout/sales`
-  - **Query:** `?startDate=2026-10-01&endDate=2026-10-21&vendedorId=...`
-* `GET /api/checkout/sales/:id`
-  - Retorna la venta con su lista completa de `sale_items`.
-* `POST /api/checkout/sales/:id/cancel`
-  - Anula la venta, reingresa el stock y genera los movimientos de kardex inversos.
+#### Endpoints
+1. **`GET /api/catalogo/categorias`**
+   - **Query Parameters:** `incluirInactivos=true|false`.
+   - **Respuesta (200 OK):**
+     ```json
+     [
+       {
+         "id": "cat-uuid-001",
+         "nombre": "PLAYERAS",
+         "slug": "playeras",
+         "descripcion": "Prendas superiores streetwear",
+         "activo": true,
+         "fechaCreacion": "2026-10-30T10:00:00.000Z",
+         "fechaActualizacion": "2026-10-30T10:00:00.000Z"
+       }
+     ]
+     ```
+2. **`POST /api/catalogo/categorias`** (`ADMIN`) -> Body: `{ "nombre": string, "descripcion"?: string, "slug"?: string, "activo"?: boolean }`.
+3. **`GET /api/catalogo/categorias/:id`** -> Retorna la categoría.
+4. **`PATCH /api/catalogo/categorias/:id`** (`ADMIN`) -> Actualización parcial.
+5. **`DELETE /api/catalogo/categorias/:id`** (`ADMIN`) -> Retorna 204. Falla con `409 Conflict` si contiene productos vinculados.
 
 ---
 
-### MÓDULO 9: Cotizaciones y Presupuestos (Quotes Service)
-- **Base Endpoint:** `/api/checkout/quotes`
-- **Propósito:** Emisión de presupuestos a clientes con fecha de vencimiento sin descontar stock hasta su cobro formal.
+### MÓDULO 5: Catálogo de Tallas (`/api/catalogo/tallas`)
+- **Base Endpoint:** `/api/catalogo/tallas`
+- **Controlador:** [`SizesController`](file:///Users/mike/Documents/kamadeva-system-backend/src/catalog/sizes/sizes.controller.ts)
+- **Propósito:** Catálogo de tallas ordenables por índice `orden` para presentación coherente en punto de venta y tickets.
 
-#### Tabla / Entidad: `quotes`
-| Campo | Tipo PostgreSQL | Restricción | Nullable | Descripción |
-| :--- | :--- | :--- | :---: | :--- |
-| `id` | `UUID` | PK, `gen_random_uuid()` | No | Identificador de la cotización |
-| `fecha` | `TIMESTAMPTZ` | Default `NOW()` | No | Fecha de expedición |
-| `fechaCaducidad` | `TIMESTAMPTZ` | - | No | Límite temporal de vigencia del precio |
-| `clienteNombre` | `VARCHAR(150)` | - | No | Nombre del cliente presupuestado |
-| `clienteId` | `UUID` | FK -> `clients(id)` | Sí | Cliente registrado |
-| `total` | `NUMERIC(12, 2)`| - | No | Importe total presupuestado |
-| `status` | `VARCHAR(30)` | Default `'PENDING'` | No | `'PENDING'`, `'EXPIRED'`, `'CONVERTED_TO_SALE'` |
-| `createdAt` | `TIMESTAMPTZ` | Default `NOW()` | No | Creación |
-| `updatedAt` | `TIMESTAMPTZ` | Default `NOW()` | No | Modificación |
+#### Mapeo de Campos Públicos
+| Campo Público (API) | Campo Interno (Prisma) | Tipo | Descripción |
+| :--- | :--- | :--- | :--- |
+| `id` | `id` | `string (UUID)` | Identificador único de la talla |
+| `nombre` | `name` | `string` | Nombre único (ej. "CH", "M", "G", "28", "30") |
+| `orden` | `sortOrder` | `number` | Orden numérico ascendente de visualización |
+| `activo` | `isActive` | `boolean` | Visibilidad de la talla |
+| `fechaCreacion` | `createdAt` | `string (ISO)` | Fecha de registro |
+| `fechaActualizacion` | `updatedAt` | `string (ISO)` | Fecha de actualización |
 
-#### Tabla / Entidad: `quote_items`
-| Campo | Tipo PostgreSQL | Restricción | Nullable | Descripción |
-| :--- | :--- | :--- | :---: | :--- |
-| `id` | `UUID` | PK, `gen_random_uuid()` | No | Identificador del ítem cotizado |
-| `quoteId` | `UUID` | FK -> `quotes(id)` ON DELETE CASCADE | No | Relación con la cotización |
-| `productId` | `UUID` | FK -> `products(id)` | No | Producto de referencia |
-| `articulo` | `VARCHAR(255)` | - | No | Nombre del artículo |
-| `cantidad` | `INTEGER` | `CHECK (cantidad > 0)` | No | Cantidad de piezas presupuestadas |
-| `precioVenta` | `NUMERIC(12, 2)`| - | No | Precio cotizado |
-| `talla` | `VARCHAR(50)` | - | Sí | Talla especificada |
-
-#### Endpoints del Servicio:
-* `GET /api/checkout/quotes`
-* `POST /api/checkout/quotes`
-  - **Body:** `{ "fecha": string, "fechaCaducidad": string, "clienteNombre": string, "total": number, "productos": [ { "productId": string, "articulo": string, "cantidad": int, "precioVenta": number, "talla"?: string } ] }`
-* `DELETE /api/checkout/quotes/:id`
-* `POST /api/checkout/quotes/:id/convert-to-sale`
-  - Transforma automáticamente la cotización en una venta formal deduciendo el inventario actual.
+#### Endpoints
+1. **`GET /api/catalogo/tallas`** -> Query: `incluirInactivos=true|false`. Retorna arreglo ordenado por `orden ASC`.
+2. **`POST /api/catalogo/tallas`** (`ADMIN`) -> Body: `{ "nombre": "CH", "orden": 1, "activo": true }`.
+3. **`GET /api/catalogo/tallas/:id`** -> Retorna el registro.
+4. **`PATCH /api/catalogo/tallas/:id`** (`ADMIN`) -> Modificación de nombre o posición.
+5. **`DELETE /api/catalogo/tallas/:id`** (`ADMIN`) -> Retorna 204. Falla con 409 si está asociada a productos, cotizaciones o ventas.
 
 ---
 
-### MÓDULO 10: Gastos y Egresos Operativos (Expenses Service)
-- **Base Endpoint:** `/api/finance/expenses`
-- **Propósito:** Registro y control de salidas de efectivo por gastos de operación, compras menores, viáticos o pagos a proveedores en mostrador.
+### MÓDULO 6: Productos e Importación (`/api/productos`)
+- **Base Endpoints:** `/api/productos`, `/api/productos/importacion`
+- **Controladores:** [`ProductsController`](file:///Users/mike/Documents/kamadeva-system-backend/src/catalog/products/products.controller.ts), [`ProductImportController`](file:///Users/mike/Documents/kamadeva-system-backend/src/catalog/products/import/product-import.controller.ts)
+- **Propósito:** Administración de productos, fotos en Cloudinary, inventario inicial e ingesta masiva desde hojas Excel `.xlsx`.
 
-#### Tabla / Entidad: `expenses`
-| Campo | Tipo PostgreSQL | Restricción | Nullable | Descripción |
-| :--- | :--- | :--- | :---: | :--- |
-| `id` | `UUID` | PK, `gen_random_uuid()` | No | Identificador del gasto |
-| `fecha` | `TIMESTAMPTZ` | Default `NOW()` | No | Fecha y hora del egreso |
-| `concepto` | `VARCHAR(255)` | - | No | Motivo de la erogación (ej. "Artículos de limpieza") |
-| `monto` | `NUMERIC(12, 2)`| `CHECK (monto > 0)` | No | Importe extraído |
-| `descontarDeCaja`| `BOOLEAN` | Default `false` | No | Si es `true`, impacta negativamente el dinero físico esperado en el turno |
-| `categoria` | `VARCHAR(100)` | - | No | Categoría del gasto (ej. "Servicios", "Insumos", "Otros") |
-| `vendedorId` | `UUID` | FK -> `users(id)` | No | Usuario que autoriza o registra el gasto |
-| `vendedorNombre` | `VARCHAR(150)` | - | No | Nombre del usuario |
-| `cashClosureId` | `UUID` | FK -> `cash_closures(id)` | Sí | Corte de caja al que quedó asignado este gasto |
-| `createdAt` | `TIMESTAMPTZ` | Default `NOW()` | No | Creación |
-| `updatedAt` | `TIMESTAMPTZ` | Default `NOW()` | No | Modificación |
+#### Mapeo de Campos Públicos
+| Campo Público (API) | Campo Interno (Prisma) | Tipo | Descripción |
+| :--- | :--- | :--- | :--- |
+| `id` | `id` | `string (UUID)` | Identificador único del producto |
+| `articulo` | `name` | `string` | Nombre descriptivo del producto comercial |
+| `descripcion` | `description` | `string \| null` | Especificaciones de la prenda o artículo |
+| `codigoBarras` | `barcode` | `string` | Código de barras único legible por escáner |
+| `marca` | `brand` | `string \| null` | Marca comercial |
+| `tallas` | `sizes` | `SizeRefDto[]` | Tallas asignadas ordenadas por `orden` |
+| `precioCompra` | `cost` | `string \| number` | Costo unitario de compra (decimal con 2 posiciones) |
+| `precioVenta` | `price` | `string \| number` | Precio de venta al público en mostrador |
+| `existencias` | `stock` | `string \| number` | Existencia física derivada de movimientos Kardex |
+| `existenciaMinima` | `minStock` | `string \| number \| null` | Umbral para alerta de bajo stock en el tablero |
+| `urlImagen` | `imageUrl` | `string \| null` | URL pública de la fotografía en Cloudinary |
+| `activo` | `isActive` | `boolean` | Estado de habilitación comercial |
+| `categoria` | `category` | `object \| null` | Objeto de categoría `{ id, nombre, slug }` |
+| `categoriaId` | `categoryId` | `string (UUID)` | ID de la categoría a la que pertenece |
+| `tallaIds` | `sizeIds` | `string[]` | Arreglo de UUIDs de tallas asignadas |
+| `productosBajoMinimo`| `lowStock` | `boolean` | Filtro de consulta para existencias `<= existenciaMinima` |
 
-#### Endpoints del Servicio:
-* `GET /api/finance/expenses` (Histórico con filtros de fecha)
-* `GET /api/finance/expenses/current-shift`
-  - Retorna exclusivamente los gastos generados en el turno de caja abierto actual (`cashClosureId IS NULL`).
-* `POST /api/finance/expenses`
-  - **Body:** `{ "fecha": string, "concepto": string, "monto": number, "descontarDeCaja": boolean, "categoria": string, "vendedorId": string, "vendedorNombre": string }`
-* `DELETE /api/finance/expenses/:id`
-
----
-
-### MÓDULO 11: Arqueo y Cortes de Caja (Cash Closure Service)
-- **Base Endpoint:** `/api/finance/cash-closures`
-- **Propósito:** Conciliación matemática al terminar cada turno laboral o jornada comercial. Permite auditar diferencias (sobrantes/faltantes) mediante desglose físico de denominaciones de moneda nacional.
-
-#### Invariante Matemática del Corte:
-$$\text{Esperado en Caja} = \text{Caja Inicial} + \text{Ventas en Efectivo} - \text{Gastos Descontados de Caja}$$
-$$\text{Diferencia} = \text{Total Calculado (Físico)} - \text{Esperado en Caja}$$
-
-#### Tabla / Entidad: `cash_closures`
-| Campo | Tipo PostgreSQL | Restricción | Nullable | Descripción |
-| :--- | :--- | :--- | :---: | :--- |
-| `id` | `UUID` | PK, `gen_random_uuid()` | No | Identificador del corte |
-| `fecha` | `TIMESTAMPTZ` | Default `NOW()` | No | Fecha y hora en que se liquidó la caja |
-| `vendedorId` | `UUID` | FK -> `users(id)` | No | Responsable del turno |
-| `vendedorNombre` | `VARCHAR(150)` | - | No | Nombre del cajero/vendedor |
-| `cajaInicial` | `NUMERIC(12, 2)`| `CHECK (cajaInicial >= 0)` | No | Fondo base con el que inició el turno |
-| `denominations` | `JSONB` | - | No | Desglose por billete y moneda (ver estructura abajo) |
-| `totalCalculado`| `NUMERIC(12, 2)`| - | No | Total del dinero contado físicamente |
-| `totalVentasEfectivo` | `NUMERIC(12, 2)`| - | No | Ventas realizadas en efectivo en el lapso del turno |
-| `totalGastosDescontados`| `NUMERIC(12, 2)`| - | No | Gastos con `descontarDeCaja = true` en el lapso |
-| `esperadoEnCaja` | `NUMERIC(12, 2)`| - | No | Saldo teórico que debió existir |
-| `diferencia` | `NUMERIC(12, 2)`| - | No | `totalCalculado - esperadoEnCaja` |
-| `observaciones`| `TEXT` | - | Sí | Notas del cajero ante descuadres |
-| `status` | `VARCHAR(20)` | Default `'CLOSED'` | No | Estado del corte (`'CLOSED'`, `'AUDITED'`) |
-| `createdAt` | `TIMESTAMPTZ` | Default `NOW()` | No | Creación |
-| `updatedAt` | `TIMESTAMPTZ` | Default `NOW()` | No | Modificación |
-
-#### Estructura del JSONB de Denominaciones:
-```json
-{
-  "1000": 2,    // 2 billetes de $1,000 = $2,000
-  "500": 4,     // 4 billetes de $500   = $2,000
-  "200": 5,     // 5 billetes de $200   = $1,000
-  "100": 10,    // 10 billetes de $100  = $1,000
-  "50": 8,      // 8 billetes de $50    = $400
-  "20": 15,     // 15 billetes de $20   = $300
-  "10": 20,     // 20 monedas de $10    = $200
-  "5": 30,      // 30 monedas de $5     = $150
-  "2": 25,      // 25 monedas de $2     = $50
-  "1": 40,      // 40 monedas de $1     = $40
-  "0.5": 10     // 10 monedas de $0.50  = $5
-}
-```
-
-#### Endpoints del Servicio:
-* `GET /api/finance/cash-closures`
-  - Retorna la lista histórica ordenada descendente por fecha.
-* `GET /api/finance/cash-closures/current-summary`
-  - Calcula en tiempo real las ventas en efectivo del turno activo y los gastos descontados de caja para prellenar la vista del corte.
-* `POST /api/finance/cash-closures`
-  - **Body:**
-    ```json
-    {
-      "fecha": "2026-10-21T01:30:00.000Z",
-      "vendedorId": "seller-001",
-      "vendedorNombre": "Carlos López",
-      "cajaInicial": 1500.00,
-      "denominations": {
-        "1000": 2, "500": 4, "200": 5, "100": 10, "50": 8, "20": 15,
-        "10": 20, "5": 30, "2": 25, "1": 40, "0.5": 10
-      },
-      "totalCalculado": 7145.00,
-      "totalVentasEfectivo": 6000.00,
-      "totalGastosDescontados": 355.00,
-      "esperadoEnCaja": 7145.00,
-      "diferencia": 0.00,
-      "observaciones": "Turno cerrado sin novedades"
-    }
-    ```
-* `GET /api/finance/cash-closures/:id`
+#### Endpoints
+1. **`GET /api/productos`**
+   - **Query Parameters:** `busqueda` (código de barras o nombre), `categoriaId`, `productosBajoMinimo=true`, `incluirInactivos=true`.
+   - **Respuesta (200 OK):**
+     ```json
+     [
+       {
+         "id": "prod-uuid-001",
+         "articulo": "Playera Kamadeva Acid Wash",
+         "descripcion": "Corte oversize 100% algodón",
+         "codigoBarras": "7501234567890",
+         "marca": "Kamadeva",
+         "tallas": [
+           { "id": "size-uuid-001", "nombre": "CH", "orden": 1 },
+           { "id": "size-uuid-002", "nombre": "M", "orden": 2 }
+         ],
+         "precioCompra": "250.00",
+         "precioVenta": "599.00",
+         "existencias": "15.000",
+         "existenciaMinima": "5.000",
+         "urlImagen": "https://res.cloudinary.com/.../img.jpg",
+         "activo": true,
+         "categoria": {
+           "id": "cat-uuid-001",
+           "nombre": "PLAYERAS",
+           "slug": "playeras"
+         },
+         "fechaCreacion": "2026-10-30T10:00:00.000Z",
+         "fechaActualizacion": "2026-10-30T10:00:00.000Z"
+       }
+     ]
+     ```
+2. **`POST /api/productos`** (`ADMIN`)
+   - **Request Body:**
+     ```json
+     {
+       "codigoBarras": "7501234567890",
+       "articulo": "Playera Kamadeva Acid Wash",
+       "descripcion": "Corte oversize 100% algodón",
+       "marca": "Kamadeva",
+       "precioVenta": 599.00,
+       "precioCompra": 250.00,
+       "existencias": 15,
+       "existenciaMinima": 5,
+       "categoriaId": "cat-uuid-001",
+       "tallaIds": ["size-uuid-001", "size-uuid-002"]
+     }
+     ```
+   - **Lógica:** Si se provee `existencias > 0`, crea automáticamente dentro de la misma transacción un movimiento `ADJUSTMENT_IN` en el Kardex.
+3. **`GET /api/productos/:id`** -> Retorna el producto con su balance actual.
+4. **`PATCH /api/productos/:id`** (`ADMIN`) -> Actualiza atributos. Si `existencias` difiere del stock actual, genera un movimiento de ajuste compensatorio (`ADJUSTMENT_IN` o `ADJUSTMENT_OUT`).
+5. **`DELETE /api/productos/:id`** (`ADMIN`) -> Retorna 204. Falla con 409 si tiene ventas, cotizaciones o compras asociadas.
+6. **`POST /api/productos/:id/image`** (`ADMIN`)
+   - **Content-Type:** `multipart/form-data` con campo `file` (JPEG, PNG o WebP hasta 5 MB). Sube a Cloudinary y asocia `urlImagen`.
+7. **`POST /api/productos/importacion`** (`ADMIN`)
+   - **Content-Type:** `multipart/form-data` con campo `file` (Excel `.xlsx` hasta 5 MB), `vistaPrevia` (`'true'|'false'`), `mapaCategorias` (JSON opcional).
+   - **Respuesta (200 OK):** Reporte de filas procesadas `{ totalRenglones, categoriasCreadas, productos, sinCategoria }`.
 
 ---
 
-### MÓDULO 12: Métricas, KPIs y Analítica (Dashboard & Analytics Service)
-- **Base Endpoint:** `/api/analytics`
-- **Propósito:** Agrupación y cómputo de métricas comerciales para alimentar la pantalla principal de monitoreo en tiempo real (`DashboardPage`).
+### MÓDULO 7: Inventario y Auditoría Kardex (`/api/inventario/movimientos` y `/api/productos/:id/movimientos`)
+- **Base Endpoints:** `/api/inventario/movimientos`, `/api/productos/:id/movimientos`
+- **Controladores:** [`InventoryController`](file:///Users/mike/Documents/kamadeva-system-backend/src/catalog/inventory/inventory.controller.ts), [`ProductsController`](file:///Users/mike/Documents/kamadeva-system-backend/src/catalog/products/products.controller.ts)
+- **Propósito:** Trazabilidad completa de auditoría física (entradas por compra, salidas por venta, devoluciones y mermas/ajustes).
 
-#### Endpoints del Servicio:
-* `GET /api/analytics/dashboard/summary`
-  - **Respuesta (200):**
-    ```json
-    {
-      "ventasHoy": {
-        "montoTotal": 14250.00,
-        "ticketsCount": 38,
-        "efectivoTotal": 9800.00,
-        "tarjetaTotal": 4450.00
-      },
-      "inventario": {
-        "totalProductos": 342,
-        "productosStockBajo": 6
-      },
-      "gastosHoy": {
-        "total": 650.00,
-        "descontadosDeCaja": 350.00
-      },
-      "utilidadEstimadaHoy": 5280.00
-    }
-    ```
-* `GET /api/analytics/dashboard/top-products`
-  - Lista los 5 o 10 productos con mayor volumen de unidades vendidas y mayor recaudación en el mes actual.
-* `GET /api/analytics/dashboard/sales-history-chart`
-  - Agrupación por días de la semana actual para despliegue de gráficas de barras/líneas.
+#### Mapeo de Campos Públicos
+| Campo Público (API) | Campo Interno (Prisma) | Tipo | Descripción |
+| :--- | :--- | :--- | :--- |
+| `id` | `id` | `string (UUID)` | Identificador del movimiento de inventario |
+| `tipo` | `type` | `InventoryMovementType` | `'PURCHASE_IN'`, `'SALE_OUT'`, `'RETURN_IN'`, `'ADJUSTMENT_IN'`, `'ADJUSTMENT_OUT'` |
+| `cambioExistencias` | `quantityChange` | `string (Decimal)` | Magnitud con signo (ej. `"+10.000"`, `"-2.000"`) |
+| `costoUnitario` | `unitCost` | `string (Decimal) \| null` | Costo de adquisición unitario del movimiento |
+| `tipoReferencia` | `referenceType` | `string \| null` | Tipo de entidad causante (`'SaleItem'`, `'PurchaseItem'`, etc.) |
+| `referenciaId` | `referenceId` | `string \| null` | UUID del registro de origen |
+| `notas` | `notes` | `string \| null` | Justificación del ajuste o auditoría |
+| `fechaCreacion` | `createdAt` | `string (ISO)` | Momento exacto del impacto físico |
+
+#### Endpoints
+1. **`GET /api/inventario/movimientos`**
+   - **Query Parameters:** `productoId`, `tipo`, `fechaInicio`, `fechaFin`. Retorna lista histórica auditada.
+2. **`GET /api/productos/:id/movimientos`** -> Historial cronológico exclusivo del producto indicado.
+3. **`POST /api/productos/:productoId/movimientos`** (`ADMIN`)
+   - **Request Body:**
+     ```json
+     {
+       "tipo": "ADJUSTMENT_IN",
+       "cantidad": 5,
+       "costoUnitario": 250.00,
+       "notas": "Ajuste por conteo físico en tienda"
+     }
+     ```
+   - **Tipos Permitidos en Creación Manual:** `PURCHASE_IN`, `RETURN_IN`, `ADJUSTMENT_IN`, `ADJUSTMENT_OUT`.
+
+---
+
+### MÓDULO 8: Directorio de Clientes (`/api/clientes`)
+- **Base Endpoint:** `/api/clientes`
+- **Controlador:** [`CustomersController`](file:///Users/mike/Documents/kamadeva-system-backend/src/customers/customers.controller.ts)
+- **Propósito:** Gestión de cartera de clientes para facturación y cotizaciones.
+
+#### Mapeo de Campos Públicos
+| Campo Público (API) | Campo Interno (Prisma) | Tipo | Descripción |
+| :--- | :--- | :--- | :--- |
+| `id` | `id` | `string (UUID)` | Identificador único del cliente |
+| `nombre` | `name` | `string` | Nombre o Razón Social del cliente |
+| `telefono` | `phone` | `string \| null` | Teléfono móvil o fijo |
+| `correo` | `email` | `string \| null` | Correo electrónico de facturación |
+| `activo` | `isActive` | `boolean` | Estado de cliente activo |
+| `esPredeterminado` | `isDefault` | `boolean` | Identifica al cliente predeterminado "Público General" |
+| `fechaCreacion` | `createdAt` | `string (ISO)` | Fecha de alta |
+| `fechaActualizacion` | `updatedAt` | `string (ISO)` | Última modificación |
+
+#### Endpoints
+1. **`GET /api/clientes`** -> Query: `busqueda`, `incluirInactivos`. Retorna lista de clientes.
+2. **`POST /api/clientes`** (`ADMIN`) -> Body: `{ "nombre": "Ana Pérez", "telefono": "5512345678", "correo": "ana@ejemplo.com", "activo": true }`.
+3. **`GET /api/clientes/:id`** -> Retorna el detalle del cliente.
+4. **`PATCH /api/clientes/:id`** (`ADMIN`) -> Modificación de datos de contacto.
+5. **`DELETE /api/clientes/:id`** (`ADMIN`) -> Retorna 204. Falla con 409 si es el cliente por defecto o posee ventas/cotizaciones vinculadas.
+
+---
+
+### MÓDULO 9: Directorio de Proveedores (`/api/proveedores`)
+- **Base Endpoint:** `/api/proveedores`
+- **Controlador:** [`ProvidersController`](file:///Users/mike/Documents/kamadeva-system-backend/src/providers/providers.controller.ts)
+- **Propósito:** Gestión de empresas proveedoras y fabricantes.
+
+#### Mapeo de Campos Públicos
+| Campo Público (API) | Campo Interno (Prisma) | Tipo | Descripción |
+| :--- | :--- | :--- | :--- |
+| `id` | `id` | `string (UUID)` | Identificador único del proveedor |
+| `nombre` | `name` | `string` | Razón social única |
+| `telefono` | `phone` | `string \| null` | Teléfono de contacto comercial |
+| `correo` | `email` | `string \| null` | Correo de pedidos |
+| `nombreContacto` | `contactName` | `string \| null` | Nombre del agente o ejecutivo comercial |
+| `direccion` | `address` | `string \| null` | Domicilio fiscal o bodega de despacho |
+| `activo` | `isActive` | `boolean` | Estado de habilitación comercial |
+| `fechaCreacion` | `createdAt` | `string (ISO)` | Fecha de registro |
+| `fechaActualizacion` | `updatedAt` | `string (ISO)` | Fecha de actualización |
+
+#### Endpoints
+1. **`GET /api/proveedores`** -> Query: `busqueda`, `incluirInactivos`.
+2. **`POST /api/proveedores`** (`ADMIN`) -> Body: `{ "nombre": string, "telefono"?: string, "correo"?: string, "nombreContacto"?: string, "direccion"?: string, "activo"?: boolean }`.
+3. **`GET /api/proveedores/:id`** -> Retorna el proveedor.
+4. **`PATCH /api/proveedores/:id`** (`ADMIN`) -> Modificación de datos.
+5. **`DELETE /api/proveedores/:id`** (`ADMIN`) -> Retorna 204.
+
+---
+
+### MÓDULO 10: Compras Recibidas (`/api/compras`)
+- **Base Endpoint:** `/api/compras`
+- **Controlador:** [`PurchasesController`](file:///Users/mike/Documents/kamadeva-system-backend/src/purchases/purchases.controller.ts)
+- **Propósito:** Registro de compras de mercancía ya recibidas con alta inmediata y atómica de movimientos `PURCHASE_IN`.
+
+#### Mapeo de Campos Públicos
+| Campo Público (API) | Campo Interno (Prisma) | Tipo | Descripción |
+| :--- | :--- | :--- | :--- |
+| `id` | `id` | `string (UUID)` | Identificador único de compra |
+| `proveedorId` | `providerId` | `string (UUID)` | Proveedor que surtió la mercancía |
+| `fechaRecepcion` | `receivedAt` | `string (ISO)` | Fecha y hora en que entró la mercancía |
+| `folioProveedor` | `supplierFolio` | `string \| null` | Folio de factura o remisión del proveedor |
+| `notas` | `notes` | `string \| null` | Observaciones de la recepción |
+| `total` | `total` | `string (Decimal)` | Importe monetario total de la compra |
+| `productos` | `items` | `PurchaseItemDto[]` | Desglose de renglones comprados |
+| `creadoPorId` | `createdById` | `string (UUID)` | Usuario que capturó la compra |
+| `fechaCreacion` | `createdAt` | `string (ISO)` | Fecha de creación del registro |
+
+#### Endpoints
+1. **`POST /api/compras`** (`ADMIN`)
+   - **Request Body:**
+     ```json
+     {
+       "proveedorId": "prov-uuid-001",
+       "fechaRecepcion": "2026-10-30T11:00:00.000Z",
+       "folioProveedor": "FAC-2026-981",
+       "notas": "Recepción de pedido semanal",
+       "productos": [
+         {
+           "productoId": "prod-uuid-001",
+           "cantidad": 20
+         }
+       ]
+     }
+     ```
+   - **Lógica Transaccional:** Lee costos vigentes -> Calcula subtotales -> Crea registro `Purchase` -> Crea renglones `PurchaseItem` -> Crea movimientos `InventoryMovement` (`PURCHASE_IN`) -> Commit.
+2. **`GET /api/compras`** -> Query: `pagina`, `limite`, `proveedorId`, `fechaInicio`, `fechaFin`. Retorna `{ "datos": [...], "pagina": 1, "limite": 20, "total": 1 }`.
+3. **`GET /api/compras/:id`** -> Retorna el detalle completo de la compra y sus productos.
+
+---
+
+### MÓDULO 11: Pedidos a Proveedores (`/api/pedidos-proveedores`)
+- **Base Endpoint:** `/api/pedidos-proveedores`
+- **Controlador:** [`SupplierOrdersController`](file:///Users/mike/Documents/kamadeva-system-backend/src/supplier-orders/supplier-orders.controller.ts)
+- **Propósito:** Órdenes de compra anticipadas con seguimiento de estado (`ORDERED`, `PARTIALLY_RECEIVED`, `RECEIVED`, `CANCELLED`) y soporte de entregas parciales.
+
+#### Endpoints
+1. **`POST /api/pedidos-proveedores`** (`ADMIN`)
+   - **Body:** `{ "proveedorId": string, "fechaEsperada"?: string, "folioProveedor"?: string, "notas"?: string, "productos": [{ "productoId": string, "cantidad": number }] }`
+2. **`GET /api/pedidos-proveedores`** -> Query: `pagina`, `limite`, `proveedorId`, `estado`, `fechaInicio`, `fechaFin`.
+3. **`GET /api/pedidos-proveedores/:id`** -> Consulta de balance por renglón (`cantidad` vs `cantidadRecibida`).
+4. **`POST /api/pedidos-proveedores/:id/recepciones`** (`ADMIN`)
+   - **Request Body:**
+     ```json
+     {
+       "fechaRecepcion": "2026-10-30T15:00:00.000Z",
+       "folioProveedor": "REM-4451",
+       "notas": "Primera entrega parcial",
+       "productos": [
+         {
+           "pedidoProductoId": "order-item-uuid-001",
+           "cantidad": 10
+         }
+       ]
+     }
+     ```
+   - **Lógica:** Genera una compra (`Purchase`) con movimientos Kardex `PURCHASE_IN`, actualiza la cantidad recibida y cambia el estado del pedido a `PARTIALLY_RECEIVED` o `RECEIVED`.
+5. **`POST /api/pedidos-proveedores/:id/cancelar`** (`ADMIN`) -> Anula el pedido (solo si no tiene entregas registradas).
+
+---
+
+### MÓDULO 12: Punto de Venta y Transacciones (`/api/ventas`)
+- **Base Endpoint:** `/api/ventas`
+- **Controlador:** [`SalesController`](file:///Users/mike/Documents/kamadeva-system-backend/src/sales/sales.controller.ts)
+- **Propósito:** Cobro transaccional con folio secuencial (`FolioCounter`), descuentos, impuestos, validación estricta de stock (`SELECT FOR UPDATE`), cancelaciones y devoluciones parciales.
+
+#### Mapeo de Campos Públicos
+| Campo Público (API) | Campo Interno (Prisma) | Tipo | Descripción |
+| :--- | :--- | :--- | :--- |
+| `id` | `id` | `string (UUID)` | Identificador único de la venta |
+| `folio` | `folio` | `string` | Folio consecutivo generado (ej. "V-001045") |
+| `estado` | `status` | `SaleStatus` | `'PENDING'`, `'COMPLETED'`, `'CANCELLED'`, `'REFUNDED'` |
+| `subtotal` | `subtotal` | `string (Decimal)` | Sumatoria bruta de renglones |
+| `descuento` | `discount` | `string (Decimal)` | Descuento total aplicado |
+| `impuesto` | `tax` | `string (Decimal)` | Impuesto total calculado |
+| `total` | `total` | `string (Decimal)` | Importe total neto cobrado |
+| `clienteId` | `customerId` | `string (UUID) \| null` | Cliente asociado (por defecto "Público General") |
+| `cliente` | `customer` | `object \| null` | Snapshot del cliente `{ id, nombre }` |
+| `notas` | `notes` | `string \| null` | Comentarios del ticket |
+| `productos` | `items` | `SaleItemDto[]` | Artículos vendidos en la transacción |
+| `productoId` | `productId` | `string (UUID)` | ID del producto vendido |
+| `tallaId` | `sizeId` | `string (UUID) \| null` | ID de la talla seleccionada (obligatoria si el producto tiene tallas) |
+| `renglonId` | `saleItemId` | `string (UUID)` | ID del renglón de venta (utilizado en devoluciones) |
+| `cantidad` | `quantity` | `number \| string` | Piezas vendidas (> 0) |
+| `precioUnitario` | `unitPrice` | `string (Decimal)` | Precio unitario al momento del cobro |
+| `pago` | `payment` | `object` | Detalle del pago presentado en checkout |
+| `pagos` | `payments` | `PaymentDto[]` | Historial de pagos y reembolsos asociados a la venta |
+| `metodo` | `method` | `PaymentMethod` | `'CASH'`, `'CARD'`, `'TRANSFER'`, `'OTHER'` |
+| `monto` | `amount` | `number \| string` | Importe exacto cobrado o reembolsado |
+| `fechaPago` | `paidAt` | `string (ISO)` | Momento en que se liquidó el cobro |
+| `motivo` | `reason` / `cancelReason` | `string` | Justificación de cancelación o devolución |
+| `fechaCancelacion` | `cancelledAt` | `string (ISO) \| null` | Fecha de cancelación si aplica |
+| `canceladoPor` | `cancelledBy` | `object \| null` | Usuario que ejecutó la cancelación |
+
+#### Endpoints
+1. **`POST /api/ventas`** (Checkout Principal)
+   - **Cabecera Obligatoria:** `Idempotency-Key: <UUID-v4>`
+   - **Request Body:**
+     ```json
+     {
+       "clienteId": "cust-uuid-001",
+       "notas": "Venta en mostrador",
+       "productos": [
+         {
+           "productoId": "prod-uuid-001",
+           "tallaId": "size-uuid-002",
+           "cantidad": 2,
+           "descuento": 0,
+           "impuesto": 0
+         }
+       ],
+       "pago": {
+         "metodo": "CASH",
+         "monto": 1198.00
+       }
+     }
+     ```
+   - **Lógica Transaccional:**
+     1. Valida cabecera `Idempotency-Key`. Si la llave ya se procesó con el mismo cuerpo, responde con la venta original y añade `Idempotent-Replayed: true`.
+     2. Inicia transacción PostgreSQL serializable.
+     3. Bloquea filas de productos (`SELECT FOR UPDATE`) y corrobora existencias físicas suficientes.
+     4. Registra movimientos Kardex `SALE_OUT` por cada producto.
+     5. Congela el costo unitario (`unitCost`) en `SaleItem` para cómputo de utilidad histórica.
+     6. Incrementa el contador atómico de folios `FolioCounter`.
+     7. Registra la venta (`Sale`) y el pago (`Payment`) con estado `COMPLETED` / `PAID`.
+   - **Respuesta (201 Created):**
+     ```json
+     {
+       "id": "sale-uuid-001",
+       "folio": "V-001045",
+       "estado": "COMPLETED",
+       "subtotal": "1198.00",
+       "descuento": "0.00",
+       "impuesto": "0.00",
+       "total": "1198.00",
+       "cliente": { "id": "cust-uuid-001", "nombre": "Ana Pérez" },
+       "productos": [
+         {
+           "id": "item-uuid-001",
+           "producto": {
+             "id": "prod-uuid-001",
+             "articulo": "Playera Kamadeva Acid Wash",
+             "codigoBarras": "7501234567890"
+           },
+           "talla": { "id": "size-uuid-002", "nombre": "M" },
+           "cantidad": "2.000",
+           "precioUnitario": "599.00",
+           "total": "1198.00"
+         }
+       ],
+       "pagos": [
+         {
+           "id": "pay-uuid-001",
+           "metodo": "CASH",
+           "monto": "1198.00",
+           "estado": "PAID",
+           "fechaPago": "2026-10-30T12:00:00.000Z"
+         }
+       ],
+       "fechaCreacion": "2026-10-30T12:00:00.000Z"
+     }
+     ```
+
+2. **`GET /api/ventas`**
+   - **Query Parameters:** `pagina`, `limite`, `fechaInicio`, `fechaFin`, `estado`, `clienteId`, `usuarioId`. Retorna página `{ datos, pagina, limite, total }`.
+
+3. **`GET /api/ventas/:id`** -> Detalle completo de la venta para reimpresión de tickets.
+
+4. **`POST /api/ventas/:id/cancelar`**
+   - **Request Body:** `{ "motivo": "Devolución total por insatisfacción" }`
+   - **Lógica:** Cambia estado de la venta a `CANCELLED`, devuelve las existencias vendidas con `RETURN_IN` en el Kardex y marca el pago como reembolsado (`REFUNDED`).
+
+5. **`POST /api/ventas/:id/devolucion`**
+   - **Request Body:**
+     ```json
+     {
+       "motivo": "Defecto en costura",
+       "productos": [
+         {
+           "renglonId": "item-uuid-001",
+           "cantidad": 1,
+           "motivo": "Defecto en costura"
+         }
+       ]
+     }
+     ```
+   - **Lógica:** Reintegra al stock únicamente las piezas devueltas (`RETURN_IN`), genera un registro de pago reembolsado y actualiza el estado de la venta a `REFUNDED` (si fue total) o conserva `COMPLETED` con desglose.
+
+---
+
+### MÓDULO 13: Cotizaciones y Presupuestos (`/api/cotizaciones`)
+- **Base Endpoint:** `/api/cotizaciones`
+- **Controlador:** [`QuotesController`](file:///Users/mike/Documents/kamadeva-system-backend/src/quotes/quotes.controller.ts)
+- **Propósito:** Presupuestos a clientes sin descuento de existencias hasta su conversión y cobro formal.
+
+#### Mapeo de Campos Públicos
+| Campo Público (API) | Campo Interno (Prisma) | Tipo | Descripción |
+| :--- | :--- | :--- | :--- |
+| `id` | `id` | `string (UUID)` | Identificador único de cotización |
+| `folio` | `folio` | `string` | Folio consecutivo (ej. "COT-000102") |
+| `estado` | `status` | `QuoteStatus` | `'DRAFT'`, `'SENT'`, `'ACCEPTED'`, `'REJECTED'`, `'EXPIRED'`, `'CONVERTED'`, `'CANCELLED'` |
+| `clienteId` | `customerId` | `string (UUID)` | Cliente presupuestado |
+| `fechaVencimiento` | `expiresAt` | `string (ISO) \| null` | Fecha límite de validez de precios |
+| `total` | `total` | `string (Decimal)` | Total presupuestado |
+| `cotizacionId` | `quoteId` | `string (UUID) \| null` | Enlace a la venta originada tras la conversión |
+
+#### Endpoints
+1. **`POST /api/cotizaciones`**
+   - **Request Body:**
+     ```json
+     {
+       "clienteId": "cust-uuid-001",
+       "fechaVencimiento": "2026-11-15T23:59:59.000Z",
+       "notas": "Precios especiales por volumen",
+       "productos": [
+         {
+           "productoId": "prod-uuid-001",
+           "tallaId": "size-uuid-002",
+           "cantidad": 10,
+           "descuento": 100.00
+         }
+       ]
+     }
+     ```
+2. **`GET /api/cotizaciones`** -> Query: `clienteId`, `estado`, `fechaInicio`, `fechaFin`.
+3. **`GET /api/cotizaciones/:id`** -> Consulta de cotización.
+4. **`PATCH /api/cotizaciones/:id`** -> Modificación de artículos o condiciones.
+5. **`POST /api/cotizaciones/:id/enviar`** -> Marca estado como `SENT`.
+6. **`POST /api/cotizaciones/:id/pagar`** (Conversión a Venta)
+   - **Request Body:** `{ "metodo": "CASH", "monto": 5890.00 }`
+   - **Lógica:** Valida vigencia y stock actual -> Descuenta existencias -> Genera venta con folio consecutivo -> Marca cotización como `CONVERTED` -> Retorna la venta (`SaleDetailDto`).
+7. **`DELETE /api/cotizaciones/:id`** -> Cancelación o eliminación lógica.
+
+---
+
+### MÓDULO 14: Gastos y Categorías de Gastos (`/api/gastos` y `/api/categorias-gastos`)
+- **Base Endpoints:** `/api/gastos`, `/api/categorias-gastos`
+- **Controladores:** [`ExpensesController`](file:///Users/mike/Documents/kamadeva-system-backend/src/expenses/expenses.controller.ts), [`ExpenseCategoriesController`](file:///Users/mike/Documents/kamadeva-system-backend/src/expenses/expense-categories.controller.ts)
+- **Propósito:** Registro y clasificación de egresos de caja física u operativa.
+
+#### Mapeo de Campos Públicos
+| Campo Público (API) | Campo Interno (Prisma) | Tipo | Descripción |
+| :--- | :--- | :--- | :--- |
+| `id` | `id` | `string (UUID)` | Identificador único del gasto |
+| `concepto` | `concept` | `string` | Motivo de la erogación |
+| `monto` | `amount` | `number \| string` | Importe gastado (> 0) |
+| `categoriaId` | `categoryId` | `string (UUID)` | Categoría del gasto |
+| `descontarDeCaja` | `deductFromCash` | `boolean` | Si es `true`, reduce el efectivo esperado en el turno |
+| `fechaGasto` | `spentAt` | `string (ISO)` | Momento en que ocurrió el egreso |
+| `corteCajaId` | `cashClosureId` | `string (UUID) \| null` | ID del corte de caja que absorbió este gasto |
+| `cortePendiente` | `pendingClosure` | `boolean` | Filtro de consulta: `true` filtra gastos no liquidados (`corteCajaId IS NULL`) |
+| `montoTotal` | `totalAmount` | `string (Decimal)` | Sumatoria de todos los gastos del filtro |
+
+#### Endpoints
+1. **`GET /api/categorias-gastos`** -> Query: `incluirInactivos`. Retorna categorías de egresos.
+2. **`POST /api/categorias-gastos`** (`ADMIN`) -> Body: `{ "nombre": "LIMPIEZA", "activo": true }`.
+3. **`GET /api/categorias-gastos/:id`**
+4. **`PATCH /api/categorias-gastos/:id`**
+5. **`DELETE /api/categorias-gastos/:id`** -> Falla con 409 si tiene gastos asociados.
+6. **`POST /api/gastos`**
+   - **Request Body:**
+     ```json
+     {
+       "concepto": "Artículos de limpieza y bolsas",
+       "monto": 355.50,
+       "categoriaId": "exp-cat-uuid-001",
+       "descontarDeCaja": true,
+       "fechaGasto": "2026-10-30T14:00:00.000Z",
+       "notas": "Compra en tienda local"
+     }
+     ```
+7. **`GET /api/gastos`**
+   - **Query Parameters:** `pagina`, `limite`, `categoriaId`, `cortePendiente=true`, `fechaInicio`, `fechaFin`.
+   - **Respuesta (200 OK):** `{ "datos": [...], "total": 1, "pagina": 1, "limite": 20, "montoTotal": "355.50" }`.
+8. **`GET /api/gastos/:id`** -> Consulta por ID.
+9. **`DELETE /api/gastos/:id`** -> Retorna 204. Falla con 409 si ya fue liquidado en un corte de caja (`corteCajaId != null`).
+
+---
+
+### MÓDULO 15: Arqueo y Cortes de Caja en Cadena (`/api/cortes-caja`)
+- **Base Endpoint:** `/api/cortes-caja`
+- **Controlador:** [`CashClosuresController`](file:///Users/mike/Documents/kamadeva-system-backend/src/cash-closures/cash-closures.controller.ts)
+- **Propósito:** Liquidación inmutable encadenada de turnos comerciales con conteo de denominaciones y ajustes.
+
+#### Invariante Matemática del Arqueo
+$$\text{efectivoEsperado} = \text{fondoInicial} + \text{ventas.efectivo} - \text{reembolsos.efectivo} - \text{gastos.efectivo} + \text{ajustesEntrada} - \text{ajustesSalida}$$
+$$\text{diferencia} = \text{efectivoContado} - \text{efectivoEsperado}$$
+$$\text{efectivoRetirado} = \text{efectivoContado} - \text{fondoDejado}$$
+
+#### Mapeo de Campos Públicos
+| Campo Público (API) | Campo Interno (Prisma) | Tipo | Descripción |
+| :--- | :--- | :--- | :--- |
+| `id` | `id` | `string (UUID)` | Identificador único del corte |
+| `corteAnteriorId` | `previousClosureId` | `string (UUID) \| null` | UUID del corte precedente (garantiza la cadena estricta) |
+| `inicioPeriodo` | `periodStart` | `string (ISO) \| null` | Fecha de cierre del corte anterior |
+| `fechaCierre` | `closedAt` | `string (ISO)` | Momento exacto del cierre de caja |
+| `cerradoPor` | `closedBy` | `object` | Usuario cajero/vendedor que liquida el turno |
+| `fondoInicial` | `openingFloat` | `string (Decimal)` | Saldo base recibido del corte previo |
+| `efectivoEsperado` | `expectedCash` | `string (Decimal)` | Monto teórico que debió existir en caja |
+| `efectivoContado` | `countedCash` | `string (Decimal)` | Sumatoria física de billetes y monedas |
+| `diferencia` | `difference` | `string (Decimal)` | Sobrante (positivo) o faltante (negativo) |
+| `fondoDejado` | `floatLeft` | `number \| string` | Dinero que permanece en caja para el siguiente turno |
+| `efectivoRetirado` | `cashWithdrawn` | `string (Decimal)` | Efectivo físico retirado de la sucursal |
+| `denominaciones` | `denominaciones` | `object` | Conteo de piezas por valor nominal (`1000`, `500`, `200`, `100`, `50`, `20`, `10`, `5`, `2`, `1`, `0.5`) |
+| `ajustes` | `adjustments` | `CashAdjustmentDto[]` | Entradas/salidas extraordinarias no vinculadas a tickets |
+| `ajustesEntrada` | `adjustmentsIn` | `string (Decimal)` | Total de ajustes tipo `INCOME` |
+| `ajustesSalida` | `adjustmentsOut` | `string (Decimal)` | Total de ajustes tipo `WITHDRAWAL` |
+
+#### Endpoints
+1. **`GET /api/cortes-caja/resumen-actual`**
+   - **Propósito:** Calcula en tiempo real las operaciones acumuladas desde el último corte para prellenar la pantalla de arqueo sin persistir datos.
+   - **Respuesta (200 OK):**
+     ```json
+     {
+       "corteAnteriorId": "closure-uuid-prev",
+       "inicioPeriodo": "2026-10-30T08:00:00.000Z",
+       "fechaGeneracion": "2026-10-30T20:00:00.000Z",
+       "fondoInicial": "500.00",
+       "ventas": {
+         "cantidad": 15,
+         "efectivo": "4500.00",
+         "tarjeta": "1200.00",
+         "transferencia": "0.00",
+         "otros": "0.00",
+         "total": "5700.00"
+       },
+       "reembolsos": {
+         "efectivo": "100.00",
+         "total": "100.00"
+       },
+       "gastos": {
+         "cantidad": 2,
+         "efectivo": "355.00",
+         "total": "455.00"
+       },
+       "efectivoEsperado": "4545.00"
+     }
+     ```
+
+2. **`POST /api/cortes-caja`**
+   - **Request Body:**
+     ```json
+     {
+       "corteAnteriorId": "closure-uuid-prev",
+       "denominaciones": {
+         "1000": 1,
+         "500": 4,
+         "200": 5,
+         "100": 10,
+         "50": 8,
+         "20": 5,
+         "10": 4,
+         "5": 1,
+         "0.5": 0
+       },
+       "fondoDejado": 500.00,
+       "ajustes": [
+         {
+           "tipo": "WITHDRAWAL",
+           "monto": 50.00,
+           "descripcion": "Pago extraordinario de flete"
+         }
+       ],
+       "notas": "Turno sellado sin discrepancias"
+     }
+     ```
+   - **Lógica Transaccional:** Verifica concurrencia (`corteAnteriorId` debe coincidir con el último corte) -> Suma piezas por denominación -> Calcula `diferencia` -> Asigna `cashClosureId` a todos los pagos, reembolsos y gastos pendientes del lapso -> Registra corte inmutable.
+   - **Errores:** `409 Conflict` si otro usuario ya registró un corte posterior al consultado.
+
+3. **`GET /api/cortes-caja`** -> Query: `pagina`, `limite`, `fechaInicio`, `fechaFin`.
+4. **`GET /api/cortes-caja/:id`** -> Detalle completo del corte, denominaciones y ajustes.
+
+---
+
+### MÓDULO 16: Tablero y Analítica (`/api/tablero`)
+- **Base Endpoint:** `/api/tablero`
+- **Controlador:** [`DashboardController`](file:///Users/mike/Documents/kamadeva-system-backend/src/dashboard/dashboard.controller.ts)
+- **Propósito:** Métricas comerciales en tiempo real para la pantalla principal (`DashboardPage`), con cálculo contextualizado en la zona horaria del negocio (`America/Mexico_City`).
+
+#### Mapeo de Campos Públicos
+| Campo Público (API) | Campo Interno (Prisma) | Tipo | Descripción |
+| :--- | :--- | :--- | :--- |
+| `ventasHoy` | `salesToday` | `object` | Resumen de ventas del día comercial actual |
+| `ticketPromedio` | `averageTicket` | `string (Decimal)` | Promedio facturado por ticket |
+| `porMetodo` | `byMethod` | `object` | Ventas agrupadas por `CASH`, `CARD`, `TRANSFER`, `OTHER` |
+| `productosActivos` | `activeProducts` | `number` | Total de productos activos en catálogo |
+| `productosBajoMinimo`| `lowStock` | `number` | Productos activos con `existencias <= existenciaMinima` |
+| `gastosHoy` | `expensesToday` | `object` | Gastos del día `{ total, desdeCaja }` |
+| `desdeCaja` | `fromCash` | `string (Decimal)` | Gastos que salieron de la caja física |
+| `utilidadEstimadaHoy`| `estimatedProfitToday` | `object \| null` | Desglose de margen (visible solo para `ADMIN`) |
+| `ventasNetas` | `netSales` | `string (Decimal)` | Ventas brutas menos impuestos |
+| `costoMercancia` | `costOfGoods` | `string (Decimal)` | Costo congelado de los artículos vendidos |
+| `costoIncompleto` | `costIncomplete` | `boolean` | `true` si algún producto vendido carecía de costo registrado |
+| `ordenarPor` | `sortBy` | `'unidades' \| 'ingresos'` | Criterio de ordenación en top de productos |
+| `unidades` | `units` | `string (Decimal)` | Piezas acumuladas vendidas |
+| `ingresos` | `revenue` | `string (Decimal)` | Importe monetario acumulado |
+| `cantidadVentas` | `salesCount` | `number` | Número de transacciones distintas |
+| `periodo` | `period` | `'week' \| 'month'` | Rango de agrupación histórica |
+| `ventasTotales` | `salesTotal` | `string (Decimal)` | Monto de ventas de una fecha |
+| `gastosTotales` | `expensesTotal` | `string (Decimal)` | Monto de gastos de una fecha |
+
+#### Endpoints
+1. **`GET /api/tablero/resumen`**
+   - **Permisos:** `ADMIN` y `VENDEDOR`. (Los vendedores reciben `utilidadEstimadaHoy: null`).
+   - **Respuesta (200 OK):**
+     ```json
+     {
+       "fecha": "2026-10-30",
+       "timezone": "America/Mexico_City",
+       "ventasHoy": {
+         "total": "14250.00",
+         "cantidad": 38,
+         "ticketPromedio": "375.00",
+         "porMetodo": {
+           "CASH": "9800.00",
+           "CARD": "4450.00",
+           "TRANSFER": "0.00",
+           "OTHER": "0.00"
+         }
+       },
+       "inventario": {
+         "productosActivos": 342,
+         "productosBajoMinimo": 6
+       },
+       "gastosHoy": {
+         "total": "650.00",
+         "desdeCaja": "350.00"
+       },
+       "utilidadEstimadaHoy": {
+         "ventasNetas": "12284.48",
+         "costoMercancia": "6354.48",
+         "gastos": "650.00",
+         "utilidad": "5280.00",
+         "costoIncompleto": false
+       }
+     }
+     ```
+2. **`GET /api/tablero/productos-mas-vendidos`**
+   - **Query Parameters:** `fechaInicio` (ISO), `fechaFin` (ISO), `limite` (1 a 50, default 10), `ordenarPor` ('unidades'|'ingresos').
+   - **Respuesta (200 OK):**
+     ```json
+     {
+       "fechaInicio": "2026-10-01T00:00:00.000Z",
+       "fechaFin": "2026-10-30T23:59:59.000Z",
+       "ordenarPor": "unidades",
+       "datos": [
+         {
+           "producto": {
+             "id": "prod-uuid-001",
+             "codigoBarras": "7501234567890",
+             "nombre": "Playera Kamadeva Acid Wash"
+           },
+           "unidades": "48.000",
+           "ingresos": "28752.00",
+           "cantidadVentas": 32
+         }
+       ]
+     }
+     ```
+3. **`GET /api/tablero/historial-ventas`**
+   - **Query Parameters:** `periodo` ('week'|'month', default 'week').
+   - **Respuesta (200 OK):**
+     ```json
+     {
+       "periodo": "week",
+       "timezone": "America/Mexico_City",
+       "dias": [
+         {
+           "fecha": "2026-10-25",
+           "ventasTotales": "3450.00",
+           "cantidadVentas": 11,
+           "gastosTotales": "120.00"
+         }
+       ]
+     }
+     ```
 
 ---
 
 ## 4. Matriz de Códigos de Respuesta HTTP Estandarizados
 
-Todos los microservicios y controladores de la API deben retornar respuestas estandarizadas bajo las siguientes condiciones:
-
 | Código | Significado | Escenario de Uso en Kamadeva System |
 | :---: | :--- | :--- |
-| **`200 OK`** | Éxito en lectura o actualización | Búsqueda de productos, actualización de vendedor, consulta de caja. |
-| **`201 Created`** | Creación exitosa | Venta registrada, producto dado de alta, corte liquidado. |
-| **`400 Bad Request`** | Parámetros o DTO inválidos | Faltan campos obligatorios, cantidad `<= 0`, formato de JSON erróneo. |
-| **`401 Unauthorized`** | No autenticado | Token JWT ausente, expirado o con firma inválida. |
-| **`403 Forbidden`** | Sin autorización | Vendedor intentando cambiar la configuración del negocio o ver vendedores. |
-| **`404 Not Found`** | Recurso inexistente | Producto o venta con ID no localizado. |
-| **`409 Conflict`** | Conflicto de unicidad / Negocio | Código de barras duplicado, clave de idempotencia repetida, stock insuficiente. |
-| **`500 Internal Error`**| Falla no controlada | Error imprevisto en la base de datos o fallo de red interno. |
+| **`200 OK`** | Operación exitosa | Consultas regulares, búsquedas, actualizaciones y cancelaciones. |
+| **`201 Created`** | Recurso creado exitosamente | Alta de producto, cobro de venta, cierre de corte, compra registrada. |
+| **`204 No Content`** | Éxito sin cuerpo | Desconexión (`logout`), eliminación física de entidad sin dependencias. |
+| **`400 Bad Request`** | Parámetros o DTO inválidos | Faltan campos obligatorios, cantidades `< 0`, formatos de fecha o UUID erróneos. |
+| **`401 Unauthorized`** | No autenticado | Token ausente, firma inválida o refresh token vencido/revocado. |
+| **`403 Forbidden`** | Sin autorización | Vendedor intentando cambiar configuración del negocio, ver usuarios o consultar utilidades. |
+| **`404 Not Found`** | Recurso no encontrado | UUID inexistente de producto, venta, cliente, proveedor o categoría. |
+| **`409 Conflict`** | Conflicto de negocio o concurrencia | Código de barras duplicado, corte desfasado (`corteAnteriorId`), stock insuficiente, autoeliminación de usuario admin. |
+| **`500 Internal Error`**| Falla no controlada | Error de conexión de base de datos o excepción no capturada en el servidor. |
 
 ---
 
-## 5. Resumen Consolidado de Dependencias de Servicios para Despliegue
+## 5. Resumen Consolidado de Dependencias Técnicas y Despliegue
 
-Para poner en marcha el backend completo bajo NestJS y PostgreSQL, se requieren los siguientes componentes de infraestructura y paquetes base:
-
-1. **Gestor de Base de Datos:** PostgreSQL 15+ (con soporte nativo para extensiones `uuid-ossp` y tipos de columna `JSONB`).
-2. **Validadores DTO (NestJS):**
-   - `class-validator` (`@IsNotEmpty`, `@IsString`, `@IsNumber`, `@IsPositive`, `@IsUUID`, `@IsArray`, `@IsOptional`)
-   - `class-transformer` (`@Type`, `@Transform`)
-3. **Cifrado y Seguridad:**
-   - `bcrypt` o `@node-rs/argon2` para hashing de contraseñas de usuarios.
-   - `@nestjs/jwt` y `@nestjs/passport` con estrategia `passport-jwt`.
-4. **Documentación Automática:**
-   - `@nestjs/swagger` y `swagger-ui-express` para generar el esquema interactivo OpenAPI en `/api/docs`.
-5. **Caché y Bloqueo Opcional:**
-   - Redis (opcional para almacenamiento temporal de refresh tokens e idempotency keys con TTL).
+1. **Gestor de Base de Datos:** PostgreSQL 15+ con conector nativo (`pg`) y soporte para tipos de datos `UUID`, `DECIMAL(14, 3)` y `JSONB`.
+2. **Prisma ORM 7:** Cliente configurado con adaptador `@prisma/adapter-pg` (`prisma7.config.ts`), modelos mapeados en minúsculas en BD (`@@map("products")`) y enum en mayúsculas (`InventoryMovementType`, `SaleStatus`, `PaymentMethod`).
+3. **Validación y Transformación:** NestJS `ValidationPipe` global con `whitelist: true`, `forbidNonWhitelisted: true` y `transform: true`.
+4. **Capa Adaptadora de Contrato:** `src/common/validation/spanish-api-contract.ts` orquestando `spanishApiMiddleware` e interceptor `SpanishApiResponseInterceptor`.
+5. **Almacenamiento de Medios:** Cloudinary SDK v2 configurado para carga y optimización de fotografías de producto (`/api/productos/:id/image`).
+6. **Importación Masiva:** Procesamiento de hojas de cálculo `.xlsx` vía `exceljs` (`/api/productos/importacion`).
+7. **Documentación Swagger:** SwaggerModule montado sobre `/api/docs` con esquemas traducidos vía `translateOpenApiSchemas`.

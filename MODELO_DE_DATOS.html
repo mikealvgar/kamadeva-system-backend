@@ -1,0 +1,3802 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kamadeva System — Modelo Simplificado y Optimizado</title>
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: #151d2f;
+      --card-border: #23314d;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.15);
+      --primary: #6366f1;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --badge-pk: #ec4899;
+      --badge-fk: #8b5cf6;
+      --badge-uk: #f59e0b;
+      --badge-null: #64748b;
+      --code-bg: #0a0e17;
+      --font-mono: 'SF Mono', Menlo, Monaco, Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.6;
+      padding: 30px 20px 80px;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    header {
+      background: linear-gradient(135deg, #1e1b4b 0%, #0f172a 100%);
+      border: 1px solid #312e81;
+      border-radius: 16px;
+      padding: 40px;
+      margin-bottom: 30px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+    }
+
+    h1 {
+      font-size: 2.2rem;
+      font-weight: 800;
+      color: #fff;
+      margin-bottom: 12px;
+      letter-spacing: -0.5px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    h1 span.badge-version {
+      font-size: 0.85rem;
+      background: #10b981;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-weight: 700;
+      letter-spacing: 0;
+      color: #022c22;
+    }
+
+    p.lead {
+      font-size: 1.1rem;
+      color: var(--text-muted);
+      max-width: 950px;
+      margin-bottom: 25px;
+    }
+
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-top: 20px;
+    }
+
+    .kpi-card {
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 16px 20px;
+    }
+
+    .kpi-card .num {
+      font-size: 1.8rem;
+      font-weight: 800;
+      color: var(--accent);
+    }
+
+    .kpi-card .lbl {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .controls-panel {
+      position: sticky;
+      top: 15px;
+      z-index: 100;
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 18px 24px;
+      margin-bottom: 35px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 15px;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    }
+
+    .search-box {
+      flex: 1;
+      min-width: 280px;
+      position: relative;
+    }
+
+    .search-box input {
+      width: 100%;
+      background: #0a0e17;
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 12px 18px 12px 42px;
+      color: #fff;
+      font-size: 0.95rem;
+      outline: none;
+      transition: all 0.2s;
+    }
+
+    .search-box input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    .search-box svg {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 18px;
+      height: 18px;
+      fill: var(--text-muted);
+    }
+
+    .filter-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .pill-btn {
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: var(--text-muted);
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+
+    .pill-btn:hover {
+      background: #334155;
+      color: #fff;
+    }
+
+    .pill-btn.active {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+    }
+
+    .erd-summary-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 25px;
+      margin-bottom: 40px;
+    }
+
+    .erd-summary-card h2 {
+      font-size: 1.4rem;
+      color: #fff;
+      margin-bottom: 15px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .erd-flow-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 15px;
+      margin-top: 15px;
+    }
+
+    .flow-box {
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 10px;
+      padding: 16px;
+    }
+
+    .flow-box h4 {
+      font-size: 0.95rem;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+
+    .flow-box p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .model-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      margin-bottom: 30px;
+      overflow: hidden;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .model-card:hover {
+      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+    }
+
+    .model-header {
+      background: rgba(15, 23, 42, 0.8);
+      border-bottom: 1px solid var(--card-border);
+      padding: 20px 25px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 15px;
+    }
+
+    .model-title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .model-name {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #fff;
+      font-family: var(--font-mono);
+    }
+
+    .table-map {
+      background: #0a0e17;
+      border: 1px solid #334155;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      color: #38bdf8;
+    }
+
+    .domain-badge {
+      font-size: 0.75rem;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      background: #312e81;
+      color: #c7d2fe;
+    }
+
+    .model-desc {
+      padding: 15px 25px;
+      background: rgba(10, 14, 23, 0.4);
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .section-block {
+      padding: 20px 25px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .section-block:last-child {
+      border-bottom: none;
+    }
+
+    .section-block h3 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: #cbd5e1;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    table.fields-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+
+    table.fields-table th {
+      background: #0f172a;
+      color: var(--text-muted);
+      text-align: left;
+      padding: 10px 14px;
+      font-weight: 600;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    table.fields-table td {
+      padding: 12px 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      vertical-align: top;
+    }
+
+    table.fields-table tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .field-name {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      color: #f8fafc;
+    }
+
+    .field-type {
+      font-family: var(--font-mono);
+      color: #38bdf8;
+      font-size: 0.85rem;
+    }
+
+    .badge-attr {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-family: var(--font-mono);
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-right: 4px;
+      margin-bottom: 4px;
+      background: #1e293b;
+      color: #cbd5e1;
+    }
+
+    .badge-attr.pk { background: #831843; color: #fbcfe8; }
+    .badge-attr.fk { background: #4c1d95; color: #ddd6fe; }
+    .badge-attr.uk { background: #78350f; color: #fef3c7; }
+    .badge-attr.default { background: #14532d; color: #bbf7d0; }
+
+    .field-desc {
+      color: #cbd5e1;
+      font-size: 0.88rem;
+    }
+
+    .rel-list, .srv-list, .ep-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .rel-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.88rem;
+      padding: 8px 12px;
+      background: #0f172a;
+      border-radius: 8px;
+      border-left: 3px solid var(--primary);
+    }
+
+    .rel-badge {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 700;
+    }
+
+    .rel-badge.out { background: #3b82f6; color: #fff; }
+    .rel-badge.in { background: #10b981; color: #fff; }
+
+    .srv-item {
+      font-size: 0.88rem;
+      color: #cbd5e1;
+      padding: 6px 12px;
+      background: #0f172a;
+      border-radius: 6px;
+    }
+
+    .ep-item {
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      padding: 6px 12px;
+      background: #0a0e17;
+      border-radius: 6px;
+      border-left: 3px solid var(--accent);
+      color: #e2e8f0;
+    }
+
+    .enum-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 20px;
+      margin-top: 20px;
+    }
+
+    .enum-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 20px;
+    }
+
+    .enum-name {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #fff;
+      font-family: var(--font-mono);
+      margin-bottom: 6px;
+    }
+
+    .enum-desc {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 15px;
+    }
+
+    .enum-val-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      font-size: 0.85rem;
+    }
+
+    .enum-val {
+      font-family: var(--font-mono);
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .enum-val-desc {
+      color: var(--text-muted);
+      text-align: right;
+    }
+
+    footer {
+      margin-top: 60px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      border-top: 1px solid var(--card-border);
+      padding-top: 25px;
+    }
+
+    @media (max-width: 768px) {
+      .controls-panel { flex-direction: column; align-items: stretch; }
+      table.fields-table { font-size: 0.8rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>
+        Kamadeva System Backend
+        <span class="badge-version">Arquitectura Optimizada y Simplificada</span>
+      </h1>
+      <p class="lead">
+        Diccionario oficial de base de datos con campos 100% en español (respetando <code>email</code> y <code>password</code> en <code>users</code>). Se eliminaron 6 tablas innecesarias (<code>user_roles</code>, <code>payments</code>, <code>product_sizes</code>, <code>folio_counters</code>, <code>supplier_orders</code>, <code>supplier_order_items</code>) y se integró <code>Brand</code> (marcas) y <code>telefono</code> en usuarios.
+      </p>
+      <div class="kpi-row">
+        <div class="kpi-card">
+          <div class="num">22</div>
+          <div class="lbl">Modelos Esenciales</div>
+        </div>
+        <div class="kpi-card">
+          <div class="num">-6 Tablas</div>
+          <div class="lbl">Optimizadas</div>
+        </div>
+        <div class="kpi-card">
+          <div class="num">6</div>
+          <div class="lbl">Enums Estrictos</div>
+        </div>
+        <div class="kpi-card">
+          <div class="num">100% Directo</div>
+          <div class="lbl">Compras y Ventas</div>
+        </div>
+      </div>
+    </header>
+
+    <div class="controls-panel">
+      <div class="search-box">
+        <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+        <input type="text" id="searchInput" placeholder="Buscar por campo (ej. telefono, rolId, metodoPago), tabla o endpoint..." onkeyup="filterCards()">
+      </div>
+      <div class="filter-pills">
+        <button class="pill-btn active" onclick="filterDomain('ALL', this)">Todos (22)</button>
+        <button class="pill-btn" onclick="filterDomain('Catálogo & Productos', this)">Catálogo & Productos (4)</button>
+        <button class="pill-btn" onclick="filterDomain('Compras & Proveedores', this)">Compras & Proveedores (3)</button>
+        <button class="pill-btn" onclick="filterDomain('Configuración del Negocio', this)">Configuración del Negocio (1)</button>
+        <button class="pill-btn" onclick="filterDomain('Finanzas & Cortes de Caja', this)">Finanzas & Cortes de Caja (4)</button>
+        <button class="pill-btn" onclick="filterDomain('Inventario & Kardex', this)">Inventario & Kardex (1)</button>
+        <button class="pill-btn" onclick="filterDomain('Seguridad & Usuarios', this)">Seguridad & Usuarios (4)</button>
+        <button class="pill-btn" onclick="filterDomain('Ventas & Cotizaciones', this)">Ventas & Cotizaciones (5)</button>
+      </div>
+    </div>
+
+    <!-- RESUMEN DE OPTIMIZACIONES -->
+    <div class="erd-summary-card">
+      <h2>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 2h2v4h-2V5zm-4 0h2v4H8V5zm8 14H8v-2h8v2zm2-4H6V7h12v8z"/></svg>
+        Resumen de Simplificaciones y Optimizaciones Aplicadas
+      </h2>
+      <div class="erd-flow-grid">
+        <div class="flow-box">
+          <h4>1. Usuarios y Roles Directos</h4>
+          <p>Se eliminó la tabla intermedia <code>user_roles</code>. Ahora <code>User</code> almacena directamente <code>rolId</code> hacia <code>Role</code> (relación 1 a N) e incluye el nuevo campo <code>telefono</code>.</p>
+        </div>
+        <div class="flow-box">
+          <h4>2. Cobros Directos en Ventas</h4>
+          <p>Se eliminó la tabla <code>payments</code>. Cada venta almacena directamente su <code>metodoPago</code>, <code>fechaPago</code> y se vincula de forma directa con <code>cashClosureId</code>.</p>
+        </div>
+        <div class="flow-box">
+          <h4>3. Folios Consecutivos Nativos</h4>
+          <p>Se eliminó la tabla <code>folio_counters</code>. PostgreSQL genera los folios de venta y cotización mediante secuencias nativas automáticas (<code>autoincrement</code>).</p>
+        </div>
+        <div class="flow-box">
+          <h4>4. Compras Directas sin Pedidos Diferidos</h4>
+          <p>Se eliminaron <code>supplier_orders</code> y <code>supplier_order_items</code>. Solo existe el flujo de compras físicas recibidas (<code>purchases</code> y <code>purchase_items</code>) que incrementa stock de inmediato.</p>
+        </div>
+        <div class="flow-box">
+          <h4>5. Catálogo de Marcas y Tallas Simplificadas</h4>
+          <p>Se eliminó <code>product_sizes</code>. Se creó la tabla normalizada <code>brands</code> (marcas) y se simplificaron <code>categories</code> (solo <code>descripcion</code>) y <code>sizes</code> (solo <code>nombre</code> y <code>activo</code>).</p>
+        </div>
+        <div class="flow-box">
+          <h4>6. Eliminación de Impuestos (tax)</h4>
+          <p>Se removió el campo <code>tax</code> en <code>Sale</code>, <code>SaleItem</code>, <code>Quote</code> y <code>QuoteItem</code>, manejando precios finales netos.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODELOS DETALLADOS -->
+    <div id="modelsContainer">
+
+    <div class="model-card" data-domain="Seguridad & Usuarios" data-search="user users operadores y administradores del sistema. incluye teléfono y rol directo (sin tabla intermedia user_roles). id nombre email passwordhash telefono rolid activo fechacreacion fechaactualizacion post /api/autenticacion/registro (recibe telefono, asigna rol directo) post /api/autenticacion/login get /api/usuarios get /api/usuarios/:id put /api/usuarios/:id delete /api/usuarios/:id">
+      <div class="model-header">
+        <div class="model-title-wrap">
+          <span class="model-name">User</span>
+          <span class="table-map">@@map("users")</span>
+        </div>
+        <span class="domain-badge">Seguridad & Usuarios</span>
+      </div>
+      <div class="model-desc">Operadores y administradores del sistema. Incluye teléfono y rol directo (sin tabla intermedia user_roles).</div>
+
+      <!-- CAMPOS -->
+      <div class="section-block">
+        <h3>Campos y Columnas (9)</h3>
+        <table class="fields-table">
+          <thead>
+            <tr>
+              <th style="width: 230px;">Campo en Español</th>
+              <th style="width: 170px;">Tipo de Dato</th>
+              <th style="width: 220px;">Atributos / Reglas</th>
+              <th>Propósito de Negocio y Restricción</th>
+            </tr>
+          </thead>
+          <tbody>
+
+            <tr>
+              <td><span class="field-name">id</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr pk">PK</span> <span class="badge-attr default">@default(uuid())</span> </td>
+              <td class="field-desc">Identificador único del usuario.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">nombre</span></td>
+              <td><span class="field-type">String</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Nombre completo del operador o administrador.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">email</span></td>
+              <td><span class="field-type">String</span></td>
+              <td><span class="badge-attr uk">UNIQUE</span> <span class="badge-attr default">NOT NULL (Conservado)</span> </td>
+              <td class="field-desc">Correo electrónico de acceso único.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">passwordHash</span></td>
+              <td><span class="field-type">String</span></td>
+              <td><span class="badge-attr default">NOT NULL (Conservado)</span> </td>
+              <td class="field-desc">Hash criptográfico Bcrypt de la contraseña.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">telefono</span></td>
+              <td><span class="field-type">String?</span></td>
+              <td><span class="badge-attr pk">NULLABLE (Nuevo)</span> </td>
+              <td class="field-desc">Número de teléfono de contacto del usuario.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">rolId</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr fk">FK -> Role.id</span> <span class="badge-attr fk">NOT NULL (Directo)</span> </td>
+              <td class="field-desc">Rol directo asignado al usuario (elimina tabla user_roles).</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">activo</span></td>
+              <td><span class="field-type">Boolean</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(true)</span> </td>
+              <td class="field-desc">Estado activo/inactivo (soft delete).</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaCreacion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(now())</span> </td>
+              <td class="field-desc">Fecha de alta.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaActualizacion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr ">@updatedAt</span> </td>
+              <td class="field-desc">Fecha de modificación.</td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+
+      <!-- RELACIONES -->
+
+      <div class="section-block">
+        <h3>Relaciones con Otras Tablas</h3>
+        <div class="rel-list">
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">Role</strong>
+            <span style="color: var(--text-muted);">— Rol directo asignado (1 a N).</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">RefreshToken</strong>
+            <span style="color: var(--text-muted);">— Sesiones y tokens activos.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge in">ENTRANTE</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">Sale</strong>
+            <span style="color: var(--text-muted);">— Ventas cobradas o anuladas por este usuario.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge in">ENTRANTE</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">Quote</strong>
+            <span style="color: var(--text-muted);">— Cotizaciones emitidas.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge in">ENTRANTE</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">Purchase</strong>
+            <span style="color: var(--text-muted);">— Compras a proveedor recibidas.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge in">ENTRANTE</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">Expense</strong>
+            <span style="color: var(--text-muted);">— Gastos operativos capturados.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge in">ENTRANTE</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">CashClosure</strong>
+            <span style="color: var(--text-muted);">— Cortes de caja realizados.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge in">ENTRANTE</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">InventoryMovement</strong>
+            <span style="color: var(--text-muted);">— Movimientos de inventario generados.</span>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Servicios de Backend Responsables</h3>
+        <div class="srv-list">
+          <div class="srv-item">⚡ AuthService: Login, Registro, Emisión de JWT.</div>
+          <div class="srv-item">⚡ UsersService: Listado paginado, búsqueda y administración de usuarios.</div>
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Endpoints HTTP que Generan o Manipulan esta Tabla</h3>
+        <div class="ep-list">
+          <div class="ep-item">POST /api/autenticacion/registro (Recibe telefono, asigna rol directo)</div>
+          <div class="ep-item">POST /api/autenticacion/login</div>
+          <div class="ep-item">GET /api/usuarios</div>
+          <div class="ep-item">GET /api/usuarios/:id</div>
+          <div class="ep-item">PUT /api/usuarios/:id</div>
+          <div class="ep-item">DELETE /api/usuarios/:id</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="model-card" data-domain="Seguridad & Usuarios" data-search="role roles catálogo de roles del sistema (admin y vendedor) asignados directamente al usuario. id nombre descripcion activo get /api/roles">
+      <div class="model-header">
+        <div class="model-title-wrap">
+          <span class="model-name">Role</span>
+          <span class="table-map">@@map("roles")</span>
+        </div>
+        <span class="domain-badge">Seguridad & Usuarios</span>
+      </div>
+      <div class="model-desc">Catálogo de roles del sistema (ADMIN y VENDEDOR) asignados directamente al usuario.</div>
+
+      <!-- CAMPOS -->
+      <div class="section-block">
+        <h3>Campos y Columnas (4)</h3>
+        <table class="fields-table">
+          <thead>
+            <tr>
+              <th style="width: 230px;">Campo en Español</th>
+              <th style="width: 170px;">Tipo de Dato</th>
+              <th style="width: 220px;">Atributos / Reglas</th>
+              <th>Propósito de Negocio y Restricción</th>
+            </tr>
+          </thead>
+          <tbody>
+
+            <tr>
+              <td><span class="field-name">id</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr pk">PK</span> <span class="badge-attr default">@default(uuid())</span> </td>
+              <td class="field-desc">Identificador único del rol.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">nombre</span></td>
+              <td><span class="field-type">String</span></td>
+              <td><span class="badge-attr uk">UNIQUE</span> <span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Nombre del rol (ADMIN o VENDEDOR).</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">descripcion</span></td>
+              <td><span class="field-type">String?</span></td>
+              <td><span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Descripción de permisos del rol.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">activo</span></td>
+              <td><span class="field-type">Boolean</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(true)</span> </td>
+              <td class="field-desc">Estado activo/inactivo.</td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+
+      <!-- RELACIONES -->
+
+      <div class="section-block">
+        <h3>Relaciones con Otras Tablas</h3>
+        <div class="rel-list">
+
+          <div class="rel-item">
+            <span class="rel-badge in">ENTRANTE</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">User</strong>
+            <span style="color: var(--text-muted);">— Usuarios que tienen este rol (relación 1 a N directa).</span>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Servicios de Backend Responsables</h3>
+        <div class="srv-list">
+          <div class="srv-item">⚡ RolesService</div>
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Endpoints HTTP que Generan o Manipulan esta Tabla</h3>
+        <div class="ep-list">
+          <div class="ep-item">GET /api/roles</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="model-card" data-domain="Seguridad & Usuarios" data-search="refreshtoken refresh_tokens tokens criptográficos rotativos para renovación segura de sesiones. id tokenhash usuarioid fechavencimiento fecharevocacion fechacreacion post /api/autenticacion/refresh post /api/autenticacion/logout">
+      <div class="model-header">
+        <div class="model-title-wrap">
+          <span class="model-name">RefreshToken</span>
+          <span class="table-map">@@map("refresh_tokens")</span>
+        </div>
+        <span class="domain-badge">Seguridad & Usuarios</span>
+      </div>
+      <div class="model-desc">Tokens criptográficos rotativos para renovación segura de sesiones.</div>
+
+      <!-- CAMPOS -->
+      <div class="section-block">
+        <h3>Campos y Columnas (6)</h3>
+        <table class="fields-table">
+          <thead>
+            <tr>
+              <th style="width: 230px;">Campo en Español</th>
+              <th style="width: 170px;">Tipo de Dato</th>
+              <th style="width: 220px;">Atributos / Reglas</th>
+              <th>Propósito de Negocio y Restricción</th>
+            </tr>
+          </thead>
+          <tbody>
+
+            <tr>
+              <td><span class="field-name">id</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr pk">PK</span> <span class="badge-attr default">@default(uuid())</span> </td>
+              <td class="field-desc">ID de la sesión de token.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">tokenHash</span></td>
+              <td><span class="field-type">String</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Hash del token emitido.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">usuarioId</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr fk">FK -> User.id</span> </td>
+              <td class="field-desc">Usuario de la sesión.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaVencimiento</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Fecha límite de expiración.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaRevocacion</span></td>
+              <td><span class="field-type">DateTime?</span></td>
+              <td><span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Fecha de revocación.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaCreacion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(now())</span> </td>
+              <td class="field-desc">Fecha de emisión.</td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+
+      <!-- RELACIONES -->
+
+      <div class="section-block">
+        <h3>Relaciones con Otras Tablas</h3>
+        <div class="rel-list">
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">User</strong>
+            <span style="color: var(--text-muted);">— Usuario titular.</span>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Servicios de Backend Responsables</h3>
+        <div class="srv-list">
+          <div class="srv-item">⚡ AuthService, CleanupService</div>
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Endpoints HTTP que Generan o Manipulan esta Tabla</h3>
+        <div class="ep-list">
+          <div class="ep-item">POST /api/autenticacion/refresh</div>
+          <div class="ep-item">POST /api/autenticacion/logout</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="model-card" data-domain="Seguridad & Usuarios" data-search="idempotencykey idempotency_keys garantiza que una venta no se cobre dos veces por caídas de red o reintentos. id llave ambito hashpeticion estado codigorespuesta cuerporespuesta mensajeerror usuarioid ventaid fechavencimiento fechacreacion post /api/ventas">
+      <div class="model-header">
+        <div class="model-title-wrap">
+          <span class="model-name">IdempotencyKey</span>
+          <span class="table-map">@@map("idempotency_keys")</span>
+        </div>
+        <span class="domain-badge">Seguridad & Usuarios</span>
+      </div>
+      <div class="model-desc">Garantiza que una venta no se cobre dos veces por caídas de red o reintentos.</div>
+
+      <!-- CAMPOS -->
+      <div class="section-block">
+        <h3>Campos y Columnas (12)</h3>
+        <table class="fields-table">
+          <thead>
+            <tr>
+              <th style="width: 230px;">Campo en Español</th>
+              <th style="width: 170px;">Tipo de Dato</th>
+              <th style="width: 220px;">Atributos / Reglas</th>
+              <th>Propósito de Negocio y Restricción</th>
+            </tr>
+          </thead>
+          <tbody>
+
+            <tr>
+              <td><span class="field-name">id</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr pk">PK</span> <span class="badge-attr default">@default(uuid())</span> </td>
+              <td class="field-desc">ID de la llave.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">llave</span></td>
+              <td><span class="field-type">String</span></td>
+              <td><span class="badge-attr uk">UNIQUE</span> <span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">UUID v4 enviado en cabecera Idempotency-Key.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">ambito</span></td>
+              <td><span class="field-type">String</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Ámbito (ej. checkout-sale).</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">hashPeticion</span></td>
+              <td><span class="field-type">String</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Hash SHA-256 del body.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">estado</span></td>
+              <td><span class="field-type">IdempotencyStatus</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(PENDING)</span> </td>
+              <td class="field-desc">PENDING, COMPLETED, FAILED.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">codigoRespuesta</span></td>
+              <td><span class="field-type">Int?</span></td>
+              <td><span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Código HTTP guardado.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">cuerpoRespuesta</span></td>
+              <td><span class="field-type">Json?</span></td>
+              <td><span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Respuesta JSON cacheada para replay.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">mensajeError</span></td>
+              <td><span class="field-type">String?</span></td>
+              <td><span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Error en caso de fallo.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">usuarioId</span></td>
+              <td><span class="field-type">String (UUID)?</span></td>
+              <td><span class="badge-attr fk">FK -> User.id</span> <span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Cajero que envió la petición.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">ventaId</span></td>
+              <td><span class="field-type">String (UUID)?</span></td>
+              <td><span class="badge-attr fk">FK -> Sale.id</span> <span class="badge-attr fk">NULLABLE (Directo)</span> </td>
+              <td class="field-desc">Venta generada bajo esta llave.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaVencimiento</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Expiración (24h).</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaCreacion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(now())</span> </td>
+              <td class="field-desc">Fecha de emisión.</td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+
+      <!-- RELACIONES -->
+
+      <div class="section-block">
+        <h3>Relaciones con Otras Tablas</h3>
+        <div class="rel-list">
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">User</strong>
+            <span style="color: var(--text-muted);">— Cajero.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">Sale</strong>
+            <span style="color: var(--text-muted);">— Venta protegida.</span>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Servicios de Backend Responsables</h3>
+        <div class="srv-list">
+          <div class="srv-item">⚡ SalesService, CleanupService</div>
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Endpoints HTTP que Generan o Manipulan esta Tabla</h3>
+        <div class="ep-list">
+          <div class="ep-item">POST /api/ventas</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="model-card" data-domain="Catálogo & Productos" data-search="category categories catálogo simplificado de categorías (sin slug ni campos redundantes). id descripcion activo fechacreacion fechaactualizacion get /api/catalogo/categorias get /api/catalogo/categorias/:id post /api/catalogo/categorias put /api/catalogo/categorias/:id delete /api/catalogo/categorias/:id">
+      <div class="model-header">
+        <div class="model-title-wrap">
+          <span class="model-name">Category</span>
+          <span class="table-map">@@map("categories")</span>
+        </div>
+        <span class="domain-badge">Catálogo & Productos</span>
+      </div>
+      <div class="model-desc">Catálogo simplificado de categorías (sin slug ni campos redundantes).</div>
+
+      <!-- CAMPOS -->
+      <div class="section-block">
+        <h3>Campos y Columnas (5)</h3>
+        <table class="fields-table">
+          <thead>
+            <tr>
+              <th style="width: 230px;">Campo en Español</th>
+              <th style="width: 170px;">Tipo de Dato</th>
+              <th style="width: 220px;">Atributos / Reglas</th>
+              <th>Propósito de Negocio y Restricción</th>
+            </tr>
+          </thead>
+          <tbody>
+
+            <tr>
+              <td><span class="field-name">id</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr pk">PK</span> <span class="badge-attr default">@default(uuid())</span> </td>
+              <td class="field-desc">ID único de la categoría.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">descripcion</span></td>
+              <td><span class="field-type">String</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Descripción o nombre de la categoría (ej. PLAYERAS, PANTALONES).</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">activo</span></td>
+              <td><span class="field-type">Boolean</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(true)</span> </td>
+              <td class="field-desc">Estado activo/inactivo.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaCreacion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(now())</span> </td>
+              <td class="field-desc">Fecha de alta.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaActualizacion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr ">@updatedAt</span> </td>
+              <td class="field-desc">Fecha de modificación.</td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+
+      <!-- RELACIONES -->
+
+      <div class="section-block">
+        <h3>Relaciones con Otras Tablas</h3>
+        <div class="rel-list">
+
+          <div class="rel-item">
+            <span class="rel-badge in">ENTRANTE</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">Product</strong>
+            <span style="color: var(--text-muted);">— Productos clasificados.</span>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Servicios de Backend Responsables</h3>
+        <div class="srv-list">
+          <div class="srv-item">⚡ CategoriesService</div>
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Endpoints HTTP que Generan o Manipulan esta Tabla</h3>
+        <div class="ep-list">
+          <div class="ep-item">GET /api/catalogo/categorias</div>
+          <div class="ep-item">GET /api/catalogo/categorias/:id</div>
+          <div class="ep-item">POST /api/catalogo/categorias</div>
+          <div class="ep-item">PUT /api/catalogo/categorias/:id</div>
+          <div class="ep-item">DELETE /api/catalogo/categorias/:id</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="model-card" data-domain="Catálogo & Productos" data-search="brand brands catálogo formal y normalizado de marcas comerciales de productos. id descripcion activo fechacreacion fechaactualizacion get /api/catalogo/marcas get /api/catalogo/marcas/:id post /api/catalogo/marcas put /api/catalogo/marcas/:id delete /api/catalogo/marcas/:id">
+      <div class="model-header">
+        <div class="model-title-wrap">
+          <span class="model-name">Brand</span>
+          <span class="table-map">@@map("brands")</span>
+        </div>
+        <span class="domain-badge">Catálogo & Productos</span>
+      </div>
+      <div class="model-desc">Catálogo formal y normalizado de marcas comerciales de productos.</div>
+
+      <!-- CAMPOS -->
+      <div class="section-block">
+        <h3>Campos y Columnas (5)</h3>
+        <table class="fields-table">
+          <thead>
+            <tr>
+              <th style="width: 230px;">Campo en Español</th>
+              <th style="width: 170px;">Tipo de Dato</th>
+              <th style="width: 220px;">Atributos / Reglas</th>
+              <th>Propósito de Negocio y Restricción</th>
+            </tr>
+          </thead>
+          <tbody>
+
+            <tr>
+              <td><span class="field-name">id</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr pk">PK</span> <span class="badge-attr default">@default(uuid())</span> </td>
+              <td class="field-desc">ID único de la marca.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">descripcion</span></td>
+              <td><span class="field-type">String</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Nombre o descripción de la marca (ej. NIKE, LEVIS, PROPIA).</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">activo</span></td>
+              <td><span class="field-type">Boolean</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(true)</span> </td>
+              <td class="field-desc">Estado activo/inactivo.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaCreacion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(now())</span> </td>
+              <td class="field-desc">Fecha de alta.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaActualizacion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr ">@updatedAt</span> </td>
+              <td class="field-desc">Fecha de modificación.</td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+
+      <!-- RELACIONES -->
+
+      <div class="section-block">
+        <h3>Relaciones con Otras Tablas</h3>
+        <div class="rel-list">
+
+          <div class="rel-item">
+            <span class="rel-badge in">ENTRANTE</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">Product</strong>
+            <span style="color: var(--text-muted);">— Productos que pertenecen a esta marca.</span>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Servicios de Backend Responsables</h3>
+        <div class="srv-list">
+          <div class="srv-item">⚡ BrandsService: CRUD y catálogo de marcas.</div>
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Endpoints HTTP que Generan o Manipulan esta Tabla</h3>
+        <div class="ep-list">
+          <div class="ep-item">GET /api/catalogo/marcas</div>
+          <div class="ep-item">GET /api/catalogo/marcas/:id</div>
+          <div class="ep-item">POST /api/catalogo/marcas</div>
+          <div class="ep-item">PUT /api/catalogo/marcas/:id</div>
+          <div class="ep-item">DELETE /api/catalogo/marcas/:id</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="model-card" data-domain="Catálogo & Productos" data-search="size sizes catálogo simplificado de tallas (id, nombre, activo). id nombre activo get /api/catalogo/tallas post /api/catalogo/tallas put /api/catalogo/tallas/:id delete /api/catalogo/tallas/:id">
+      <div class="model-header">
+        <div class="model-title-wrap">
+          <span class="model-name">Size</span>
+          <span class="table-map">@@map("sizes")</span>
+        </div>
+        <span class="domain-badge">Catálogo & Productos</span>
+      </div>
+      <div class="model-desc">Catálogo simplificado de tallas (id, nombre, activo).</div>
+
+      <!-- CAMPOS -->
+      <div class="section-block">
+        <h3>Campos y Columnas (3)</h3>
+        <table class="fields-table">
+          <thead>
+            <tr>
+              <th style="width: 230px;">Campo en Español</th>
+              <th style="width: 170px;">Tipo de Dato</th>
+              <th style="width: 220px;">Atributos / Reglas</th>
+              <th>Propósito de Negocio y Restricción</th>
+            </tr>
+          </thead>
+          <tbody>
+
+            <tr>
+              <td><span class="field-name">id</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr pk">PK</span> <span class="badge-attr default">@default(uuid())</span> </td>
+              <td class="field-desc">ID único de la talla.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">nombre</span></td>
+              <td><span class="field-type">String</span></td>
+              <td><span class="badge-attr uk">UNIQUE</span> <span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Nombre de la talla (ej. CH, M, G, 30, 32).</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">activo</span></td>
+              <td><span class="field-type">Boolean</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(true)</span> </td>
+              <td class="field-desc">Estado activo/inactivo.</td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+
+      <!-- RELACIONES -->
+
+      <div class="section-block">
+        <h3>Relaciones con Otras Tablas</h3>
+        <div class="rel-list">
+
+          <div class="rel-item">
+            <span class="rel-badge in">ENTRANTE</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">SaleItem</strong>
+            <span style="color: var(--text-muted);">— Talla anotada en el renglón de venta si aplica.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge in">ENTRANTE</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">QuoteItem</strong>
+            <span style="color: var(--text-muted);">— Talla anotada en el renglón de cotización si aplica.</span>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Servicios de Backend Responsables</h3>
+        <div class="srv-list">
+          <div class="srv-item">⚡ SizesService</div>
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Endpoints HTTP que Generan o Manipulan esta Tabla</h3>
+        <div class="ep-list">
+          <div class="ep-item">GET /api/catalogo/tallas</div>
+          <div class="ep-item">POST /api/catalogo/tallas</div>
+          <div class="ep-item">PUT /api/catalogo/tallas/:id</div>
+          <div class="ep-item">DELETE /api/catalogo/tallas/:id</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="model-card" data-domain="Catálogo & Productos" data-search="product products artículos y prendas vendibles en punto de venta. stock derivado del kardex (inventorymovement). id codigobarras nombre descripcion categoriaid marcaid precioventa preciocompra existenciaminima urlimagen activo fechacreacion fechaactualizacion get /api/productos get /api/productos/:id post /api/productos put /api/productos/:id delete /api/productos/:id post /api/productos/:id/image post /api/productos/importacion">
+      <div class="model-header">
+        <div class="model-title-wrap">
+          <span class="model-name">Product</span>
+          <span class="table-map">@@map("products")</span>
+        </div>
+        <span class="domain-badge">Catálogo & Productos</span>
+      </div>
+      <div class="model-desc">Artículos y prendas vendibles en punto de venta. Stock derivado del Kardex (InventoryMovement).</div>
+
+      <!-- CAMPOS -->
+      <div class="section-block">
+        <h3>Campos y Columnas (13)</h3>
+        <table class="fields-table">
+          <thead>
+            <tr>
+              <th style="width: 230px;">Campo en Español</th>
+              <th style="width: 170px;">Tipo de Dato</th>
+              <th style="width: 220px;">Atributos / Reglas</th>
+              <th>Propósito de Negocio y Restricción</th>
+            </tr>
+          </thead>
+          <tbody>
+
+            <tr>
+              <td><span class="field-name">id</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr pk">PK</span> <span class="badge-attr default">@default(uuid())</span> </td>
+              <td class="field-desc">ID único de producto.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">codigoBarras</span></td>
+              <td><span class="field-type">String</span></td>
+              <td><span class="badge-attr uk">UNIQUE</span> <span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Código de barras único (identificador principal).</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">nombre</span></td>
+              <td><span class="field-type">String</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Nombre o descripción comercial.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">descripcion</span></td>
+              <td><span class="field-type">String?</span></td>
+              <td><span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Detalles técnicos o notas del producto.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">categoriaId</span></td>
+              <td><span class="field-type">String (UUID)?</span></td>
+              <td><span class="badge-attr fk">FK -> Category.id</span> <span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Categoría asignada.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">marcaId</span></td>
+              <td><span class="field-type">String (UUID)?</span></td>
+              <td><span class="badge-attr fk">FK -> Brand.id</span> <span class="badge-attr uk">NULLABLE (Normalizado)</span> </td>
+              <td class="field-desc">Marca normalizada asignada.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">precioVenta</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Precio final al público en mostrador.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">precioCompra</span></td>
+              <td><span class="field-type">Decimal(12,2)?</span></td>
+              <td><span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Costo de adquisición vigente del proveedor.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">existenciaMinima</span></td>
+              <td><span class="field-type">Decimal(14,3)?</span></td>
+              <td><span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Umbral de stock bajo para alertas.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">urlImagen</span></td>
+              <td><span class="field-type">String?</span></td>
+              <td><span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Fotografía en Cloudinary.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">activo</span></td>
+              <td><span class="field-type">Boolean</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(true)</span> </td>
+              <td class="field-desc">Soft delete.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaCreacion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(now())</span> </td>
+              <td class="field-desc">Fecha de alta.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaActualizacion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr ">@updatedAt</span> </td>
+              <td class="field-desc">Fecha de edición.</td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+
+      <!-- RELACIONES -->
+
+      <div class="section-block">
+        <h3>Relaciones con Otras Tablas</h3>
+        <div class="rel-list">
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">Category</strong>
+            <span style="color: var(--text-muted);">— Categoría.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">Brand</strong>
+            <span style="color: var(--text-muted);">— Marca.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge in">ENTRANTE</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">InventoryMovement</strong>
+            <span style="color: var(--text-muted);">— Kardex para calcular existencias.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge in">ENTRANTE</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">SaleItem</strong>
+            <span style="color: var(--text-muted);">— Ventas.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge in">ENTRANTE</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">QuoteItem</strong>
+            <span style="color: var(--text-muted);">— Cotizaciones.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge in">ENTRANTE</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">PurchaseItem</strong>
+            <span style="color: var(--text-muted);">— Compras a proveedores.</span>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Servicios de Backend Responsables</h3>
+        <div class="srv-list">
+          <div class="srv-item">⚡ CatalogProductsService, ProductImagesService, ProductImportService</div>
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Endpoints HTTP que Generan o Manipulan esta Tabla</h3>
+        <div class="ep-list">
+          <div class="ep-item">GET /api/productos</div>
+          <div class="ep-item">GET /api/productos/:id</div>
+          <div class="ep-item">POST /api/productos</div>
+          <div class="ep-item">PUT /api/productos/:id</div>
+          <div class="ep-item">DELETE /api/productos/:id</div>
+          <div class="ep-item">POST /api/productos/:id/image</div>
+          <div class="ep-item">POST /api/productos/importacion</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="model-card" data-domain="Ventas & Cotizaciones" data-search="customer customers directorio de clientes de tienda con cliente default (público general). id nombre telefono correo activo espredeterminado fechacreacion fechaactualizacion get /api/clientes get /api/clientes/:id post /api/clientes put /api/clientes/:id delete /api/clientes/:id">
+      <div class="model-header">
+        <div class="model-title-wrap">
+          <span class="model-name">Customer</span>
+          <span class="table-map">@@map("customers")</span>
+        </div>
+        <span class="domain-badge">Ventas & Cotizaciones</span>
+      </div>
+      <div class="model-desc">Directorio de clientes de tienda con cliente default (Público General).</div>
+
+      <!-- CAMPOS -->
+      <div class="section-block">
+        <h3>Campos y Columnas (8)</h3>
+        <table class="fields-table">
+          <thead>
+            <tr>
+              <th style="width: 230px;">Campo en Español</th>
+              <th style="width: 170px;">Tipo de Dato</th>
+              <th style="width: 220px;">Atributos / Reglas</th>
+              <th>Propósito de Negocio y Restricción</th>
+            </tr>
+          </thead>
+          <tbody>
+
+            <tr>
+              <td><span class="field-name">id</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr pk">PK</span> <span class="badge-attr default">@default(uuid())</span> </td>
+              <td class="field-desc">ID del cliente.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">nombre</span></td>
+              <td><span class="field-type">String</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Nombre o razón social.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">telefono</span></td>
+              <td><span class="field-type">String?</span></td>
+              <td><span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Teléfono de contacto.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">correo</span></td>
+              <td><span class="field-type">String?</span></td>
+              <td><span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Correo electrónico.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">activo</span></td>
+              <td><span class="field-type">Boolean</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(true)</span> </td>
+              <td class="field-desc">Estado activo/inactivo.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">esPredeterminado</span></td>
+              <td><span class="field-type">Boolean</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(false)</span> </td>
+              <td class="field-desc">Indica cliente mostrador por defecto.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaCreacion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(now())</span> </td>
+              <td class="field-desc">Fecha de alta.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaActualizacion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr ">@updatedAt</span> </td>
+              <td class="field-desc">Fecha de edición.</td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+
+      <!-- RELACIONES -->
+
+      <div class="section-block">
+        <h3>Relaciones con Otras Tablas</h3>
+        <div class="rel-list">
+
+          <div class="rel-item">
+            <span class="rel-badge in">ENTRANTE</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">Sale</strong>
+            <span style="color: var(--text-muted);">— Ventas asociadas.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge in">ENTRANTE</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">Quote</strong>
+            <span style="color: var(--text-muted);">— Cotizaciones solicitadas.</span>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Servicios de Backend Responsables</h3>
+        <div class="srv-list">
+          <div class="srv-item">⚡ CustomersService</div>
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Endpoints HTTP que Generan o Manipulan esta Tabla</h3>
+        <div class="ep-list">
+          <div class="ep-item">GET /api/clientes</div>
+          <div class="ep-item">GET /api/clientes/:id</div>
+          <div class="ep-item">POST /api/clientes</div>
+          <div class="ep-item">PUT /api/clientes/:id</div>
+          <div class="ep-item">DELETE /api/clientes/:id</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="model-card" data-domain="Ventas & Cotizaciones" data-search="sale sales ventas en mostrador. incluye método de cobro directo (sin tabla payments) y folio autoincrementable de postgresql. id folio estado metodopago fechapago clienteid cotizacionid subtotal descuento total creadoporid cortecajaid notas fechacancelacion canceladoporid motivocancelacion fechacreacion fechaactualizacion post /api/ventas (checkout directo con idempotency-key) get /api/ventas get /api/ventas/:id post /api/ventas/:id/cancelar post /api/ventas/:id/devolucion">
+      <div class="model-header">
+        <div class="model-title-wrap">
+          <span class="model-name">Sale</span>
+          <span class="table-map">@@map("sales")</span>
+        </div>
+        <span class="domain-badge">Ventas & Cotizaciones</span>
+      </div>
+      <div class="model-desc">Ventas en mostrador. Incluye método de cobro directo (sin tabla payments) y folio autoincrementable de PostgreSQL.</div>
+
+      <!-- CAMPOS -->
+      <div class="section-block">
+        <h3>Campos y Columnas (18)</h3>
+        <table class="fields-table">
+          <thead>
+            <tr>
+              <th style="width: 230px;">Campo en Español</th>
+              <th style="width: 170px;">Tipo de Dato</th>
+              <th style="width: 220px;">Atributos / Reglas</th>
+              <th>Propósito de Negocio y Restricción</th>
+            </tr>
+          </thead>
+          <tbody>
+
+            <tr>
+              <td><span class="field-name">id</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr pk">PK</span> <span class="badge-attr default">@default(uuid())</span> </td>
+              <td class="field-desc">ID único de venta.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">folio</span></td>
+              <td><span class="field-type">Int</span></td>
+              <td><span class="badge-attr uk">UNIQUE</span> <span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(autoincrement())</span> </td>
+              <td class="field-desc">Folio secuencial nativo de PostgreSQL (elimina tabla folio_counters).</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">estado</span></td>
+              <td><span class="field-type">SaleStatus</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(PENDING)</span> </td>
+              <td class="field-desc">PENDING, COMPLETED, CANCELLED, REFUNDED.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">metodoPago</span></td>
+              <td><span class="field-type">PaymentMethod</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(CASH) (Directo)</span> </td>
+              <td class="field-desc">CASH, CARD, TRANSFER, OTHER (eliminó tabla payments).</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaPago</span></td>
+              <td><span class="field-type">DateTime?</span></td>
+              <td><span class="badge-attr fk">NULLABLE (Directo)</span> </td>
+              <td class="field-desc">Fecha y hora en que se confirmó el cobro.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">clienteId</span></td>
+              <td><span class="field-type">String (UUID)?</span></td>
+              <td><span class="badge-attr fk">FK -> Customer.id</span> <span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Cliente titular.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">cotizacionId</span></td>
+              <td><span class="field-type">String (UUID)?</span></td>
+              <td><span class="badge-attr uk">UNIQUE</span> <span class="badge-attr fk">FK -> Quote.id</span> <span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Cotización origen si aplica.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">subtotal</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Suma de artículos antes de descuento.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">descuento</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(0)</span> </td>
+              <td class="field-desc">Descuento monetario aplicado.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">total</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Total neto cobrado (sin desglose de tax/impuesto).</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">creadoPorId</span></td>
+              <td><span class="field-type">String (UUID)?</span></td>
+              <td><span class="badge-attr fk">FK -> User.id</span> <span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Cajero que cobró.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">corteCajaId</span></td>
+              <td><span class="field-type">String (UUID)?</span></td>
+              <td><span class="badge-attr fk">FK -> CashClosure.id</span> <span class="badge-attr fk">NULLABLE (Directo)</span> </td>
+              <td class="field-desc">Corte de caja que cuadró esta venta.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">notas</span></td>
+              <td><span class="field-type">String?</span></td>
+              <td><span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Observaciones del ticket.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaCancelacion</span></td>
+              <td><span class="field-type">DateTime?</span></td>
+              <td><span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Fecha de anulación.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">canceladoPorId</span></td>
+              <td><span class="field-type">String (UUID)?</span></td>
+              <td><span class="badge-attr fk">FK -> User.id</span> <span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Administrador que anuló.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">motivoCancelacion</span></td>
+              <td><span class="field-type">String?</span></td>
+              <td><span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Motivo justificado de la anulación.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaCreacion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(now())</span> </td>
+              <td class="field-desc">Fecha de emisión.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaActualizacion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr ">@updatedAt</span> </td>
+              <td class="field-desc">Fecha de actualización.</td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+
+      <!-- RELACIONES -->
+
+      <div class="section-block">
+        <h3>Relaciones con Otras Tablas</h3>
+        <div class="rel-list">
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">Customer</strong>
+            <span style="color: var(--text-muted);">— Cliente.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">Quote</strong>
+            <span style="color: var(--text-muted);">— Cotización original.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">User</strong>
+            <span style="color: var(--text-muted);">— Cajero y cancelador.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">CashClosure</strong>
+            <span style="color: var(--text-muted);">— Corte de caja liquidador.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge in">ENTRANTE</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">SaleItem</strong>
+            <span style="color: var(--text-muted);">— Renglones vendidos (onDelete: Cascade).</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge in">ENTRANTE</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">IdempotencyKey</strong>
+            <span style="color: var(--text-muted);">— Llave de idempotencia.</span>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Servicios de Backend Responsables</h3>
+        <div class="srv-list">
+          <div class="srv-item">⚡ SalesService: Cobro atómico, bloqueo pesimista FOR UPDATE, Kardex, cancelación y devolución.</div>
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Endpoints HTTP que Generan o Manipulan esta Tabla</h3>
+        <div class="ep-list">
+          <div class="ep-item">POST /api/ventas (Checkout directo con Idempotency-Key)</div>
+          <div class="ep-item">GET /api/ventas</div>
+          <div class="ep-item">GET /api/ventas/:id</div>
+          <div class="ep-item">POST /api/ventas/:id/cancelar</div>
+          <div class="ep-item">POST /api/ventas/:id/devolucion</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="model-card" data-domain="Ventas & Cotizaciones" data-search="saleitem sale_items renglón de venta. vital para descontar existencias, reimprimir ticket, devoluciones y fotografiar costo real. id ventaid productoid tallaid cantidad preciounitario descuento total costounitario fechacreacion creado atómicamente en post /api/ventas">
+      <div class="model-header">
+        <div class="model-title-wrap">
+          <span class="model-name">SaleItem</span>
+          <span class="table-map">@@map("sale_items")</span>
+        </div>
+        <span class="domain-badge">Ventas & Cotizaciones</span>
+      </div>
+      <div class="model-desc">Renglón de venta. Vital para descontar existencias, reimprimir ticket, devoluciones y fotografiar costo real.</div>
+
+      <!-- CAMPOS -->
+      <div class="section-block">
+        <h3>Campos y Columnas (10)</h3>
+        <table class="fields-table">
+          <thead>
+            <tr>
+              <th style="width: 230px;">Campo en Español</th>
+              <th style="width: 170px;">Tipo de Dato</th>
+              <th style="width: 220px;">Atributos / Reglas</th>
+              <th>Propósito de Negocio y Restricción</th>
+            </tr>
+          </thead>
+          <tbody>
+
+            <tr>
+              <td><span class="field-name">id</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr pk">PK</span> <span class="badge-attr default">@default(uuid())</span> </td>
+              <td class="field-desc">ID del renglón.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">ventaId</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr fk">FK -> Sale.id</span> </td>
+              <td class="field-desc">Venta a la que pertenece.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">productoId</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr fk">FK -> Product.id</span> </td>
+              <td class="field-desc">Producto vendido.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">tallaId</span></td>
+              <td><span class="field-type">String (UUID)?</span></td>
+              <td><span class="badge-attr fk">FK -> Size.id</span> <span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Talla de prenda anotada.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">cantidad</span></td>
+              <td><span class="field-type">Decimal(14,3)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Cantidad de piezas vendidas.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">precioUnitario</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Precio unitario cobrado.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">descuento</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(0)</span> </td>
+              <td class="field-desc">Descuento del renglón.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">total</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Subtotal cobrado (tax removido).</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">costoUnitario</span></td>
+              <td><span class="field-type">Decimal(12,2)?</span></td>
+              <td><span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Foto del costo de compra al momento de la venta (utilidad del dashboard).</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaCreacion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(now())</span> </td>
+              <td class="field-desc">Fecha de venta.</td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+
+      <!-- RELACIONES -->
+
+      <div class="section-block">
+        <h3>Relaciones con Otras Tablas</h3>
+        <div class="rel-list">
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">Sale</strong>
+            <span style="color: var(--text-muted);">— Venta contenedora.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">Product</strong>
+            <span style="color: var(--text-muted);">— Producto vendido.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">Size</strong>
+            <span style="color: var(--text-muted);">— Talla anotada.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge in">ENTRANTE</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">InventoryMovement</strong>
+            <span style="color: var(--text-muted);">— Movimiento SALE_OUT generado en Kardex.</span>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Servicios de Backend Responsables</h3>
+        <div class="srv-list">
+          <div class="srv-item">⚡ SalesService</div>
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Endpoints HTTP que Generan o Manipulan esta Tabla</h3>
+        <div class="ep-list">
+          <div class="ep-item">Creado atómicamente en POST /api/ventas</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="model-card" data-domain="Ventas & Cotizaciones" data-search="quote quotes presupuestos con vigencia. folio autoincrementable nativo y tax removido. id folio estado clienteid subtotal descuento total notes fechavencimiento creadoporid fechacreacion fechaactualizacion get /api/cotizaciones get /api/cotizaciones/:id post /api/cotizaciones patch /api/cotizaciones/:id post /api/cotizaciones/:id/enviar post /api/cotizaciones/:id/pagar (convierte a venta) delete /api/cotizaciones/:id">
+      <div class="model-header">
+        <div class="model-title-wrap">
+          <span class="model-name">Quote</span>
+          <span class="table-map">@@map("quotes")</span>
+        </div>
+        <span class="domain-badge">Ventas & Cotizaciones</span>
+      </div>
+      <div class="model-desc">Presupuestos con vigencia. Folio autoincrementable nativo y tax removido.</div>
+
+      <!-- CAMPOS -->
+      <div class="section-block">
+        <h3>Campos y Columnas (12)</h3>
+        <table class="fields-table">
+          <thead>
+            <tr>
+              <th style="width: 230px;">Campo en Español</th>
+              <th style="width: 170px;">Tipo de Dato</th>
+              <th style="width: 220px;">Atributos / Reglas</th>
+              <th>Propósito de Negocio y Restricción</th>
+            </tr>
+          </thead>
+          <tbody>
+
+            <tr>
+              <td><span class="field-name">id</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr pk">PK</span> <span class="badge-attr default">@default(uuid())</span> </td>
+              <td class="field-desc">ID de la cotización.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">folio</span></td>
+              <td><span class="field-type">Int</span></td>
+              <td><span class="badge-attr uk">UNIQUE</span> <span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(autoincrement())</span> </td>
+              <td class="field-desc">Folio secuencial nativo de PostgreSQL.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">estado</span></td>
+              <td><span class="field-type">QuoteStatus</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(DRAFT)</span> </td>
+              <td class="field-desc">DRAFT, SENT, ACCEPTED, REJECTED, EXPIRED, CONVERTED, CANCELLED.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">clienteId</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr fk">FK -> Customer.id</span> </td>
+              <td class="field-desc">Cliente cotizado.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">subtotal</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Suma de artículos.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">descuento</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(0)</span> </td>
+              <td class="field-desc">Descuento global.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">total</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Importe neto cotizado (sin tax).</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">notes</span></td>
+              <td><span class="field-type">String?</span></td>
+              <td><span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Notas o vigencia.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaVencimiento</span></td>
+              <td><span class="field-type">DateTime?</span></td>
+              <td><span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Vencimiento de precios.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">creadoPorId</span></td>
+              <td><span class="field-type">String (UUID)?</span></td>
+              <td><span class="badge-attr fk">FK -> User.id</span> <span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Vendedor creador.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaCreacion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(now())</span> </td>
+              <td class="field-desc">Fecha de alta.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaActualizacion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr ">@updatedAt</span> </td>
+              <td class="field-desc">Fecha de edición.</td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+
+      <!-- RELACIONES -->
+
+      <div class="section-block">
+        <h3>Relaciones con Otras Tablas</h3>
+        <div class="rel-list">
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">Customer</strong>
+            <span style="color: var(--text-muted);">— Cliente.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">User</strong>
+            <span style="color: var(--text-muted);">— Vendedor.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge in">ENTRANTE</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">QuoteItem</strong>
+            <span style="color: var(--text-muted);">— Renglones cotizados.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge in">ENTRANTE</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">Sale</strong>
+            <span style="color: var(--text-muted);">— Venta generada al convertir.</span>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Servicios de Backend Responsables</h3>
+        <div class="srv-list">
+          <div class="srv-item">⚡ QuotesService</div>
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Endpoints HTTP que Generan o Manipulan esta Tabla</h3>
+        <div class="ep-list">
+          <div class="ep-item">GET /api/cotizaciones</div>
+          <div class="ep-item">GET /api/cotizaciones/:id</div>
+          <div class="ep-item">POST /api/cotizaciones</div>
+          <div class="ep-item">PATCH /api/cotizaciones/:id</div>
+          <div class="ep-item">POST /api/cotizaciones/:id/enviar</div>
+          <div class="ep-item">POST /api/cotizaciones/:id/pagar (Convierte a venta)</div>
+          <div class="ep-item">DELETE /api/cotizaciones/:id</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="model-card" data-domain="Ventas & Cotizaciones" data-search="quoteitem quote_items artículos presupuestados en una cotización (tax removido). id cotizacionid productoid tallaid cantidad preciounitario descuento total fechacreacion post/patch /api/cotizaciones">
+      <div class="model-header">
+        <div class="model-title-wrap">
+          <span class="model-name">QuoteItem</span>
+          <span class="table-map">@@map("quote_items")</span>
+        </div>
+        <span class="domain-badge">Ventas & Cotizaciones</span>
+      </div>
+      <div class="model-desc">Artículos presupuestados en una cotización (tax removido).</div>
+
+      <!-- CAMPOS -->
+      <div class="section-block">
+        <h3>Campos y Columnas (9)</h3>
+        <table class="fields-table">
+          <thead>
+            <tr>
+              <th style="width: 230px;">Campo en Español</th>
+              <th style="width: 170px;">Tipo de Dato</th>
+              <th style="width: 220px;">Atributos / Reglas</th>
+              <th>Propósito de Negocio y Restricción</th>
+            </tr>
+          </thead>
+          <tbody>
+
+            <tr>
+              <td><span class="field-name">id</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr pk">PK</span> <span class="badge-attr default">@default(uuid())</span> </td>
+              <td class="field-desc">ID del renglón.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">cotizacionId</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr fk">FK -> Quote.id</span> </td>
+              <td class="field-desc">Cotización a la que pertenece.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">productoId</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr fk">FK -> Product.id</span> </td>
+              <td class="field-desc">Producto cotizado.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">tallaId</span></td>
+              <td><span class="field-type">String (UUID)?</span></td>
+              <td><span class="badge-attr fk">FK -> Size.id</span> <span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Talla elegida si aplica.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">cantidad</span></td>
+              <td><span class="field-type">Decimal(14,3)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Cantidad presupuestada.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">precioUnitario</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Precio unitario cotizado.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">descuento</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(0)</span> </td>
+              <td class="field-desc">Descuento del renglón.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">total</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Total neto del renglón (sin tax).</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaCreacion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(now())</span> </td>
+              <td class="field-desc">Fecha de alta.</td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+
+      <!-- RELACIONES -->
+
+      <div class="section-block">
+        <h3>Relaciones con Otras Tablas</h3>
+        <div class="rel-list">
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">Quote</strong>
+            <span style="color: var(--text-muted);">— Cotización padre.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">Product</strong>
+            <span style="color: var(--text-muted);">— Producto cotizado.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">Size</strong>
+            <span style="color: var(--text-muted);">— Talla.</span>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Servicios de Backend Responsables</h3>
+        <div class="srv-list">
+          <div class="srv-item">⚡ QuotesService</div>
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Endpoints HTTP que Generan o Manipulan esta Tabla</h3>
+        <div class="ep-list">
+          <div class="ep-item">POST/PATCH /api/cotizaciones</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="model-card" data-domain="Inventario & Kardex" data-search="inventorymovement inventory_movements libro mayor de auditoría (kardex). el stock físico es sum(cambioexistencias) sin update plano. id productoid tipo cambioexistencias costounitario tiporeferencia referenciaid renglonventaid creadoporid notas fechacreacion get /api/inventario/movimientos get /api/productos/:id/movimientos post /api/productos/:productoid/movimientos">
+      <div class="model-header">
+        <div class="model-title-wrap">
+          <span class="model-name">InventoryMovement</span>
+          <span class="table-map">@@map("inventory_movements")</span>
+        </div>
+        <span class="domain-badge">Inventario & Kardex</span>
+      </div>
+      <div class="model-desc">Libro mayor de auditoría (Kardex). El stock físico es SUM(cambioExistencias) sin UPDATE plano.</div>
+
+      <!-- CAMPOS -->
+      <div class="section-block">
+        <h3>Campos y Columnas (11)</h3>
+        <table class="fields-table">
+          <thead>
+            <tr>
+              <th style="width: 230px;">Campo en Español</th>
+              <th style="width: 170px;">Tipo de Dato</th>
+              <th style="width: 220px;">Atributos / Reglas</th>
+              <th>Propósito de Negocio y Restricción</th>
+            </tr>
+          </thead>
+          <tbody>
+
+            <tr>
+              <td><span class="field-name">id</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr pk">PK</span> <span class="badge-attr default">@default(uuid())</span> </td>
+              <td class="field-desc">ID del movimiento.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">productoId</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr fk">FK -> Product.id</span> </td>
+              <td class="field-desc">Producto afectado.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">tipo</span></td>
+              <td><span class="field-type">InventoryMovementType</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">PURCHASE_IN (+), SALE_OUT (-), RETURN_IN (+), ADJUSTMENT_IN (+), ADJUSTMENT_OUT (-).</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">cambioExistencias</span></td>
+              <td><span class="field-type">Decimal(14,3)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Variación física (+/-).</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">costoUnitario</span></td>
+              <td><span class="field-type">Decimal(12,2)?</span></td>
+              <td><span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Costo fotografiado en la entrada.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">tipoReferencia</span></td>
+              <td><span class="field-type">String?</span></td>
+              <td><span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">SALE, PURCHASE, RETURN, ADJUSTMENT.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">referenciaId</span></td>
+              <td><span class="field-type">String?</span></td>
+              <td><span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">UUID o Folio origen.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">renglonVentaId</span></td>
+              <td><span class="field-type">String (UUID)?</span></td>
+              <td><span class="badge-attr fk">FK -> SaleItem.id</span> <span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Renglón de venta asociado.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">creadoPorId</span></td>
+              <td><span class="field-type">String (UUID)?</span></td>
+              <td><span class="badge-attr fk">FK -> User.id</span> <span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Operador responsable.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">notas</span></td>
+              <td><span class="field-type">String?</span></td>
+              <td><span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Motivo del movimiento.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaCreacion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(now())</span> </td>
+              <td class="field-desc">Fecha inmutable.</td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+
+      <!-- RELACIONES -->
+
+      <div class="section-block">
+        <h3>Relaciones con Otras Tablas</h3>
+        <div class="rel-list">
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">Product</strong>
+            <span style="color: var(--text-muted);">— Producto.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">SaleItem</strong>
+            <span style="color: var(--text-muted);">— Renglón de venta.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">User</strong>
+            <span style="color: var(--text-muted);">— Usuario autor.</span>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Servicios de Backend Responsables</h3>
+        <div class="srv-list">
+          <div class="srv-item">⚡ InventoryMovementsService, PurchasesService, SalesService</div>
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Endpoints HTTP que Generan o Manipulan esta Tabla</h3>
+        <div class="ep-list">
+          <div class="ep-item">GET /api/inventario/movimientos</div>
+          <div class="ep-item">GET /api/productos/:id/movimientos</div>
+          <div class="ep-item">POST /api/productos/:productoId/movimientos</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="model-card" data-domain="Compras & Proveedores" data-search="provider providers directorio de proveedores directos de mercancía. id nombre telefono correo nombrecontacto direccion activo fechacreacion fechaactualizacion get /api/proveedores get /api/proveedores/:id post /api/proveedores put /api/proveedores/:id delete /api/proveedores/:id">
+      <div class="model-header">
+        <div class="model-title-wrap">
+          <span class="model-name">Provider</span>
+          <span class="table-map">@@map("providers")</span>
+        </div>
+        <span class="domain-badge">Compras & Proveedores</span>
+      </div>
+      <div class="model-desc">Directorio de proveedores directos de mercancía.</div>
+
+      <!-- CAMPOS -->
+      <div class="section-block">
+        <h3>Campos y Columnas (9)</h3>
+        <table class="fields-table">
+          <thead>
+            <tr>
+              <th style="width: 230px;">Campo en Español</th>
+              <th style="width: 170px;">Tipo de Dato</th>
+              <th style="width: 220px;">Atributos / Reglas</th>
+              <th>Propósito de Negocio y Restricción</th>
+            </tr>
+          </thead>
+          <tbody>
+
+            <tr>
+              <td><span class="field-name">id</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr pk">PK</span> <span class="badge-attr default">@default(uuid())</span> </td>
+              <td class="field-desc">ID del proveedor.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">nombre</span></td>
+              <td><span class="field-type">String</span></td>
+              <td><span class="badge-attr uk">UNIQUE</span> <span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Razón social del proveedor.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">telefono</span></td>
+              <td><span class="field-type">String?</span></td>
+              <td><span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Teléfono de pedidos.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">correo</span></td>
+              <td><span class="field-type">String?</span></td>
+              <td><span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Correo electrónico.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">nombreContacto</span></td>
+              <td><span class="field-type">String?</span></td>
+              <td><span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Ejecutivo de ventas.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">direccion</span></td>
+              <td><span class="field-type">String?</span></td>
+              <td><span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Dirección física.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">activo</span></td>
+              <td><span class="field-type">Boolean</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(true)</span> </td>
+              <td class="field-desc">Estado activo/inactivo.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaCreacion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(now())</span> </td>
+              <td class="field-desc">Fecha de alta.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaActualizacion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr ">@updatedAt</span> </td>
+              <td class="field-desc">Fecha de edición.</td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+
+      <!-- RELACIONES -->
+
+      <div class="section-block">
+        <h3>Relaciones con Otras Tablas</h3>
+        <div class="rel-list">
+
+          <div class="rel-item">
+            <span class="rel-badge in">ENTRANTE</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">Purchase</strong>
+            <span style="color: var(--text-muted);">— Compras recibidas de este proveedor.</span>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Servicios de Backend Responsables</h3>
+        <div class="srv-list">
+          <div class="srv-item">⚡ ProvidersService</div>
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Endpoints HTTP que Generan o Manipulan esta Tabla</h3>
+        <div class="ep-list">
+          <div class="ep-item">GET /api/proveedores</div>
+          <div class="ep-item">GET /api/proveedores/:id</div>
+          <div class="ep-item">POST /api/proveedores</div>
+          <div class="ep-item">PUT /api/proveedores/:id</div>
+          <div class="ep-item">DELETE /api/proveedores/:id</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="model-card" data-domain="Compras & Proveedores" data-search="purchase purchases compras directas recibidas. sube existencias vía purchase_in (sin pedidos diferidos supplier_orders). id proveedorid fecharecepcion folioproveedor notas total creadoporid fechacreacion get /api/compras get /api/compras/:id post /api/compras (solo admin)">
+      <div class="model-header">
+        <div class="model-title-wrap">
+          <span class="model-name">Purchase</span>
+          <span class="table-map">@@map("purchases")</span>
+        </div>
+        <span class="domain-badge">Compras & Proveedores</span>
+      </div>
+      <div class="model-desc">Compras directas recibidas. Sube existencias vía PURCHASE_IN (sin pedidos diferidos supplier_orders).</div>
+
+      <!-- CAMPOS -->
+      <div class="section-block">
+        <h3>Campos y Columnas (8)</h3>
+        <table class="fields-table">
+          <thead>
+            <tr>
+              <th style="width: 230px;">Campo en Español</th>
+              <th style="width: 170px;">Tipo de Dato</th>
+              <th style="width: 220px;">Atributos / Reglas</th>
+              <th>Propósito de Negocio y Restricción</th>
+            </tr>
+          </thead>
+          <tbody>
+
+            <tr>
+              <td><span class="field-name">id</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr pk">PK</span> <span class="badge-attr default">@default(uuid())</span> </td>
+              <td class="field-desc">ID de la compra.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">proveedorId</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr fk">FK -> Provider.id</span> </td>
+              <td class="field-desc">Proveedor que suministró la mercancía.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaRecepcion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(now())</span> </td>
+              <td class="field-desc">Fecha en que ingresó físicamente el producto.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">folioProveedor</span></td>
+              <td><span class="field-type">String?</span></td>
+              <td><span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Folio de factura o remisión del proveedor.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">notas</span></td>
+              <td><span class="field-type">String?</span></td>
+              <td><span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Notas de compra.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">total</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Importe total calculado por backend.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">creadoPorId</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr fk">FK -> User.id</span> </td>
+              <td class="field-desc">Administrador que registró la compra.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaCreacion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(now())</span> </td>
+              <td class="field-desc">Fecha de registro.</td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+
+      <!-- RELACIONES -->
+
+      <div class="section-block">
+        <h3>Relaciones con Otras Tablas</h3>
+        <div class="rel-list">
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">Provider</strong>
+            <span style="color: var(--text-muted);">— Proveedor.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">User</strong>
+            <span style="color: var(--text-muted);">— Usuario receptor.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge in">ENTRANTE</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">PurchaseItem</strong>
+            <span style="color: var(--text-muted);">— Renglones recibidos.</span>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Servicios de Backend Responsables</h3>
+        <div class="srv-list">
+          <div class="srv-item">⚡ PurchasesService</div>
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Endpoints HTTP que Generan o Manipulan esta Tabla</h3>
+        <div class="ep-list">
+          <div class="ep-item">GET /api/compras</div>
+          <div class="ep-item">GET /api/compras/:id</div>
+          <div class="ep-item">POST /api/compras (Solo ADMIN)</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="model-card" data-domain="Compras & Proveedores" data-search="purchaseitem purchase_items renglón de compra recibida con foto de costo unitario y producto. id compraid productoid posicion nombreproducto codigobarras cantidad costounitario subtotalrenglon post /api/compras">
+      <div class="model-header">
+        <div class="model-title-wrap">
+          <span class="model-name">PurchaseItem</span>
+          <span class="table-map">@@map("purchase_items")</span>
+        </div>
+        <span class="domain-badge">Compras & Proveedores</span>
+      </div>
+      <div class="model-desc">Renglón de compra recibida con foto de costo unitario y producto.</div>
+
+      <!-- CAMPOS -->
+      <div class="section-block">
+        <h3>Campos y Columnas (9)</h3>
+        <table class="fields-table">
+          <thead>
+            <tr>
+              <th style="width: 230px;">Campo en Español</th>
+              <th style="width: 170px;">Tipo de Dato</th>
+              <th style="width: 220px;">Atributos / Reglas</th>
+              <th>Propósito de Negocio y Restricción</th>
+            </tr>
+          </thead>
+          <tbody>
+
+            <tr>
+              <td><span class="field-name">id</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr pk">PK</span> <span class="badge-attr default">@default(uuid())</span> </td>
+              <td class="field-desc">ID del renglón.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">compraId</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr fk">FK -> Purchase.id</span> </td>
+              <td class="field-desc">Compra a la que pertenece.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">productoId</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr fk">FK -> Product.id</span> </td>
+              <td class="field-desc">Producto adquirido.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">posicion</span></td>
+              <td><span class="field-type">Int</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Posición en la factura.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">nombreProducto</span></td>
+              <td><span class="field-type">String</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Foto del nombre del producto.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">codigoBarras</span></td>
+              <td><span class="field-type">String</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Foto del código de barras.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">cantidad</span></td>
+              <td><span class="field-type">Decimal(14,3)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Unidades recibidas.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">costoUnitario</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Costo unitario pactado.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">subtotalRenglon</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Subtotal del renglón (cantidad * costoUnitario).</td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+
+      <!-- RELACIONES -->
+
+      <div class="section-block">
+        <h3>Relaciones con Otras Tablas</h3>
+        <div class="rel-list">
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">Purchase</strong>
+            <span style="color: var(--text-muted);">— Compra.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">Product</strong>
+            <span style="color: var(--text-muted);">— Producto.</span>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Servicios de Backend Responsables</h3>
+        <div class="srv-list">
+          <div class="srv-item">⚡ PurchasesService</div>
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Endpoints HTTP que Generan o Manipulan esta Tabla</h3>
+        <div class="ep-list">
+          <div class="ep-item">POST /api/compras</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="model-card" data-domain="Finanzas & Cortes de Caja" data-search="expensecategory expense_categories catálogo de categorías de gastos operativos. id nombre activo fechacreacion fechaactualizacion get /api/categorias-gastos post /api/categorias-gastos put /api/categorias-gastos/:id delete /api/categorias-gastos/:id">
+      <div class="model-header">
+        <div class="model-title-wrap">
+          <span class="model-name">ExpenseCategory</span>
+          <span class="table-map">@@map("expense_categories")</span>
+        </div>
+        <span class="domain-badge">Finanzas & Cortes de Caja</span>
+      </div>
+      <div class="model-desc">Catálogo de categorías de gastos operativos.</div>
+
+      <!-- CAMPOS -->
+      <div class="section-block">
+        <h3>Campos y Columnas (5)</h3>
+        <table class="fields-table">
+          <thead>
+            <tr>
+              <th style="width: 230px;">Campo en Español</th>
+              <th style="width: 170px;">Tipo de Dato</th>
+              <th style="width: 220px;">Atributos / Reglas</th>
+              <th>Propósito de Negocio y Restricción</th>
+            </tr>
+          </thead>
+          <tbody>
+
+            <tr>
+              <td><span class="field-name">id</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr pk">PK</span> <span class="badge-attr default">@default(uuid())</span> </td>
+              <td class="field-desc">ID de la categoría de gasto.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">nombre</span></td>
+              <td><span class="field-type">String</span></td>
+              <td><span class="badge-attr uk">UNIQUE</span> <span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Nombre del concepto (ej. INSUMOS, SERVICIOS).</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">activo</span></td>
+              <td><span class="field-type">Boolean</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(true)</span> </td>
+              <td class="field-desc">Estado activo/inactivo.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaCreacion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(now())</span> </td>
+              <td class="field-desc">Fecha de alta.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaActualizacion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr ">@updatedAt</span> </td>
+              <td class="field-desc">Fecha de edición.</td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+
+      <!-- RELACIONES -->
+
+      <div class="section-block">
+        <h3>Relaciones con Otras Tablas</h3>
+        <div class="rel-list">
+
+          <div class="rel-item">
+            <span class="rel-badge in">ENTRANTE</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">Expense</strong>
+            <span style="color: var(--text-muted);">— Gastos asociados.</span>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Servicios de Backend Responsables</h3>
+        <div class="srv-list">
+          <div class="srv-item">⚡ ExpenseCategoriesService</div>
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Endpoints HTTP que Generan o Manipulan esta Tabla</h3>
+        <div class="ep-list">
+          <div class="ep-item">GET /api/categorias-gastos</div>
+          <div class="ep-item">POST /api/categorias-gastos</div>
+          <div class="ep-item">PUT /api/categorias-gastos/:id</div>
+          <div class="ep-item">DELETE /api/categorias-gastos/:id</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="model-card" data-domain="Finanzas & Cortes de Caja" data-search="expense expenses registro de egresos operativos. si descontardecaja = true, descuenta efectivo esperado en el corte. id concepto monto descontardecaja notas fechagasto categoriaid creadoporid cortecajaid fechacreacion fechaactualizacion get /api/gastos get /api/gastos/:id post /api/gastos delete /api/gastos/:id">
+      <div class="model-header">
+        <div class="model-title-wrap">
+          <span class="model-name">Expense</span>
+          <span class="table-map">@@map("expenses")</span>
+        </div>
+        <span class="domain-badge">Finanzas & Cortes de Caja</span>
+      </div>
+      <div class="model-desc">Registro de egresos operativos. Si descontarDeCaja = true, descuenta efectivo esperado en el corte.</div>
+
+      <!-- CAMPOS -->
+      <div class="section-block">
+        <h3>Campos y Columnas (11)</h3>
+        <table class="fields-table">
+          <thead>
+            <tr>
+              <th style="width: 230px;">Campo en Español</th>
+              <th style="width: 170px;">Tipo de Dato</th>
+              <th style="width: 220px;">Atributos / Reglas</th>
+              <th>Propósito de Negocio y Restricción</th>
+            </tr>
+          </thead>
+          <tbody>
+
+            <tr>
+              <td><span class="field-name">id</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr pk">PK</span> <span class="badge-attr default">@default(uuid())</span> </td>
+              <td class="field-desc">ID del gasto.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">concepto</span></td>
+              <td><span class="field-type">String</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Descripción del gasto.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">monto</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Monto gastado.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">descontarDeCaja</span></td>
+              <td><span class="field-type">Boolean</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(false)</span> </td>
+              <td class="field-desc">Resta efectivo del cajón si es true.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">notas</span></td>
+              <td><span class="field-type">String?</span></td>
+              <td><span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Notas o número de ticket.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaGasto</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(now())</span> </td>
+              <td class="field-desc">Fecha de salida del dinero.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">categoriaId</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr fk">FK -> ExpenseCategory.id</span> </td>
+              <td class="field-desc">Categoría del gasto.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">creadoPorId</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr fk">FK -> User.id</span> </td>
+              <td class="field-desc">Cajero que erogó el dinero.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">corteCajaId</span></td>
+              <td><span class="field-type">String (UUID)?</span></td>
+              <td><span class="badge-attr fk">FK -> CashClosure.id</span> <span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Corte que cuadró el gasto.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaCreacion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(now())</span> </td>
+              <td class="field-desc">Fecha de registro.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaActualizacion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr ">@updatedAt</span> </td>
+              <td class="field-desc">Fecha de edición.</td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+
+      <!-- RELACIONES -->
+
+      <div class="section-block">
+        <h3>Relaciones con Otras Tablas</h3>
+        <div class="rel-list">
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">ExpenseCategory</strong>
+            <span style="color: var(--text-muted);">— Categoría.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">User</strong>
+            <span style="color: var(--text-muted);">— Usuario.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">CashClosure</strong>
+            <span style="color: var(--text-muted);">— Corte de caja.</span>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Servicios de Backend Responsables</h3>
+        <div class="srv-list">
+          <div class="srv-item">⚡ ExpensesService</div>
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Endpoints HTTP que Generan o Manipulan esta Tabla</h3>
+        <div class="ep-list">
+          <div class="ep-item">GET /api/gastos</div>
+          <div class="ep-item">GET /api/gastos/:id</div>
+          <div class="ep-item">POST /api/gastos</div>
+          <div class="ep-item">DELETE /api/gastos/:id</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="model-card" data-domain="Finanzas & Cortes de Caja" data-search="cashclosure cash_closures arqueo y cortes de caja en cadena estricta (corteanteriorid @unique). liquida ventas y gastos del turno. id corteanteriorid inicioperiodo fechacierre cerradoporid fondoinicial cantidadventas ventasefectivo ventastarjeta ventastransferencia otrasventas reembolsosefectivo reembolsostotales cantidadgastos gastosefectivo totalexpenses ajustesentrada ajustessalida efectivoesperado efectivocontado diferencia fondodejado denominaciones notas fechacreacion fechaactualizacion get /api/cortes-caja/resumen-actual post /api/cortes-caja get /api/cortes-caja get /api/cortes-caja/:id">
+      <div class="model-header">
+        <div class="model-title-wrap">
+          <span class="model-name">CashClosure</span>
+          <span class="table-map">@@map("cash_closures")</span>
+        </div>
+        <span class="domain-badge">Finanzas & Cortes de Caja</span>
+      </div>
+      <div class="model-desc">Arqueo y cortes de caja en cadena estricta (corteAnteriorId @unique). Liquida ventas y gastos del turno.</div>
+
+      <!-- CAMPOS -->
+      <div class="section-block">
+        <h3>Campos y Columnas (26)</h3>
+        <table class="fields-table">
+          <thead>
+            <tr>
+              <th style="width: 230px;">Campo en Español</th>
+              <th style="width: 170px;">Tipo de Dato</th>
+              <th style="width: 220px;">Atributos / Reglas</th>
+              <th>Propósito de Negocio y Restricción</th>
+            </tr>
+          </thead>
+          <tbody>
+
+            <tr>
+              <td><span class="field-name">id</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr pk">PK</span> <span class="badge-attr default">@default(uuid())</span> </td>
+              <td class="field-desc">ID del corte.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">corteAnteriorId</span></td>
+              <td><span class="field-type">String (UUID)?</span></td>
+              <td><span class="badge-attr uk">UNIQUE</span> <span class="badge-attr fk">FK -> CashClosure.id</span> <span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Enlace en cadena al corte anterior.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">inicioPeriodo</span></td>
+              <td><span class="field-type">DateTime?</span></td>
+              <td><span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Fecha y hora del corte anterior.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaCierre</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(now())</span> </td>
+              <td class="field-desc">Fecha y hora de cierre.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">cerradoPorId</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr fk">FK -> User.id</span> </td>
+              <td class="field-desc">Cajero responsable.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fondoInicial</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Fondo heredado del fondoDejado del corte previo.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">cantidadVentas</span></td>
+              <td><span class="field-type">Int</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Número de tickets cobrados.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">ventasEfectivo</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Ventas cobradas en efectivo.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">ventasTarjeta</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Ventas cobradas con tarjeta.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">ventasTransferencia</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Ventas cobradas por transferencia.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">otrasVentas</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Ventas por otros medios.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">reembolsosEfectivo</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Devoluciones en efectivo en el turno.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">reembolsosTotales</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Total de devoluciones.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">cantidadGastos</span></td>
+              <td><span class="field-type">Int</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Cantidad de egresos del turno.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">gastosEfectivo</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Gastos descontados del cajón.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">totalExpenses</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Gastos totales del turno.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">ajustesEntrada</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Entradas manuales de efectivo.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">ajustesSalida</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Retiros manuales de efectivo.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">efectivoEsperado</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Efectivo teórico calculado.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">efectivoContado</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Efectivo contado físicamente.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">diferencia</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">efectivoContado - efectivoEsperado.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fondoDejado</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Fondo que se deja para el siguiente turno.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">denominaciones</span></td>
+              <td><span class="field-type">Json</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Conteo de billetes y monedas (1000 a 0.5).</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">notas</span></td>
+              <td><span class="field-type">String?</span></td>
+              <td><span class="badge-attr ">NULLABLE</span> </td>
+              <td class="field-desc">Notas explicativas.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaCreacion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(now())</span> </td>
+              <td class="field-desc">Fecha de cierre.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaActualizacion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr ">@updatedAt</span> </td>
+              <td class="field-desc">Fecha de modificación.</td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+
+      <!-- RELACIONES -->
+
+      <div class="section-block">
+        <h3>Relaciones con Otras Tablas</h3>
+        <div class="rel-list">
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">CashClosure</strong>
+            <span style="color: var(--text-muted);">— Corte anterior.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">User</strong>
+            <span style="color: var(--text-muted);">— Cajero.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge in">ENTRANTE</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">Sale</strong>
+            <span style="color: var(--text-muted);">— Ventas cuadradas en este corte (relación directa 1 a N).</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge in">ENTRANTE</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">Expense</strong>
+            <span style="color: var(--text-muted);">— Gastos liquidados en este corte.</span>
+          </div>
+
+          <div class="rel-item">
+            <span class="rel-badge in">ENTRANTE</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">CashClosureAdjustment</strong>
+            <span style="color: var(--text-muted);">— Ajustes manuales.</span>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Servicios de Backend Responsables</h3>
+        <div class="srv-list">
+          <div class="srv-item">⚡ CashClosuresService</div>
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Endpoints HTTP que Generan o Manipulan esta Tabla</h3>
+        <div class="ep-list">
+          <div class="ep-item">GET /api/cortes-caja/resumen-actual</div>
+          <div class="ep-item">POST /api/cortes-caja</div>
+          <div class="ep-item">GET /api/cortes-caja</div>
+          <div class="ep-item">GET /api/cortes-caja/:id</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="model-card" data-domain="Finanzas & Cortes de Caja" data-search="cashclosureadjustment cash_closure_adjustments ajustes manuales de entrada o retiro de efectivo reportados durante el arqueo de caja. id cortecajaid posicion tipo monto descripcion fechacreacion post /api/cortes-caja">
+      <div class="model-header">
+        <div class="model-title-wrap">
+          <span class="model-name">CashClosureAdjustment</span>
+          <span class="table-map">@@map("cash_closure_adjustments")</span>
+        </div>
+        <span class="domain-badge">Finanzas & Cortes de Caja</span>
+      </div>
+      <div class="model-desc">Ajustes manuales de entrada o retiro de efectivo reportados durante el arqueo de caja.</div>
+
+      <!-- CAMPOS -->
+      <div class="section-block">
+        <h3>Campos y Columnas (7)</h3>
+        <table class="fields-table">
+          <thead>
+            <tr>
+              <th style="width: 230px;">Campo en Español</th>
+              <th style="width: 170px;">Tipo de Dato</th>
+              <th style="width: 220px;">Atributos / Reglas</th>
+              <th>Propósito de Negocio y Restricción</th>
+            </tr>
+          </thead>
+          <tbody>
+
+            <tr>
+              <td><span class="field-name">id</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr pk">PK</span> <span class="badge-attr default">@default(uuid())</span> </td>
+              <td class="field-desc">ID del ajuste.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">corteCajaId</span></td>
+              <td><span class="field-type">String (UUID)</span></td>
+              <td><span class="badge-attr fk">FK -> CashClosure.id</span> </td>
+              <td class="field-desc">Corte asociado.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">posicion</span></td>
+              <td><span class="field-type">Int</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Orden de captura.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">tipo</span></td>
+              <td><span class="field-type">CashAdjustmentType</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">INCOME o WITHDRAWAL.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">monto</span></td>
+              <td><span class="field-type">Decimal(12,2)</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Monto del ajuste.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">descripcion</span></td>
+              <td><span class="field-type">String</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Motivo del ajuste.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaCreacion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(now())</span> </td>
+              <td class="field-desc">Fecha de captura.</td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+
+      <!-- RELACIONES -->
+
+      <div class="section-block">
+        <h3>Relaciones con Otras Tablas</h3>
+        <div class="rel-list">
+
+          <div class="rel-item">
+            <span class="rel-badge out">SALIENTE (FK)</span>
+            <strong style="color: #fff; font-family: var(--font-mono);">CashClosure</strong>
+            <span style="color: var(--text-muted);">— Corte de caja.</span>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Servicios de Backend Responsables</h3>
+        <div class="srv-list">
+          <div class="srv-item">⚡ CashClosuresService</div>
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Endpoints HTTP que Generan o Manipulan esta Tabla</h3>
+        <div class="ep-list">
+          <div class="ep-item">POST /api/cortes-caja</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="model-card" data-domain="Configuración del Negocio" data-search="businessconfig business_config configuración única del establecimiento para tickets y facturación (registro singleton con clave default). clave nombre direccion colonia municipio estado telefono rfc mensajepie fechacreacion fechaactualizacion get /api/configuracion-negocio put /api/configuracion-negocio">
+      <div class="model-header">
+        <div class="model-title-wrap">
+          <span class="model-name">BusinessConfig</span>
+          <span class="table-map">@@map("business_config")</span>
+        </div>
+        <span class="domain-badge">Configuración del Negocio</span>
+      </div>
+      <div class="model-desc">Configuración única del establecimiento para tickets y facturación (registro singleton con clave default).</div>
+
+      <!-- CAMPOS -->
+      <div class="section-block">
+        <h3>Campos y Columnas (11)</h3>
+        <table class="fields-table">
+          <thead>
+            <tr>
+              <th style="width: 230px;">Campo en Español</th>
+              <th style="width: 170px;">Tipo de Dato</th>
+              <th style="width: 220px;">Atributos / Reglas</th>
+              <th>Propósito de Negocio y Restricción</th>
+            </tr>
+          </thead>
+          <tbody>
+
+            <tr>
+              <td><span class="field-name">clave</span></td>
+              <td><span class="field-type">String</span></td>
+              <td><span class="badge-attr pk">PK</span> <span class="badge-attr default">@default("default")</span> </td>
+              <td class="field-desc">Clave fija singleton.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">nombre</span></td>
+              <td><span class="field-type">String</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Nombre comercial o razón social.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">direccion</span></td>
+              <td><span class="field-type">String</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Calle y número.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">colonia</span></td>
+              <td><span class="field-type">String</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Colonia o asentamiento.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">municipio</span></td>
+              <td><span class="field-type">String</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Municipio o Alcaldía.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">estado</span></td>
+              <td><span class="field-type">String</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Estado o Entidad Federativa.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">telefono</span></td>
+              <td><span class="field-type">String</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Teléfono impreso en tickets.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">rfc</span></td>
+              <td><span class="field-type">String</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">RFC validado.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">mensajePie</span></td>
+              <td><span class="field-type">String</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> </td>
+              <td class="field-desc">Pie de ticket de cortesía.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaCreacion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr default">@default(now())</span> </td>
+              <td class="field-desc">Fecha de alta.</td>
+            </tr>
+
+            <tr>
+              <td><span class="field-name">fechaActualizacion</span></td>
+              <td><span class="field-type">DateTime</span></td>
+              <td><span class="badge-attr ">NOT NULL</span> <span class="badge-attr ">@updatedAt</span> </td>
+              <td class="field-desc">Fecha de modificación.</td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+
+      <!-- RELACIONES -->
+
+      <div class="section-block">
+        <h3>Servicios de Backend Responsables</h3>
+        <div class="srv-list">
+          <div class="srv-item">⚡ BusinessConfigService</div>
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Endpoints HTTP que Generan o Manipulan esta Tabla</h3>
+        <div class="ep-list">
+          <div class="ep-item">GET /api/configuracion-negocio</div>
+          <div class="ep-item">PUT /api/configuracion-negocio</div>
+        </div>
+      </div>
+    </div>
+
+    </div>
+
+    <!-- SECCIÓN DE ENUMS -->
+    <div style="margin-top: 60px;">
+      <h2 style="font-size: 1.6rem; color: #fff; margin-bottom: 8px;">Catálogo de Enums de Base de Datos</h2>
+      <p style="color: var(--text-muted); margin-bottom: 25px;">Valores fijos tipados en PostgreSQL para control estricto de estados y tipos de operación.</p>
+      <div class="enum-grid">
+
+        <div class="enum-card">
+          <div class="enum-name">enum InventoryMovementType</div>
+          <div class="enum-desc">Tipos de movimientos físicos en el libro mayor Kardex.</div>
+
+          <div class="enum-val-row">
+            <span class="enum-val">PURCHASE_IN</span>
+            <span class="enum-val-desc">Entrada física por compra directa recibida a proveedor (+).</span>
+          </div>
+
+          <div class="enum-val-row">
+            <span class="enum-val">SALE_OUT</span>
+            <span class="enum-val-desc">Salida física por venta en mostrador (-).</span>
+          </div>
+
+          <div class="enum-val-row">
+            <span class="enum-val">RETURN_IN</span>
+            <span class="enum-val-desc">Reingreso físico por cancelación o devolución de venta (+).</span>
+          </div>
+
+          <div class="enum-val-row">
+            <span class="enum-val">ADJUSTMENT_IN</span>
+            <span class="enum-val-desc">Ajuste manual de incremento de existencias por conteo (+).</span>
+          </div>
+
+          <div class="enum-val-row">
+            <span class="enum-val">ADJUSTMENT_OUT</span>
+            <span class="enum-val-desc">Ajuste manual de decremento de existencias por pérdida o merma (-).</span>
+          </div>
+        </div>
+
+        <div class="enum-card">
+          <div class="enum-name">enum SaleStatus</div>
+          <div class="enum-desc">Ciclo de vida de una venta.</div>
+
+          <div class="enum-val-row">
+            <span class="enum-val">PENDING</span>
+            <span class="enum-val-desc">Venta creada a la espera de confirmación de pago.</span>
+          </div>
+
+          <div class="enum-val-row">
+            <span class="enum-val">COMPLETED</span>
+            <span class="enum-val-desc">Venta cobrada con éxito; inventario descontado.</span>
+          </div>
+
+          <div class="enum-val-row">
+            <span class="enum-val">CANCELLED</span>
+            <span class="enum-val-desc">Venta anulada por completo; mercancía devuelta a inventario.</span>
+          </div>
+
+          <div class="enum-val-row">
+            <span class="enum-val">REFUNDED</span>
+            <span class="enum-val-desc">Venta con reembolso aplicado por devolución.</span>
+          </div>
+        </div>
+
+        <div class="enum-card">
+          <div class="enum-name">enum QuoteStatus</div>
+          <div class="enum-desc">Ciclo de vida de un presupuesto o cotización.</div>
+
+          <div class="enum-val-row">
+            <span class="enum-val">DRAFT</span>
+            <span class="enum-val-desc">Borrador editable; no reserva inventario.</span>
+          </div>
+
+          <div class="enum-val-row">
+            <span class="enum-val">SENT</span>
+            <span class="enum-val-desc">Enviada al cliente; bloqueada para edición directa.</span>
+          </div>
+
+          <div class="enum-val-row">
+            <span class="enum-val">ACCEPTED</span>
+            <span class="enum-val-desc">Aceptada por el cliente.</span>
+          </div>
+
+          <div class="enum-val-row">
+            <span class="enum-val">REJECTED</span>
+            <span class="enum-val-desc">Rechazada por el cliente.</span>
+          </div>
+
+          <div class="enum-val-row">
+            <span class="enum-val">EXPIRED</span>
+            <span class="enum-val-desc">Fecha de vencimiento superada; no se puede convertir a venta.</span>
+          </div>
+
+          <div class="enum-val-row">
+            <span class="enum-val">CONVERTED</span>
+            <span class="enum-val-desc">Convertida exitosamente en venta final; inventario descontado.</span>
+          </div>
+
+          <div class="enum-val-row">
+            <span class="enum-val">CANCELLED</span>
+            <span class="enum-val-desc">Descartada por el vendedor o cliente.</span>
+          </div>
+        </div>
+
+        <div class="enum-card">
+          <div class="enum-name">enum PaymentMethod</div>
+          <div class="enum-desc">Método o medio de cobro directo de la venta (almacenado en la tabla sales).</div>
+
+          <div class="enum-val-row">
+            <span class="enum-val">CASH</span>
+            <span class="enum-val-desc">Efectivo en caja registradora (se audita en el corte de caja).</span>
+          </div>
+
+          <div class="enum-val-row">
+            <span class="enum-val">CARD</span>
+            <span class="enum-val-desc">Tarjeta de débito o crédito vía terminal bancaria.</span>
+          </div>
+
+          <div class="enum-val-row">
+            <span class="enum-val">TRANSFER</span>
+            <span class="enum-val-desc">Transferencia bancaria directa / SPEI.</span>
+          </div>
+
+          <div class="enum-val-row">
+            <span class="enum-val">OTHER</span>
+            <span class="enum-val-desc">Otros medios de pago autorizados (vales, monedero).</span>
+          </div>
+        </div>
+
+        <div class="enum-card">
+          <div class="enum-name">enum CashAdjustmentType</div>
+          <div class="enum-desc">Tipo de ajuste de dinero manual durante el corte de caja.</div>
+
+          <div class="enum-val-row">
+            <span class="enum-val">INCOME</span>
+            <span class="enum-val-desc">Entrada extraordinaria de efectivo al cajón.</span>
+          </div>
+
+          <div class="enum-val-row">
+            <span class="enum-val">WITHDRAWAL</span>
+            <span class="enum-val-desc">Retiro extraordinario de efectivo de la caja.</span>
+          </div>
+        </div>
+
+        <div class="enum-card">
+          <div class="enum-name">enum IdempotencyStatus</div>
+          <div class="enum-desc">Estado del bloqueo de idempotencia en transacciones críticas.</div>
+
+          <div class="enum-val-row">
+            <span class="enum-val">PENDING</span>
+            <span class="enum-val-desc">Operación en proceso de ejecución.</span>
+          </div>
+
+          <div class="enum-val-row">
+            <span class="enum-val">COMPLETED</span>
+            <span class="enum-val-desc">Transacción finalizada con éxito; respuesta almacenada para replay.</span>
+          </div>
+
+          <div class="enum-val-row">
+            <span class="enum-val">FAILED</span>
+            <span class="enum-val-desc">Transacción finalizada con error controlado.</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <footer>
+      Kamadeva System Backend — Arquitectura Optimizada NestJS + Prisma ORM 7 + PostgreSQL.<br>
+      Modelo simplificado: 22 tablas esenciales, campos en español y eliminación de 6 tablas redundantes.
+    </footer>
+  </div>
+
+  <script>
+    let activeDomain = 'ALL';
+
+    function filterDomain(domain, btn) {
+      activeDomain = domain;
+      document.querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      filterCards();
+    }
+
+    function filterCards() {
+      const q = document.getElementById('searchInput').value.toLowerCase().trim();
+      const cards = document.querySelectorAll('.model-card');
+      
+      cards.forEach(card => {
+        const domain = card.getAttribute('data-domain');
+        const searchText = card.getAttribute('data-search');
+        
+        const matchDomain = (activeDomain === 'ALL' || domain === activeDomain);
+        const matchSearch = (!q || searchText.includes(q));
+
+        if (matchDomain && matchSearch) {
+          card.style.display = 'block';
+        } else {
+          card.style.display = 'none';
+        }
+      });
+    }
+  </script>
+</body>
+</html>

@@ -1,12 +1,17 @@
 import { ApiPropertyOptional, PartialType } from '@nestjs/swagger';
-import { IsBoolean, ValidateIf } from 'class-validator';
+import { IsBoolean, IsOptional } from 'class-validator';
 import { CreateProviderDto } from './create-provider.dto.js';
 
 export class UpdateProviderDto extends PartialType(CreateProviderDto, {
   skipNullProperties: false,
 }) {
   @ApiPropertyOptional({ example: false })
-  @ValidateIf((_object, value: unknown) => value !== undefined)
+  @IsOptional()
+  @IsBoolean()
+  activo?: boolean;
+
+  @ApiPropertyOptional({ example: false })
+  @IsOptional()
   @IsBoolean()
   isActive?: boolean;
 }

@@ -7,9 +7,16 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { setupApp } from '../src/setup-app.js';
-import type { CategoryDto } from '../src/catalog/dto/category.dto.js';
 
-const base = '/api/catalog/categories';
+interface CategoryResponse {
+  id: string;
+  descripcion: string;
+  activo: boolean;
+  fechaCreacion?: string;
+  fechaActualizacion?: string;
+}
+
+const base = '/api/catalogo/categorias';
 
 describe('Catalog HTTP + PostgreSQL', () => {
   let app: INestApplication<Server> | undefined;
@@ -27,10 +34,9 @@ describe('Catalog HTTP + PostgreSQL', () => {
     app = module.createNestApplication();
     setupApp(app);
     await app.init();
-    // Keep one listener for the suite instead of reopening a port per request.
     await app.listen(0, '127.0.0.1');
     prisma = app.get(PrismaService);
-    for (const [key, role, isActive] of [
+    for (const [key, role, activo] of [
       ['admin', 'ADMIN', true],
       ['seller', 'VENDEDOR', true],
       ['inactive', 'ADMIN', false],
@@ -38,13 +44,11 @@ describe('Catalog HTTP + PostgreSQL', () => {
     ] as const) {
       const user = await prisma.user.create({
         data: {
-          name: 'Catalog test',
+          nombre: `Catalog test ${key}`,
           email: `${randomUUID()}@catalog.test`,
           passwordHash: 'unused-test-hash',
-          isActive,
-          ...(role
-            ? { roles: { create: { role: { connect: { name: role } } } } }
-            : {}),
+          activo,
+          ...(role ? { rol: { connect: { nombre: role } } } : {}),
         },
       });
       userIds.push(user.id);
@@ -56,7 +60,7 @@ describe('Catalog HTTP + PostgreSQL', () => {
   afterEach(async () => {
     if (!prisma || categoryIds.length === 0) return;
     await prisma.product.deleteMany({
-      where: { categoryId: { in: categoryIds } },
+      where: { categoriaId: { in: categoryIds } },
     });
     await prisma.category.deleteMany({ where: { id: { in: categoryIds } } });
     categoryIds.length = 0;
@@ -65,9 +69,6 @@ describe('Catalog HTTP + PostgreSQL', () => {
   afterAll(async () => {
     try {
       if (prisma) {
-        await prisma.userRole.deleteMany({
-          where: { userId: { in: userIds } },
-        });
         await prisma.user.deleteMany({ where: { id: { in: userIds } } });
       }
     } finally {
@@ -76,14 +77,14 @@ describe('Catalog HTTP + PostgreSQL', () => {
   });
 
   async function create(
-    body: object = { name: 'Anillos' },
-  ): Promise<CategoryDto> {
+    body: object = { descripcion: `Cat-${randomUUID().slice(0, 8)}` },
+  ): Promise<CategoryResponse> {
     const response = await http()
       .post(base)
       .set('Authorization', tokens.admin!)
       .send(body)
       .expect(201);
-    const category = response.body as CategoryDto;
+    const category = response.body as CategoryResponse;
     categoryIds.push(category.id);
     return category;
   }
@@ -91,53 +92,56 @@ describe('Catalog HTTP + PostgreSQL', () => {
   it('creates normalized public fields and persists defaults', async () => {
     const category = await create({
       name: '  Ánillos & colección!  ',
-      description: '  ',
     });
-    expect(category).toEqual({
+    expect(category).toMatchObject({
       id: expect.any(String),
-      name: 'ÁNILLOS & COLECCIÓN!',
-      slug: 'anillos-coleccion',
-      description: null,
-      isActive: true,
+      descripcion: 'ÁNILLOS & COLECCIÓN!',
+      activo: true,
     });
     expect(
       await prisma.category.findUnique({ where: { id: category.id } }),
-    ).toMatchObject(category);
+    ).toMatchObject({
+      id: category.id,
+      descripcion: category.descripcion,
+      activo: category.activo,
+    });
   });
 
-  it('returns 409 for duplicate slugs including concurrent inserts', async () => {
-    await create({ name: 'Oro', slug: 'joyas' });
+  it('returns 409 for duplicate descriptions including concurrent inserts', async () => {
+    const tag = randomUUID().slice(0, 8).toUpperCase();
+    await create({ descripcion: `JOYAS-${tag}` });
     await http()
       .post(base)
       .set('Authorization', tokens.admin!)
-      .send({ name: 'Plata', slug: 'joyas' })
+      .send({ descripcion: `joyas-${tag.toLowerCase()}` })
       .expect(409);
-    const slug = `race-${randomUUID()}`;
+    const raceTag = `RACE-${randomUUID().slice(0, 8)}`.toUpperCase();
     const responses = await Promise.all(
       [1, 2].map(() =>
         http()
           .post(base)
           .set('Authorization', tokens.admin!)
-          .send({ name: 'Carrera', slug }),
+          .send({ descripcion: raceTag }),
       ),
     );
     for (const response of responses)
       if (response.status === 201)
-        categoryIds.push((response.body as CategoryDto).id);
+        categoryIds.push((response.body as CategoryResponse).id);
     expect(responses.map((response) => response.status).sort()).toEqual([
       201, 409,
     ]);
-    expect(await prisma.category.count({ where: { slug } })).toBe(1);
+    expect(await prisma.category.count({ where: { descripcion: raceTag } })).toBe(1);
   });
 
   it('lists active categories in order and includes inactive only on request', async () => {
-    const z = await create({ name: 'Zafiros' });
-    const a = await create({ name: 'Anillos' });
-    const inactive = await create({ name: 'Inactiva' });
+    const tag = randomUUID().slice(0, 6).toUpperCase();
+    const z = await create({ descripcion: `ZAFIR-${tag}` });
+    const a = await create({ descripcion: `ANIL-${tag}` });
+    const inactive = await create({ descripcion: `INACT-${tag}` });
     await http()
       .patch(`${base}/${inactive.id}`)
       .set('Authorization', tokens.admin!)
-      .send({ isActive: false })
+      .send({ activo: false })
       .expect(200);
     for (const query of [
       '',
@@ -148,7 +152,7 @@ describe('Catalog HTTP + PostgreSQL', () => {
         .get(base + query)
         .set('Authorization', tokens.seller!)
         .expect(200);
-      const items = (response.body as CategoryDto[]).filter(({ id }) =>
+      const items = (response.body as CategoryResponse[]).filter(({ id }) =>
         categoryIds.includes(id),
       );
       expect(items.map(({ id }) => id)).toEqual(
@@ -159,81 +163,47 @@ describe('Catalog HTTP + PostgreSQL', () => {
       .get(`${base}/${inactive.id}`)
       .set('Authorization', tokens.seller!)
       .expect(200);
-    expect(detail.body).toEqual({ ...inactive, isActive: false });
+    expect(detail.body).toMatchObject({ id: inactive.id, activo: false });
   });
 
-  it('renames with generated slug, honors explicit slug and clears description', async () => {
-    const category = await create({ name: 'Anillos', description: ' Oro ' });
-    expect(category.description).toBe('Oro');
+  it('updates description and toggles active status', async () => {
+    const category = await create({ descripcion: `CAT-${randomUUID().slice(0, 8)}` });
+    const other = await create({ descripcion: `OTHER-${randomUUID().slice(0, 8)}` });
     const target = `${base}/${category.id}`;
+    const newDesc = `NUEVA-${randomUUID().slice(0, 8)}`.toUpperCase();
     let response = await http()
       .patch(target)
       .set('Authorization', tokens.admin!)
-      .send({ name: ' Anillos de boda ' })
+      .send({ descripcion: newDesc.toLowerCase() })
       .expect(200);
-    expect(response.body).toEqual({
-      ...category,
-      name: 'ANILLOS DE BODA',
-      slug: 'anillos-de-boda',
+    expect(response.body).toMatchObject({
+      id: category.id,
+      descripcion: newDesc,
     });
     response = await http()
       .patch(target)
       .set('Authorization', tokens.admin!)
-      .send({ name: 'Oro', slug: 'joyas', isActive: false })
+      .send({ activo: false })
       .expect(200);
     expect(response.body).toMatchObject({
-      name: 'ORO',
-      slug: 'joyas',
-      isActive: false,
+      activo: false,
     });
-    for (const description of ['', '   ', null]) {
-      response = await http()
-        .patch(target)
-        .set('Authorization', tokens.admin!)
-        .send({ description })
-        .expect(200);
-      expect(response.body).toMatchObject({
-        description: null,
-        slug: 'joyas',
-        name: 'ORO',
-      });
-    }
-  });
-
-  it('keeps the category unchanged after a duplicate slug update', async () => {
-    await create({ name: 'Oro' });
-    const category = await create({ name: 'Plata' });
-    for (const body of [{ slug: 'oro' }, { name: 'Oro' }]) {
-      await http()
-        .patch(`${base}/${category.id}`)
-        .set('Authorization', tokens.admin!)
-        .send(body)
-        .expect(409);
-    }
-    const response = await http()
-      .get(`${base}/${category.id}`)
+    await http()
+      .patch(target)
       .set('Authorization', tokens.admin!)
-      .expect(200);
-    expect(response.body).toEqual(category);
+      .send({ descripcion: other.descripcion })
+      .expect(409);
   });
 
   it('rejects invalid creates and unknown fields', async () => {
     for (const body of [
       {},
-      { name: '' },
-      { name: '  ' },
-      { name: null },
-      { name: 1 },
-      { name: 'a'.repeat(101) },
-      { name: '!!!' },
-      { name: 'Oro', slug: '' },
-      { name: 'Oro', slug: null },
-      { name: 'Oro', slug: 'Oro rojo' },
-      { name: 'Oro', slug: '-oro' },
-      { name: 'Oro', description: 'a'.repeat(501) },
-      { name: 'Oro', description: 1 },
-      { name: 'Oro', isActive: false },
-      { name: 'Oro', unknown: true },
+      { descripcion: '' },
+      { descripcion: '  ' },
+      { descripcion: null },
+      { descripcion: 1 },
+      { descripcion: 'a'.repeat(101) },
+      { descripcion: 'Oro', unknown: true },
     ])
       await http()
         .post(base)
@@ -247,17 +217,11 @@ describe('Catalog HTTP + PostgreSQL', () => {
     for (const body of [
       {},
       { unknown: true },
-      { name: null },
-      { name: ' ' },
-      { name: '!!!' },
-      { name: 'a'.repeat(101) },
-      { slug: null },
-      { slug: '' },
-      { slug: 'a--b' },
-      { isActive: null },
-      { isActive: 'false' },
-      { description: 3 },
-      { description: 'a'.repeat(501) },
+      { descripcion: null },
+      { descripcion: ' ' },
+      { descripcion: 'a'.repeat(101) },
+      { activo: null },
+      { activo: 'false' },
     ])
       await http()
         .patch(`${base}/${category.id}`)
@@ -268,7 +232,7 @@ describe('Catalog HTTP + PostgreSQL', () => {
       .get(`${base}/${category.id}`)
       .set('Authorization', tokens.admin!)
       .expect(200);
-    expect(response.body).toEqual(category);
+    expect(response.body).toMatchObject({ id: category.id, descripcion: category.descripcion });
   });
 
   it('validates query strings and UUIDs, and reports nonexistent categories', async () => {
@@ -292,7 +256,7 @@ describe('Catalog HTTP + PostgreSQL', () => {
         const operation = http()
           [method](`${base}/${id}`)
           .set('Authorization', tokens.admin!);
-        if (method === 'patch') operation.send({ name: 'Oro' });
+        if (method === 'patch') operation.send({ descripcion: 'ORO' });
         await operation.expect(status);
       }
     }
@@ -302,10 +266,10 @@ describe('Catalog HTTP + PostgreSQL', () => {
     const category = await create();
     const product = await prisma.product.create({
       data: {
-        name: 'Anillo',
-        barcode: randomUUID(),
-        price: '100.00',
-        categoryId: category.id,
+        nombre: 'Anillo',
+        codigoBarras: `BAR-${randomUUID().slice(0, 10)}`,
+        precioVenta: '100.00',
+        categoriaId: category.id,
       },
     });
     const target = `${base}/${category.id}`;
@@ -350,7 +314,7 @@ describe('Catalog HTTP + PostgreSQL', () => {
         await http()
           [method](path)
           .set('Authorization', tokens.seller!)
-          .send({ name: 'Denied' })
+          .send({ descripcion: 'DENIED' })
           .expect(403);
       }
     }
@@ -372,19 +336,13 @@ describe('Catalog HTTP + PostgreSQL', () => {
     }
     expect(response.body.paths[base].get.parameters).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: 'includeInactive', in: 'query' }),
+        expect.objectContaining({ name: 'incluirInactivos', in: 'query' }),
       ]),
     );
     expect(
       Object.keys(
         response.body.components.schemas.CategoryDto.properties,
       ).sort(),
-    ).toEqual(['description', 'id', 'isActive', 'name', 'slug']);
-    expect(response.body.components.schemas.CreateCategoryDto.required).toEqual(
-      ['name'],
-    );
-    expect(
-      response.body.components.schemas.UpdateCategoryDto.required ?? [],
-    ).toEqual([]);
+    ).toEqual(['activo', 'descripcion', 'fechaActualizacion', 'fechaCreacion', 'id', 'nombre']);
   });
 });

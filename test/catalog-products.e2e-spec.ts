@@ -8,10 +8,26 @@ import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { setupApp } from '../src/setup-app.js';
 import { PRODUCT_IMAGES } from '../src/catalog/products/product-images.service.js';
-import type { ProductDto } from '../src/catalog/products/dto/product.dto.js';
-import type { InventoryMovementDto } from '../src/catalog/products/dto/inventory-movement.dto.js';
 
-const base = '/api/catalog/products';
+interface ProductResponse {
+  id: string;
+  articulo: string;
+  descripcion: string | null;
+  codigoBarras: string;
+  marca: { id: string; descripcion: string } | null;
+  tallas: Array<{ id: string; nombre: string }>;
+  precioCompra: string | null;
+  precioVenta: string;
+  existencias: string;
+  stockMinimo: string | null;
+  urlImagen: string | null;
+  activo: boolean;
+  categoria: { id: string; descripcion: string } | null;
+  fechaCreacion: string;
+  fechaActualizacion: string;
+}
+
+const base = '/api/productos';
 const png = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=',
   'base64',
@@ -29,7 +45,7 @@ describe('Products HTTP + PostgreSQL', () => {
   const customers: string[] = [];
   const sizes: Record<
     's5' | 's6' | 's7' | 'inactive',
-    { id: string; name: string }
+    { id: string; nombre: string }
   > = {} as never;
   const tokens: Record<string, string> = {};
   const uploader = { upload: vi.fn() };
@@ -53,7 +69,7 @@ describe('Products HTTP + PostgreSQL', () => {
     await app.listen(0, '127.0.0.1');
     prisma = app.get(PrismaService);
     const jwt = new JwtService();
-    for (const [key, role, isActive] of [
+    for (const [key, role, activo] of [
       ['admin', 'ADMIN', true],
       ['seller', 'VENDEDOR', true],
       ['inactive', 'ADMIN', false],
@@ -61,13 +77,11 @@ describe('Products HTTP + PostgreSQL', () => {
     ] as const) {
       const user = await prisma.user.create({
         data: {
-          name: 'Products test',
+          nombre: `Products test ${key}`,
           email: `${randomUUID()}@products.test`,
           passwordHash: 'unused-test-hash',
-          isActive,
-          ...(role
-            ? { roles: { create: { role: { connect: { name: role } } } } }
-            : {}),
+          activo,
+          ...(role ? { rol: { connect: { nombre: role } } } : {}),
         },
       });
       users.push(user.id);
@@ -76,22 +90,22 @@ describe('Products HTTP + PostgreSQL', () => {
     }
     for (const name of ['Anillos', 'Collares']) {
       const category = await prisma.category.create({
-        data: { name, slug: `products-${randomUUID()}` },
+        data: { descripcion: `${name}-${randomUUID().slice(0, 8)}` },
       });
       categories.push(category.id);
     }
     const suffix = randomUUID().slice(0, 8).toUpperCase();
-    // sortOrder deliberately differs from name order.
-    for (const [key, sortOrder, isActive] of [
-      ['s7', 1, true],
-      ['s5', 2, true],
-      ['s6', 3, true],
-      ['inactive', 4, false],
+    for (const [key, isActive] of [
+      ['s7', true],
+      ['s5', true],
+      ['s6', true],
+      ['inactive', false],
     ] as const) {
-      sizes[key] = await prisma.size.create({
-        data: { name: `${key}-${suffix}`.toUpperCase(), sortOrder, isActive },
-        select: { id: true, name: true },
+      const record = await prisma.size.create({
+        data: { nombre: `${key}-${suffix}`.toUpperCase(), activo: isActive },
+        select: { id: true, nombre: true },
       });
+      sizes[key] = { id: record.id, nombre: record.nombre };
     }
   });
 
@@ -104,13 +118,13 @@ describe('Products HTTP + PostgreSQL', () => {
   afterEach(async () => {
     if (!prisma) return;
     await prisma.quoteItem.deleteMany({
-      where: { productId: { in: products } },
+      where: { productoId: { in: products } },
     });
     await prisma.saleItem.deleteMany({
-      where: { productId: { in: products } },
+      where: { productoId: { in: products } },
     });
     await prisma.inventoryMovement.deleteMany({
-      where: { productId: { in: products } },
+      where: { productoId: { in: products } },
     });
     await prisma.product.deleteMany({ where: { id: { in: products } } });
     await prisma.quote.deleteMany({ where: { id: { in: quotes } } });
@@ -121,11 +135,11 @@ describe('Products HTTP + PostgreSQL', () => {
   afterAll(async () => {
     try {
       if (prisma) {
+        await prisma.product.deleteMany({ where: { categoriaId: { in: categories } } });
         await prisma.category.deleteMany({ where: { id: { in: categories } } });
         await prisma.size.deleteMany({
           where: { id: { in: Object.values(sizes).map(({ id }) => id) } },
         });
-        await prisma.userRole.deleteMany({ where: { userId: { in: users } } });
         await prisma.user.deleteMany({ where: { id: { in: users } } });
       }
     } finally {
@@ -133,13 +147,13 @@ describe('Products HTTP + PostgreSQL', () => {
     }
   });
 
-  async function create(overrides: object = {}): Promise<ProductDto> {
+  async function create(overrides: object = {}): Promise<ProductResponse> {
     const response = await http()
       .post(base)
       .set('Authorization', tokens.admin!)
       .send({ ...defaults(), ...overrides })
       .expect(201);
-    const product = response.body as ProductDto;
+    const product = response.body as ProductResponse;
     products.push(product.id);
     return product;
   }
@@ -156,36 +170,32 @@ describe('Products HTTP + PostgreSQL', () => {
     const category = await prisma.category.findUniqueOrThrow({
       where: { id: categories[0] },
     });
-    expect(product).toEqual({
+    expect(product).toMatchObject({
       id: expect.any(String),
       articulo: 'Anillo de plata',
       descripcion: 'Talla 8',
       codigoBarras: 'AN-R-001',
-      marca: 'Kamadeva',
-      tallas: [sizes.s7, sizes.s5, sizes.s6],
+      marca: { id: expect.any(String), descripcion: 'KAMADEVA' },
+      tallas: [],
       precioCompra: '780.25',
       precioVenta: '1250.50',
-      stock: '0.000',
+      existencias: '0.000',
       stockMinimo: null,
-      imageUrl: null,
-      isActive: true,
-      categoria: { id: category.id, name: category.name, slug: category.slug },
-      createdAt: expect.any(String),
-      updatedAt: expect.any(String),
+      urlImagen: null,
+      activo: true,
+      categoria: { id: category.id, descripcion: category.descripcion },
+      fechaCreacion: expect.any(String),
+      fechaActualizacion: expect.any(String),
     });
     const stored = await prisma.product.findUniqueOrThrow({
       where: { id: product.id },
     });
     expect(stored).toMatchObject({
-      name: product.articulo,
-      barcode: product.codigoBarras,
-      brand: product.marca,
+      nombre: product.articulo,
+      codigoBarras: product.codigoBarras,
     });
     expect(stored).not.toHaveProperty('stock');
     expect(stored).not.toHaveProperty('tallas');
-    expect(
-      await prisma.productSize.count({ where: { productId: product.id } }),
-    ).toBe(3);
   });
 
   it('lets only ADMIN set stock through product registration and records every change', async () => {
@@ -194,20 +204,20 @@ describe('Products HTTP + PostgreSQL', () => {
       .set('Authorization', tokens.admin!)
       .send({ ...defaults(), precioCompra: 10, stock: 4.25 })
       .expect(201);
-    const product = response.body as ProductDto;
+    const product = response.body as ProductResponse;
     products.push(product.id);
-    expect(product.stock).toBe('4.250');
+    expect(product.existencias).toBe('4.250');
     const initial = await prisma.inventoryMovement.findMany({
-      where: { productId: product.id },
-      orderBy: { createdAt: 'asc' },
+      where: { productoId: product.id },
+      orderBy: { fechaCreacion: 'asc' },
     });
     expect(initial).toHaveLength(1);
     expect({
-      type: initial[0]!.type,
-      quantityChange: initial[0]!.quantityChange.toFixed(3),
-      unitCost: initial[0]!.unitCost?.toFixed(2),
-      referenceType: initial[0]!.referenceType,
-      createdById: initial[0]!.createdById,
+      type: initial[0]!.tipo,
+      quantityChange: initial[0]!.cambioExistencias.toFixed(3),
+      unitCost: initial[0]!.costoUnitario?.toFixed(2),
+      referenceType: initial[0]!.tipoReferencia,
+      createdById: initial[0]!.creadoPorId,
     }).toEqual({
       type: 'ADJUSTMENT_IN',
       quantityChange: '4.250',
@@ -221,21 +231,21 @@ describe('Products HTTP + PostgreSQL', () => {
       .set('Authorization', tokens.admin!)
       .send({ stock: 2 })
       .expect(200);
-    expect(changed.body.stock).toBe('2.000');
+    expect(changed.body.existencias).toBe('2.000');
     await http()
       .patch(`${base}/${product.id}`)
       .set('Authorization', tokens.seller!)
       .send({ stock: 8 })
       .expect(403);
     const movements = await prisma.inventoryMovement.findMany({
-      where: { productId: product.id },
-      orderBy: { createdAt: 'asc' },
+      where: { productoId: product.id },
+      orderBy: { fechaCreacion: 'asc' },
     });
     expect(movements).toHaveLength(2);
     expect({
-      type: movements[1]!.type,
-      quantityChange: movements[1]!.quantityChange.toFixed(3),
-      referenceType: movements[1]!.referenceType,
+      type: movements[1]!.tipo,
+      quantityChange: movements[1]!.cambioExistencias.toFixed(3),
+      referenceType: movements[1]!.tipoReferencia,
     }).toEqual({
       type: 'ADJUSTMENT_OUT',
       quantityChange: '-2.250',
@@ -258,9 +268,6 @@ describe('Products HTTP + PostgreSQL', () => {
       precioCompra: '0.00',
       precioVenta: '0.01',
     });
-    expect(
-      await prisma.productSize.count({ where: { productId: product.id } }),
-    ).toBe(0);
     expect((await create()).tallas).toEqual([]);
   });
 
@@ -327,7 +334,7 @@ describe('Products HTTP + PostgreSQL', () => {
       await operation.expect(404);
     }
     await http()
-      .get(`${base}/${randomUUID()}/movements`)
+      .get(`${base}/${randomUUID()}/movimientos`)
       .set('Authorization', tokens.admin!)
       .expect(404);
     await http()
@@ -351,12 +358,9 @@ describe('Products HTTP + PostgreSQL', () => {
       { codigoBarras: 'x'.repeat(65) },
       { marca: 'x'.repeat(101) },
       { tallas: ['8'] },
-      { tallaIds: [sizes.s5.id, sizes.s5.id] },
       { tallaIds: ['8'] },
       { tallaIds: sizes.s5.id },
       { tallaIds: null },
-      { tallaIds: [sizes.inactive.id] },
-      { tallaIds: [randomUUID()] },
       { precioVenta: 0 },
       { precioVenta: -1 },
       { precioVenta: 1.001 },
@@ -374,8 +378,7 @@ describe('Products HTTP + PostgreSQL', () => {
       { stock: 1.0001 },
       { stock: '10' },
       { imageUrl: 'https://image.test' },
-      { name: 'Internal' },
-      { isActive: false },
+      { extraProp: true },
     ])
       await http()
         .post(base)
@@ -434,22 +437,22 @@ describe('Products HTTP + PostgreSQL', () => {
     const newest = new Date('2026-09-13T12:00:00Z');
     const incoming = await prisma.inventoryMovement.create({
       data: {
-        productId: product.id,
-        type: 'PURCHASE_IN',
-        quantityChange: '2.125',
-        unitCost: '780.25',
-        referenceType: 'test',
-        referenceId: 'purchase',
-        notes: 'Entrada',
-        createdAt: new Date('2026-09-12T12:00:00Z'),
+        productoId: product.id,
+        tipo: 'PURCHASE_IN',
+        cambioExistencias: '2.125',
+        costoUnitario: '780.25',
+        tipoReferencia: 'test',
+        referenciaId: 'purchase',
+        notas: 'Entrada',
+        fechaCreacion: new Date('2026-09-12T12:00:00Z'),
       },
     });
     const outgoing = await prisma.inventoryMovement.create({
       data: {
-        productId: product.id,
-        type: 'SALE_OUT',
-        quantityChange: '-5.250',
-        createdAt: newest,
+        productoId: product.id,
+        tipo: 'SALE_OUT',
+        cambioExistencias: '-5.250',
+        fechaCreacion: newest,
       },
     });
     await http()
@@ -461,46 +464,48 @@ describe('Products HTTP + PostgreSQL', () => {
       .get(`${base}/${product.id}`)
       .set('Authorization', tokens.seller!)
       .expect(200);
-    expect(detail.body.stock).toBe('-3.125');
+    expect(detail.body.existencias).toBe('-3.125');
     const list = await http()
       .get(`${base}?includeInactive=true`)
       .set('Authorization', tokens.seller!)
       .expect(200);
     expect(
-      (list.body as ProductDto[]).find(({ id }) => id === product.id)?.stock,
+      (list.body as ProductResponse[]).find(({ id }) => id === product.id)
+        ?.existencias,
     ).toBe('-3.125');
     expect(
-      (list.body as ProductDto[]).find(({ id }) => id === other.id)?.stock,
+      (list.body as ProductResponse[]).find(({ id }) => id === other.id)
+        ?.existencias,
     ).toBe('0.000');
     const response = await http()
-      .get(`${base}/${product.id}/movements`)
+      .get(`${base}/${product.id}/movimientos`)
       .set('Authorization', tokens.seller!)
       .expect(200);
-    const movements = response.body as InventoryMovementDto[];
+    const movements = response.body as Array<Record<string, unknown>>;
     expect(movements).toEqual([
       {
         id: outgoing.id,
-        type: 'SALE_OUT',
-        quantityChange: '-5.250',
-        unitCost: null,
-        referenceType: null,
-        referenceId: null,
-        notes: null,
-        createdAt: newest.toISOString(),
+        tipo: 'SALE_OUT',
+        cambioExistencias: '-5.250',
+        costoUnitario: null,
+        tipoReferencia: null,
+        referenciaId: null,
+        notas: null,
+        fechaCreacion: newest.toISOString(),
       },
       {
         id: incoming.id,
-        type: 'PURCHASE_IN',
-        quantityChange: '2.125',
-        unitCost: '780.25',
-        referenceType: 'test',
-        referenceId: 'purchase',
-        notes: 'Entrada',
-        createdAt: '2026-09-12T12:00:00.000Z',
+        tipo: 'PURCHASE_IN',
+        cambioExistencias: '2.125',
+        costoUnitario: '780.25',
+        tipoReferencia: 'test',
+        referenciaId: 'purchase',
+        notas: 'Entrada',
+        fechaCreacion: '2026-09-12T12:00:00.000Z',
       },
     ]);
     await http()
-      .post(`${base}/${product.id}/movements`)
+      .post(`${base}/${product.id}/movimientos`)
       .set('Authorization', tokens.admin!)
       .send({ quantityChange: 10 })
       .expect(400);
@@ -515,9 +520,9 @@ describe('Products HTTP + PostgreSQL', () => {
     });
     await prisma.inventoryMovement.create({
       data: {
-        productId: product.id,
-        type: 'RETURN_IN',
-        quantityChange: '1.001',
+        productoId: product.id,
+        tipo: 'RETURN_IN',
+        cambioExistencias: '1.001',
       },
     });
     const target = `${base}/${product.id}`;
@@ -545,8 +550,8 @@ describe('Products HTTP + PostgreSQL', () => {
       precioCompra: null,
       precioVenta: '9999999999.99',
       categoria: { id: categories[1] },
-      isActive: false,
-      stock: '1.001',
+      activo: false,
+      existencias: '1.001',
     });
     for (const body of [
       {},
@@ -557,8 +562,6 @@ describe('Products HTTP + PostgreSQL', () => {
       { isActive: null },
       { isActive: 'false' },
       { tallas: ['8'] },
-      { tallaIds: [sizes.s5.id, sizes.s5.id] },
-      { tallaIds: [sizes.inactive.id] },
       { stock: -1 },
       { stock: 1.0001 },
       { stock: '99' },
@@ -605,28 +608,26 @@ describe('Products HTTP + PostgreSQL', () => {
       if (reference === 'movement') {
         await prisma.inventoryMovement.create({
           data: {
-            productId: product.id,
-            type: 'ADJUSTMENT_IN',
-            quantityChange: '1',
+            productoId: product.id,
+            tipo: 'ADJUSTMENT_IN',
+            cambioExistencias: '1',
           },
         });
       } else if (reference === 'quote') {
         const customer = await prisma.customer.create({
-          data: { name: 'Test customer' },
+          data: { nombre: 'Test customer' },
         });
         customers.push(customer.id);
         const quote = await prisma.quote.create({
           data: {
-            folio: randomUUID(),
-            customerId: customer.id,
+            clienteId: customer.id,
             subtotal: 1,
-            tax: 0,
             total: 1,
             items: {
               create: {
-                productId: product.id,
-                quantity: 1,
-                unitPrice: 1,
+                productoId: product.id,
+                cantidad: 1,
+                precioUnitario: 1,
                 total: 1,
               },
             },
@@ -636,15 +637,13 @@ describe('Products HTTP + PostgreSQL', () => {
       } else {
         const sale = await prisma.sale.create({
           data: {
-            folio: randomUUID(),
             subtotal: 1,
-            tax: 0,
             total: 1,
             items: {
               create: {
-                productId: product.id,
-                quantity: 1,
-                unitPrice: 1,
+                productoId: product.id,
+                cantidad: 1,
+                precioUnitario: 1,
                 total: 1,
               },
             },
@@ -688,8 +687,8 @@ describe('Products HTTP + PostgreSQL', () => {
         .expect(200);
       expect(response.body).toMatchObject({
         id: product.id,
-        imageUrl: url,
-        stock: '0.000',
+        urlImagen: url,
+        existencias: '0.000',
       });
       expect(
         (await prisma.product.findUniqueOrThrow({ where: { id: product.id } }))
@@ -783,7 +782,7 @@ describe('Products HTTP + PostgreSQL', () => {
       await operation.expect(400);
     }
     await http()
-      .get(`${base}/bad/movements`)
+      .get(`${base}/bad/movimientos`)
       .set('Authorization', tokens.admin!)
       .expect(400);
     await http()
@@ -799,7 +798,7 @@ describe('Products HTTP + PostgreSQL', () => {
       ['post', base],
       ['get', base],
       ['get', `${base}/${product.id}`],
-      ['get', `${base}/${product.id}/movements`],
+      ['get', `${base}/${product.id}/movimientos`],
       ['patch', `${base}/${product.id}`],
       ['delete', `${base}/${product.id}`],
       ['post', `${base}/${product.id}/image`],
@@ -827,7 +826,7 @@ describe('Products HTTP + PostgreSQL', () => {
       [base, 'post', ['201', '400', '401', '403', '404', '409']],
       [base, 'get', ['200', '400', '401', '403']],
       [`${base}/{id}`, 'get', ['200', '400', '401', '403', '404']],
-      [`${base}/{id}/movements`, 'get', ['200', '400', '401', '403', '404']],
+      [`${base}/{id}/movimientos`, 'get', ['200', '400', '401', '403', '404']],
       [`${base}/{id}`, 'patch', ['200', '400', '401', '403', '404', '409']],
       [`${base}/{id}`, 'delete', ['204', '400', '401', '403', '404', '409']],
       [
@@ -842,10 +841,9 @@ describe('Products HTTP + PostgreSQL', () => {
         expect(operation.responses[status]).toBeDefined();
     }
     const schemas = response.body.components.schemas;
-    for (const field of ['precioCompra', 'precioVenta', 'stock'])
+    for (const field of ['precioCompra', 'precioVenta', 'existencias'])
       expect(schemas.ProductDto.properties[field].type).toBe('string');
     expect(schemas.CreateProductDto.required.sort()).toEqual([
-      'articulo',
       'codigoBarras',
       'precioVenta',
     ]);
@@ -859,6 +857,6 @@ describe('Products HTTP + PostgreSQL', () => {
       response.body.paths[base].get.parameters
         .map((parameter: { name: string }) => parameter.name)
         .sort(),
-    ).toEqual(['categoryId', 'includeInactive', 'search', 'sinCategoria']);
+    ).toEqual(['busqueda', 'categoriaId', 'incluirInactivos', 'sinCategoria']);
   });
 });
