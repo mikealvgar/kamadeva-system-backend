@@ -58,8 +58,9 @@ export class PrismaQuoteRepository implements QuoteRepositoryPort {
   async findAllRecords(filter: QuoteQueryFilter = {}): Promise<QuoteRecord[]> {
     let folioFilter: number | undefined = undefined;
     if (filter.search) {
-      const match = filter.search.match(/\d+/);
-      folioFilter = match ? parseInt(match[0], 10) : -1;
+      const trimmed = filter.search.trim();
+      const match = trimmed.match(/^(?:c-?)?0*(\d+)$/i);
+      folioFilter = match ? parseInt(match[1], 10) : -1;
     }
     return this.prisma.quote.findMany({
       where: {

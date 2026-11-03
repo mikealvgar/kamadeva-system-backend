@@ -75,7 +75,7 @@ model User {
   fechaCreacion      DateTime @default(now())
   fechaActualizacion DateTime @updatedAt
 
-  @@map("users")
+  @@map("usuarios")
 }
 
 model Role {
@@ -103,7 +103,7 @@ model RefreshToken {
   fechaCreacion    DateTime  @default(now())
 
   @@index([usuarioId])
-  @@map("refresh_tokens")
+  @@map("tokens_renovacion")
 }
 
 model Category {
@@ -116,7 +116,7 @@ model Category {
   fechaCreacion      DateTime @default(now())
   fechaActualizacion DateTime @updatedAt
 
-  @@map("categories")
+  @@map("categorias")
 }
 
 model Brand {
@@ -129,7 +129,7 @@ model Brand {
   fechaCreacion      DateTime @default(now())
   fechaActualizacion DateTime @updatedAt
 
-  @@map("brands")
+  @@map("marcas")
 }
 
 model Size {
@@ -140,7 +140,7 @@ model Size {
   quoteItems QuoteItem[]
   saleItems  SaleItem[]
 
-  @@map("sizes")
+  @@map("tallas")
 }
 
 model Product {
@@ -170,7 +170,7 @@ model Product {
 
   @@index([categoriaId])
   @@index([marcaId])
-  @@map("products")
+  @@map("productos")
 }
 
 model Customer {
@@ -188,7 +188,7 @@ model Customer {
   fechaActualizacion DateTime @updatedAt
 
   @@index([correo])
-  @@map("customers")
+  @@map("clientes")
 }
 
 model InventoryMovement {
@@ -216,7 +216,7 @@ model InventoryMovement {
   @@index([tipo])
   @@index([tipoReferencia, referenciaId])
   @@index([renglonVentaId])
-  @@map("inventory_movements")
+  @@map("movimientos_inventario")
 }
 
 model Purchase {
@@ -238,7 +238,7 @@ model Purchase {
 
   @@index([proveedorId, fechaRecepcion])
   @@index([fechaRecepcion])
-  @@map("purchases")
+  @@map("compras")
 }
 
 model PurchaseItem {
@@ -259,7 +259,7 @@ model PurchaseItem {
 
   @@unique([compraId, posicion])
   @@index([productoId])
-  @@map("purchase_items")
+  @@map("renglones_compra")
 }
 
 model Quote {
@@ -289,7 +289,7 @@ model Quote {
 
   @@index([clienteId])
   @@index([estado])
-  @@map("quotes")
+  @@map("cotizaciones")
 }
 
 model QuoteItem {
@@ -314,7 +314,7 @@ model QuoteItem {
   @@index([tallaId])
   @@index([cotizacionId])
   @@index([productoId])
-  @@map("quote_items")
+  @@map("renglones_cotizacion")
 }
 
 model Sale {
@@ -358,7 +358,7 @@ model Sale {
   @@index([estado])
   @@index([corteCajaId])
   @@index([fechaCreacion])
-  @@map("sales")
+  @@map("ventas")
 }
 
 model SaleItem {
@@ -386,7 +386,7 @@ model SaleItem {
   @@index([tallaId])
   @@index([ventaId])
   @@index([productoId])
-  @@map("sale_items")
+  @@map("renglones_venta")
 }
 
 model IdempotencyKey {
@@ -415,7 +415,7 @@ model IdempotencyKey {
   @@index([usuarioId])
   @@index([ventaId])
   @@index([fechaVencimiento])
-  @@map("idempotency_keys")
+  @@map("claves_idempotencia")
 }
 
 model ExpenseCategory {
@@ -428,7 +428,7 @@ model ExpenseCategory {
   fechaCreacion      DateTime @default(now())
   fechaActualizacion DateTime @updatedAt
 
-  @@map("expense_categories")
+  @@map("categorias_gastos")
 }
 
 model Expense {
@@ -456,7 +456,7 @@ model Expense {
   @@index([fechaGasto])
   @@index([categoriaId])
   @@index([creadoPorId])
-  @@map("expenses")
+  @@map("gastos")
 }
 
 model CashClosure {
@@ -500,7 +500,7 @@ model CashClosure {
   fechaActualizacion DateTime @updatedAt
 
   @@index([fechaCierre])
-  @@map("cash_closures")
+  @@map("cortes_caja")
 }
 
 model CashClosureAdjustment {
@@ -517,7 +517,7 @@ model CashClosureAdjustment {
   fechaCreacion DateTime @default(now())
 
   @@unique([corteCajaId, posicion])
-  @@map("cash_closure_adjustments")
+  @@map("ajustes_corte_caja")
 }
 
 model BusinessConfig {
@@ -534,7 +534,7 @@ model BusinessConfig {
   fechaCreacion      DateTime @default(now())
   fechaActualizacion DateTime @updatedAt
 
-  @@map("business_config")
+  @@map("configuracion_negocio")
 }
 
 model Provider {
@@ -551,5 +551,5 @@ model Provider {
   fechaCreacion      DateTime @default(now())
   fechaActualizacion DateTime @updatedAt
 
-  @@map("providers")
+  @@map("proveedores")
 }

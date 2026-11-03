@@ -1,0 +1,1735 @@
+{
+  "info": {
+    "nombre": "Kamadeva System API Contract",
+    "version": "2.0.0",
+    "descripcion": "Especificación formal de endpoints, URLs, parámetros, bodies y respuestas en español para integración con cliente Flutter/Web.",
+    "fechaGeneracion": "2026-11-02",
+    "prefijoHttp": "/api",
+    "urlBase": {
+      "localWeb": "http://localhost:3000/api",
+      "simuladorIos": "http://127.0.0.1:3000/api",
+      "emuladorAndroid": "http://10.0.2.2:3000/api",
+      "dispositivoFisicoWifi": "http://192.168.100.87:3000/api",
+      "produccionRailway": "https://<tu-app>.up.railway.app/api"
+    },
+    "swaggerDocs": "http://localhost:3000/api/docs",
+    "convenciones": {
+      "autenticacion": "Bearer Token JWT en header 'Authorization: Bearer <tokenAcceso>'.",
+      "idempotencia": "El cobro de ventas ('POST /api/ventas') exige header 'Idempotency-Key' con un UUID v4 único.",
+      "fechas": "Formato ISO-8601 UTC ('YYYY-MM-DDTHH:mm:ss.sssZ').",
+      "moneda": "Decimales como cadenas numéricas o números flotantes redondeados a 2 decimales.",
+      "inventario": "Derivado de la auditoría Kardex en InventoryMovement (PURCHASE_IN, SALE_OUT, RETURN_IN, ADJUSTMENT_IN, ADJUSTMENT_OUT)."
+    }
+  },
+  "modulos": [
+    {
+      "nombre": "Autenticación",
+      "prefijo": "/api/autenticacion",
+      "descripcion": "Registro inicial, inicio de sesión seguro, rotación de tokens y cierre de sesión.",
+      "endpoints": [
+        {
+          "id": "registro",
+          "metodo": "POST",
+          "ruta": "/api/autenticacion/registro",
+          "requiereToken": false,
+          "rolesPermitidos": [],
+          "descripcion": "Registra un usuario en el sistema. El primer usuario registrado adquiere automáticamente rol ADMIN; los siguientes VENDEDOR.",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "nombre": "Carlos López",
+            "correo": "carlos@kamadeva.com",
+            "contrasena": "Password123!",
+            "telefono": "8112345678"
+          },
+          "respuestaExitosa": {
+            "statusCode": 201,
+            "body": {
+              "tokenAcceso": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+              "tokenRenovacion": "d8b3e2a1-0000-4000-a000-000000000001",
+              "usuario": {
+                "id": "c1f7b020-0000-4000-a000-000000000001",
+                "nombre": "Carlos López",
+                "correo": "carlos@kamadeva.com",
+                "telefono": "8112345678",
+                "roles": [
+                  "ADMIN"
+                ],
+                "activo": true,
+                "fechaCreacion": "2026-11-02T10:00:00.000Z"
+              },
+              "hasAdmin": true,
+              "seccionesPermitidas": [
+                "ventas",
+                "cotizaciones",
+                "catalogo",
+                "inventario",
+                "compras",
+                "gastos",
+                "cortes-caja",
+                "tablero",
+                "usuarios",
+                "configuracion"
+              ]
+            }
+          },
+          "erroresComunes": [
+            {
+              "statusCode": 400,
+              "motivo": "Faltan campos obligatorios o formato inválido"
+            },
+            {
+              "statusCode": 409,
+              "motivo": "El correo ya está registrado"
+            }
+          ]
+        },
+        {
+          "id": "login",
+          "metodo": "POST",
+          "ruta": "/api/autenticacion/login",
+          "requiereToken": false,
+          "rolesPermitidos": [],
+          "descripcion": "Autentica con correo y contraseña. Retorna tokens de acceso y renovación, rol del usuario y secciones permitidas.",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "correo": "carlos@kamadeva.com",
+            "contrasena": "Password123!"
+          },
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": {
+              "tokenAcceso": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+              "tokenRenovacion": "d8b3e2a1-0000-4000-a000-000000000001",
+              "usuario": {
+                "id": "c1f7b020-0000-4000-a000-000000000001",
+                "nombre": "Carlos López",
+                "correo": "carlos@kamadeva.com",
+                "telefono": "8112345678",
+                "roles": [
+                  "ADMIN"
+                ],
+                "activo": true,
+                "fechaCreacion": "2026-11-02T10:00:00.000Z"
+              },
+              "hasAdmin": true,
+              "seccionesPermitidas": [
+                "ventas",
+                "cotizaciones",
+                "catalogo",
+                "inventario",
+                "compras",
+                "gastos",
+                "cortes-caja",
+                "tablero",
+                "usuarios",
+                "configuracion"
+              ]
+            }
+          },
+          "erroresComunes": [
+            {
+              "statusCode": 401,
+              "motivo": "Credenciales inválidas o usuario inactivo"
+            }
+          ]
+        },
+        {
+          "id": "refresh",
+          "metodo": "POST",
+          "ruta": "/api/autenticacion/refresh",
+          "requiereToken": false,
+          "rolesPermitidos": [],
+          "descripcion": "Renueva el par de tokens usando el refresh token activo. Rota atómicamente el refresh token presentado.",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "tokenRenovacion": "d8b3e2a1-0000-4000-a000-000000000001"
+          },
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": {
+              "tokenAcceso": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+              "tokenRenovacion": "f7a2c1b9-1111-4000-b000-000000000002"
+            }
+          },
+          "erroresComunes": [
+            {
+              "statusCode": 401,
+              "motivo": "Refresh token vencido, revocado o inválido"
+            }
+          ]
+        },
+        {
+          "id": "logout",
+          "metodo": "POST",
+          "ruta": "/api/autenticacion/logout",
+          "requiereToken": false,
+          "rolesPermitidos": [],
+          "descripcion": "Cierra la sesión y revoca el refresh token presentado. Operación idempotente (repetir devuelve 204).",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "tokenRenovacion": "f7a2c1b9-1111-4000-b000-000000000002"
+          },
+          "respuestaExitosa": {
+            "statusCode": 204,
+            "body": null
+          }
+        }
+      ]
+    },
+    {
+      "nombre": "Usuarios y Roles",
+      "prefijo": "/api/usuarios",
+      "descripcion": "Gestión de personal de tienda, consulta, edición, desactivación suave y roles.",
+      "endpoints": [
+        {
+          "id": "listarUsuarios",
+          "metodo": "GET",
+          "ruta": "/api/usuarios",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN"
+          ],
+          "descripcion": "Lista usuarios con paginación, búsqueda por nombre o correo, filtro por rol y opción de incluir inactivos.",
+          "queryParams": {
+            "pagina": 1,
+            "limite": 20,
+            "busqueda": "carlos",
+            "rol": "VENDEDOR",
+            "incluirInactivos": true
+          },
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": {
+              "datos": [
+                {
+                  "id": "c1f7b020-0000-4000-a000-000000000001",
+                  "nombre": "Carlos López",
+                  "correo": "carlos@kamadeva.com",
+                  "telefono": "8112345678",
+                  "roles": [
+                    "ADMIN"
+                  ],
+                  "activo": true,
+                  "fechaCreacion": "2026-11-02T10:00:00.000Z"
+                }
+              ],
+              "pagina": 1,
+              "limite": 20,
+              "total": 1
+            }
+          }
+        },
+        {
+          "id": "obtenerUsuario",
+          "metodo": "GET",
+          "ruta": "/api/usuarios/:usuarioId",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN"
+          ],
+          "descripcion": "Obtiene el detalle individual de un usuario por su UUID.",
+          "pathParams": {
+            "usuarioId": "c1f7b020-0000-4000-a000-000000000001"
+          },
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": {
+              "id": "c1f7b020-0000-4000-a000-000000000001",
+              "nombre": "Carlos López",
+              "correo": "carlos@kamadeva.com",
+              "telefono": "8112345678",
+              "activo": true,
+              "rol": "ADMIN",
+              "rolId": "role-uuid-admin",
+              "roles": [
+                "ADMIN"
+              ],
+              "fechaCreacion": "2026-11-02T10:00:00.000Z",
+              "fechaActualizacion": "2026-11-02T10:00:00.000Z"
+            }
+          },
+          "erroresComunes": [
+            {
+              "statusCode": 404,
+              "motivo": "Usuario no encontrado"
+            }
+          ]
+        },
+        {
+          "id": "actualizarUsuario",
+          "metodo": "PATCH",
+          "ruta": "/api/usuarios/:usuarioId",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN"
+          ],
+          "descripcion": "Actualiza datos del usuario, contraseña o estado activo (desactivación / reactivación suave). Protege al último ADMIN activo contra desactivación.",
+          "pathParams": {
+            "usuarioId": "c1f7b020-0000-4000-a000-000000000001"
+          },
+          "body": {
+            "nombre": "Carlos López Actualizado",
+            "telefono": "8199998888",
+            "activo": false,
+            "rolId": "role-uuid-vendedor"
+          },
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": {
+              "id": "c1f7b020-0000-4000-a000-000000000001",
+              "nombre": "Carlos López Actualizado",
+              "correo": "carlos@kamadeva.com",
+              "telefono": "8199998888",
+              "activo": false,
+              "rol": "VENDEDOR",
+              "rolId": "role-uuid-vendedor",
+              "roles": [
+                "VENDEDOR"
+              ],
+              "fechaCreacion": "2026-11-02T10:00:00.000Z",
+              "fechaActualizacion": "2026-11-02T12:00:00.000Z"
+            }
+          },
+          "erroresComunes": [
+            {
+              "statusCode": 409,
+              "motivo": "Correo ya registrado o no se puede desactivar al último administrador"
+            }
+          ]
+        },
+        {
+          "id": "consultarRoles",
+          "metodo": "GET",
+          "ruta": "/api/roles",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN",
+            "VENDEDOR"
+          ],
+          "descripcion": "Lista los roles oficiales del sistema (ADMIN, VENDEDOR).",
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": [
+              {
+                "id": "r1",
+                "nombre": "ADMIN",
+                "descripcion": "Administrador del sistema",
+                "activo": true
+              },
+              {
+                "id": "r2",
+                "nombre": "VENDEDOR",
+                "descripcion": "Vendedor de piso",
+                "activo": true
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "nombre": "Configuración del Negocio",
+      "prefijo": "/api/configuracion-negocio",
+      "descripcion": "Datos comerciales, fiscales, logotipo y pie de ticket de la tienda.",
+      "endpoints": [
+        {
+          "id": "obtenerConfiguracion",
+          "metodo": "GET",
+          "ruta": "/api/configuracion-negocio",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN",
+            "VENDEDOR"
+          ],
+          "descripcion": "Obtiene los datos del negocio para encabezados y tickets.",
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": {
+              "nombre": "Kamadeva Boutique",
+              "razonSocial": "Kamadeva Retail S.A. de C.V.",
+              "rfc": "KAM230101XYZ",
+              "telefono": "8180001122",
+              "correo": "contacto@kamadeva.com",
+              "direccion": "Av. Moda 123, Col. Centro, Monterrey, N.L.",
+              "logoUrl": "https://res.cloudinary.com/.../logo.png",
+              "mensajeTicket": "¡Gracias por su compra! Cambios hasta 30 días con ticket.",
+              "moneda": "MXN",
+              "impuestoPorcentaje": 0.16
+            }
+          }
+        },
+        {
+          "id": "actualizarConfiguracion",
+          "metodo": "PUT",
+          "ruta": "/api/configuracion-negocio",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN"
+          ],
+          "descripcion": "Actualiza los datos comerciales y de tickets del negocio.",
+          "body": {
+            "nombre": "Kamadeva Boutique",
+            "razonSocial": "Kamadeva Retail S.A. de C.V.",
+            "rfc": "KAM230101XYZ",
+            "telefono": "8180001122",
+            "correo": "contacto@kamadeva.com",
+            "direccion": "Av. Moda 123, Col. Centro, Monterrey, N.L.",
+            "mensajeTicket": "¡Gracias por su compra!",
+            "moneda": "MXN"
+          },
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": {
+              "nombre": "Kamadeva Boutique",
+              "razonSocial": "Kamadeva Retail S.A. de C.V.",
+              "rfc": "KAM230101XYZ",
+              "telefono": "8180001122",
+              "correo": "contacto@kamadeva.com",
+              "direccion": "Av. Moda 123, Col. Centro, Monterrey, N.L.",
+              "logoUrl": null,
+              "mensajeTicket": "¡Gracias por su compra!",
+              "moneda": "MXN"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "nombre": "Catálogo de Marcas",
+      "prefijo": "/api/catalogo/marcas",
+      "descripcion": "CRUD de marcas comerciales para asignación en productos.",
+      "endpoints": [
+        {
+          "id": "listarMarcas",
+          "metodo": "GET",
+          "ruta": "/api/catalogo/marcas",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN",
+            "VENDEDOR"
+          ],
+          "descripcion": "Obtiene el catálogo de marcas activas.",
+          "queryParams": {
+            "incluirInactivos": false
+          },
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": [
+              {
+                "id": "b1",
+                "nombre": "Kamadeva",
+                "descripcion": "Marca propia",
+                "activo": true
+              },
+              {
+                "id": "b2",
+                "nombre": "Levis",
+                "descripcion": null,
+                "activo": true
+              }
+            ]
+          }
+        },
+        {
+          "id": "crearMarca",
+          "metodo": "POST",
+          "ruta": "/api/catalogo/marcas",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN"
+          ],
+          "body": {
+            "nombre": "Zara",
+            "descripcion": "Ropa casual"
+          },
+          "respuestaExitosa": {
+            "statusCode": 201,
+            "body": {
+              "id": "b3",
+              "nombre": "Zara",
+              "descripcion": "Ropa casual",
+              "activo": true
+            }
+          }
+        },
+        {
+          "id": "actualizarMarca",
+          "metodo": "PATCH",
+          "ruta": "/api/catalogo/marcas/:id",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN"
+          ],
+          "body": {
+            "nombre": "Zara Studio",
+            "activo": true
+          },
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": {
+              "id": "b3",
+              "nombre": "Zara Studio",
+              "descripcion": "Ropa casual",
+              "activo": true
+            }
+          }
+        },
+        {
+          "id": "eliminarMarca",
+          "metodo": "DELETE",
+          "ruta": "/api/catalogo/marcas/:id",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN"
+          ],
+          "respuestaExitosa": {
+            "statusCode": 204,
+            "body": null
+          }
+        }
+      ]
+    },
+    {
+      "nombre": "Catálogo de Categorías",
+      "prefijo": "/api/catalogo/categorias",
+      "descripcion": "Categorías de productos con descripción normalizada.",
+      "endpoints": [
+        {
+          "id": "listarCategorias",
+          "metodo": "GET",
+          "ruta": "/api/catalogo/categorias",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN",
+            "VENDEDOR"
+          ],
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": [
+              {
+                "id": "c1",
+                "descripcion": "PLAYERAS",
+                "activo": true
+              },
+              {
+                "id": "c2",
+                "descripcion": "PANTALONES",
+                "activo": true
+              }
+            ]
+          }
+        },
+        {
+          "id": "crearCategoria",
+          "metodo": "POST",
+          "ruta": "/api/catalogo/categorias",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN"
+          ],
+          "body": {
+            "descripcion": "VESTIDOS"
+          },
+          "respuestaExitosa": {
+            "statusCode": 201,
+            "body": {
+              "id": "c3",
+              "descripcion": "VESTIDOS",
+              "activo": true
+            }
+          }
+        },
+        {
+          "id": "actualizarCategoria",
+          "metodo": "PATCH",
+          "ruta": "/api/catalogo/categorias/:id",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN"
+          ],
+          "body": {
+            "descripcion": "VESTIDOS DE NOCHE",
+            "activo": true
+          },
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": {
+              "id": "c3",
+              "descripcion": "VESTIDOS DE NOCHE",
+              "activo": true
+            }
+          }
+        },
+        {
+          "id": "eliminarCategoria",
+          "metodo": "DELETE",
+          "ruta": "/api/catalogo/categorias/:id",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN"
+          ],
+          "respuestaExitosa": {
+            "statusCode": 204,
+            "body": null
+          }
+        }
+      ]
+    },
+    {
+      "nombre": "Catálogo de Tallas",
+      "prefijo": "/api/catalogo/tallas",
+      "descripcion": "Catálogo referencial de tallas para prendas y calzado.",
+      "endpoints": [
+        {
+          "id": "listarTallas",
+          "metodo": "GET",
+          "ruta": "/api/catalogo/tallas",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN",
+            "VENDEDOR"
+          ],
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": [
+              {
+                "id": "s1",
+                "nombre": "CH",
+                "activo": true
+              },
+              {
+                "id": "s2",
+                "nombre": "M",
+                "activo": true
+              },
+              {
+                "id": "s3",
+                "nombre": "G",
+                "activo": true
+              }
+            ]
+          }
+        },
+        {
+          "id": "crearTalla",
+          "metodo": "POST",
+          "ruta": "/api/catalogo/tallas",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN"
+          ],
+          "body": {
+            "nombre": "XL"
+          },
+          "respuestaExitosa": {
+            "statusCode": 201,
+            "body": {
+              "id": "s4",
+              "nombre": "XL",
+              "activo": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "nombre": "Catálogo de Productos",
+      "prefijo": "/api/productos",
+      "descripcion": "Alta, edición, búsqueda, fotos en Cloudinary e inventario derivado.",
+      "endpoints": [
+        {
+          "id": "listarProductos",
+          "metodo": "GET",
+          "ruta": "/api/productos",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN",
+            "VENDEDOR"
+          ],
+          "descripcion": "Busca productos por código de barras o nombre. Permite filtrar por categoría y existencias bajas.",
+          "queryParams": {
+            "busqueda": "7501234567890",
+            "categoriaId": "c1",
+            "productosBajoMinimo": false,
+            "incluirInactivos": false
+          },
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": [
+              {
+                "id": "p1",
+                "codigoBarras": "7501234567890",
+                "articulo": "Playera Kamadeva Acid Wash",
+                "descripcion": "100% algodón corte oversize",
+                "precioVenta": "499.00",
+                "precioCompra": "180.00",
+                "existencias": "24.000",
+                "existenciaMinima": "5.000",
+                "urlImagen": "https://res.cloudinary.com/.../p1.jpg",
+                "activo": true,
+                "categoria": {
+                  "id": "c1",
+                  "descripcion": "PLAYERAS"
+                },
+                "marca": {
+                  "id": "b1",
+                  "nombre": "Kamadeva"
+                },
+                "tallas": [
+                  {
+                    "id": "s1",
+                    "nombre": "CH"
+                  },
+                  {
+                    "id": "s2",
+                    "nombre": "M"
+                  }
+                ],
+                "fechaCreacion": "2026-11-02T10:00:00.000Z",
+                "fechaActualizacion": "2026-11-02T10:00:00.000Z"
+              }
+            ]
+          }
+        },
+        {
+          "id": "obtenerProducto",
+          "metodo": "GET",
+          "ruta": "/api/productos/:id",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN",
+            "VENDEDOR"
+          ],
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": {
+              "id": "p1",
+              "codigoBarras": "7501234567890",
+              "articulo": "Playera Kamadeva Acid Wash",
+              "descripcion": "100% algodón corte oversize",
+              "precioVenta": "499.00",
+              "precioCompra": "180.00",
+              "existencias": "24.000",
+              "existenciaMinima": "5.000",
+              "urlImagen": "https://res.cloudinary.com/.../p1.jpg",
+              "activo": true,
+              "categoriaId": "c1",
+              "marcaId": "b1",
+              "tallaIds": [
+                "s1",
+                "s2"
+              ]
+            }
+          }
+        },
+        {
+          "id": "crearProducto",
+          "metodo": "POST",
+          "ruta": "/api/productos",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN"
+          ],
+          "descripcion": "Crea un producto. Si se especifica 'existencias' > 0, genera un movimiento Kardex ADJUSTMENT_IN automáticamente.",
+          "body": {
+            "codigoBarras": "7501234567890",
+            "articulo": "Playera Kamadeva Acid Wash",
+            "descripcion": "100% algodón corte oversize",
+            "precioVenta": 499,
+            "precioCompra": 180,
+            "existencias": 20,
+            "existenciaMinima": 5,
+            "categoriaId": "c1",
+            "marcaId": "b1",
+            "tallaIds": [
+              "s1",
+              "s2"
+            ]
+          },
+          "respuestaExitosa": {
+            "statusCode": 201,
+            "body": {
+              "id": "p1",
+              "codigoBarras": "7501234567890",
+              "articulo": "Playera Kamadeva Acid Wash",
+              "precioVenta": "499.00",
+              "existencias": "20.000",
+              "activo": true
+            }
+          },
+          "erroresComunes": [
+            {
+              "statusCode": 409,
+              "motivo": "El código de barras ya existe"
+            }
+          ]
+        },
+        {
+          "id": "actualizarProducto",
+          "metodo": "PATCH",
+          "ruta": "/api/productos/:id",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN"
+          ],
+          "descripcion": "Actualiza atributos. Si cambia 'existencias', genera movimiento de ajuste compensatorio (ADJUSTMENT_IN o ADJUSTMENT_OUT).",
+          "body": {
+            "precioVenta": 549,
+            "existencias": 25,
+            "activo": true
+          },
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": {
+              "id": "p1",
+              "precioVenta": "549.00",
+              "existencias": "25.000"
+            }
+          }
+        },
+        {
+          "id": "eliminarProducto",
+          "metodo": "DELETE",
+          "ruta": "/api/productos/:id",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN"
+          ],
+          "descripcion": "Elimina el producto. Falla con 409 si tiene ventas, compras o cotizaciones asociadas.",
+          "respuestaExitosa": {
+            "statusCode": 204,
+            "body": null
+          }
+        },
+        {
+          "id": "subirFotoProducto",
+          "metodo": "POST",
+          "ruta": "/api/productos/:id/image",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN"
+          ],
+          "descripcion": "Sube una fotografía a Cloudinary y asocia la urlImagen al producto.",
+          "headers": {
+            "Content-Type": "multipart/form-data"
+          },
+          "bodyDescripcion": "Form-data con campo 'file' (JPEG/PNG/WebP hasta 5MB)",
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": {
+              "id": "p1",
+              "urlImagen": "https://res.cloudinary.com/.../p1.jpg"
+            }
+          }
+        },
+        {
+          "id": "importarExcelProductos",
+          "metodo": "POST",
+          "ruta": "/api/productos/importacion",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN"
+          ],
+          "descripcion": "Ingesta masiva de catálogo desde archivo .xlsx con opción de vista previa.",
+          "headers": {
+            "Content-Type": "multipart/form-data"
+          },
+          "bodyDescripcion": "Form-data con 'file' (.xlsx), 'vistaPrevia' ('true'|'false')",
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": {
+              "totalRenglones": 150,
+              "productosCreados": 145,
+              "categoriasCreadas": 12,
+              "errores": []
+            }
+          }
+        }
+      ]
+    },
+    {
+      "nombre": "Inventario y Kardex",
+      "prefijo": "/api/inventario",
+      "descripcion": "Auditoría física estricta mediante eventos de inventario.",
+      "endpoints": [
+        {
+          "id": "listarMovimientos",
+          "metodo": "GET",
+          "ruta": "/api/inventario/movimientos",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN",
+            "VENDEDOR"
+          ],
+          "queryParams": {
+            "pagina": 1,
+            "limite": 20,
+            "productoId": "p1",
+            "tipo": "SALE_OUT",
+            "fechaInicio": "2026-11-01T00:00:00.000Z",
+            "fechaFin": "2026-11-02T23:59:59.000Z"
+          },
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": [
+              {
+                "id": "mov-1",
+                "productoId": "p1",
+                "tipo": "SALE_OUT",
+                "cantidad": "-2.000",
+                "existenciaAnterior": "20.000",
+                "existenciaNueva": "18.000",
+                "referenciaTipo": "SALE",
+                "referenciaId": "venta-uuid-1",
+                "motivo": "Venta mostrador folio 1042",
+                "fechaCreacion": "2026-11-02T15:30:00.000Z"
+              }
+            ]
+          }
+        },
+        {
+          "id": "crearMovimientoManual",
+          "metodo": "POST",
+          "ruta": "/api/productos/:productoId/movimientos",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN"
+          ],
+          "pathParams": {
+            "productoId": "p1"
+          },
+          "body": {
+            "tipo": "ADJUSTMENT_IN",
+            "cantidad": 5,
+            "motivo": "Ajuste por conteo físico de mercancía"
+          },
+          "respuestaExitosa": {
+            "statusCode": 201,
+            "body": {
+              "id": "mov-2",
+              "tipo": "ADJUSTMENT_IN",
+              "cantidad": "5.000",
+              "existenciaNueva": "23.000"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "nombre": "Clientes",
+      "prefijo": "/api/clientes",
+      "descripcion": "Directorio de clientes para ventas y cotizaciones.",
+      "endpoints": [
+        {
+          "id": "listarClientes",
+          "metodo": "GET",
+          "ruta": "/api/clientes",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN",
+            "VENDEDOR"
+          ],
+          "queryParams": {
+            "busqueda": "Juan",
+            "incluirInactivos": false
+          },
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": [
+              {
+                "id": "cli-1",
+                "nombre": "Público General",
+                "telefono": null,
+                "correo": null,
+                "activo": true
+              },
+              {
+                "id": "cli-2",
+                "nombre": "Mariana Treviño",
+                "telefono": "8181234567",
+                "correo": "mariana@gmail.com",
+                "activo": true
+              }
+            ]
+          }
+        },
+        {
+          "id": "crearCliente",
+          "metodo": "POST",
+          "ruta": "/api/clientes",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN",
+            "VENDEDOR"
+          ],
+          "body": {
+            "nombre": "Roberto Garza",
+            "telefono": "8119876543",
+            "correo": "roberto@garza.mx"
+          },
+          "respuestaExitosa": {
+            "statusCode": 201,
+            "body": {
+              "id": "cli-3",
+              "nombre": "Roberto Garza",
+              "telefono": "8119876543",
+              "correo": "roberto@garza.mx",
+              "activo": true
+            }
+          }
+        },
+        {
+          "id": "actualizarCliente",
+          "metodo": "PATCH",
+          "ruta": "/api/clientes/:id",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN"
+          ],
+          "body": {
+            "telefono": "8119990000",
+            "activo": true
+          },
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": {
+              "id": "cli-3",
+              "telefono": "8119990000",
+              "activo": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "nombre": "Proveedores y Compras",
+      "prefijo": "/api/proveedores | /api/compras",
+      "descripcion": "Directorio de proveedores y registro de compras físicas recibidas con fotografía de costo.",
+      "endpoints": [
+        {
+          "id": "listarProveedores",
+          "metodo": "GET",
+          "ruta": "/api/proveedores",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN",
+            "VENDEDOR"
+          ],
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": [
+              {
+                "id": "prov-1",
+                "nombre": "Distribuidora Textil del Norte",
+                "telefono": "5551234567",
+                "correo": "ventas@textildelnorte.com",
+                "nombreContacto": "Lic. Laura Vega",
+                "activo": true
+              }
+            ]
+          }
+        },
+        {
+          "id": "crearProveedor",
+          "metodo": "POST",
+          "ruta": "/api/proveedores",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN"
+          ],
+          "body": {
+            "nombre": "Confecciones Monterrey",
+            "telefono": "8183001122",
+            "correo": "pedidos@confeccionesmty.com",
+            "nombreContacto": "Ing. Pedro Salazar"
+          },
+          "respuestaExitosa": {
+            "statusCode": 201,
+            "body": {
+              "id": "prov-2",
+              "nombre": "Confecciones Monterrey",
+              "activo": true
+            }
+          }
+        },
+        {
+          "id": "crearCompra",
+          "metodo": "POST",
+          "ruta": "/api/compras",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN"
+          ],
+          "descripcion": "Registra una compra recibida. Guarda el costo vigente como foto (costoUnitario) e incrementa el inventario atómicamente con PURCHASE_IN.",
+          "body": {
+            "proveedorId": "prov-1",
+            "folioProveedor": "FAC-9842",
+            "fechaRecepcion": "2026-11-02T14:00:00.000Z",
+            "notas": "Resurtido temporada invierno",
+            "productos": [
+              {
+                "productoId": "p1",
+                "cantidad": 30
+              }
+            ]
+          },
+          "respuestaExitosa": {
+            "statusCode": 201,
+            "body": {
+              "id": "compra-1",
+              "folioProveedor": "FAC-9842",
+              "total": "5400.00",
+              "proveedor": {
+                "id": "prov-1",
+                "nombre": "Distribuidora Textil del Norte"
+              },
+              "productos": [
+                {
+                  "productoId": "p1",
+                  "articulo": "Playera Kamadeva Acid Wash",
+                  "cantidad": "30.000",
+                  "costoUnitario": "180.00",
+                  "subtotal": "5400.00"
+                }
+              ],
+              "fechaRecepcion": "2026-11-02T14:00:00.000Z"
+            }
+          }
+        },
+        {
+          "id": "listarCompras",
+          "metodo": "GET",
+          "ruta": "/api/compras",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN",
+            "VENDEDOR"
+          ],
+          "queryParams": {
+            "pagina": 1,
+            "limite": 20,
+            "proveedorId": "prov-1"
+          },
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": {
+              "datos": [
+                {
+                  "id": "compra-1",
+                  "folioProveedor": "FAC-9842",
+                  "total": "5400.00",
+                  "fechaRecepcion": "2026-11-02T14:00:00.000Z"
+                }
+              ],
+              "pagina": 1,
+              "limite": 20,
+              "total": 1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "nombre": "Punto de Venta (Ventas)",
+      "prefijo": "/api/ventas",
+      "descripcion": "Checkout en mostrador, folios secuenciales correlativos nativos, idempotencia y devoluciones.",
+      "endpoints": [
+        {
+          "id": "cobrarVenta",
+          "metodo": "POST",
+          "ruta": "/api/ventas",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN",
+            "VENDEDOR"
+          ],
+          "descripcion": "Realiza el cobro y emisión de ticket. Exige header Idempotency-Key. Decrementa existencias con SALE_OUT e incrementa ventas del turno actual de caja.",
+          "headers": {
+            "Content-Type": "application/json",
+            "Idempotency-Key": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+          },
+          "body": {
+            "clienteId": "cli-1",
+            "metodoPago": "CASH",
+            "montoRecibido": 1000,
+            "notas": "Venta mostrador",
+            "productos": [
+              {
+                "productoId": "p1",
+                "cantidad": 2,
+                "tallaId": "s2"
+              }
+            ]
+          },
+          "respuestaExitosa": {
+            "statusCode": 201,
+            "body": {
+              "id": "venta-uuid-1",
+              "folio": 1042,
+              "folioFormateado": "V-001042",
+              "total": "998.00",
+              "subtotal": "998.00",
+              "descuento": "0.00",
+              "metodoPago": "CASH",
+              "montoRecibido": "1000.00",
+              "cambio": "2.00",
+              "estado": "COMPLETED",
+              "cliente": {
+                "id": "cli-1",
+                "nombre": "Público General"
+              },
+              "vendedor": {
+                "id": "u1",
+                "nombre": "Carlos López"
+              },
+              "productos": [
+                {
+                  "productoId": "p1",
+                  "articulo": "Playera Kamadeva Acid Wash",
+                  "codigoBarras": "7501234567890",
+                  "talla": "M",
+                  "cantidad": "2.000",
+                  "precioUnitario": "499.00",
+                  "subtotal": "998.00"
+                }
+              ],
+              "fechaCreacion": "2026-11-02T15:30:00.000Z"
+            }
+          },
+          "erroresComunes": [
+            {
+              "statusCode": 400,
+              "motivo": "Falta cabecera Idempotency-Key o carrito vacío"
+            },
+            {
+              "statusCode": 409,
+              "motivo": "Existencias insuficientes para surtir la venta"
+            }
+          ]
+        },
+        {
+          "id": "listarVentas",
+          "metodo": "GET",
+          "ruta": "/api/ventas",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN",
+            "VENDEDOR"
+          ],
+          "queryParams": {
+            "pagina": 1,
+            "limite": 20,
+            "clienteId": "cli-1",
+            "estado": "COMPLETED",
+            "fechaInicio": "2026-11-01T00:00:00.000Z",
+            "fechaFin": "2026-11-02T23:59:59.000Z"
+          },
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": {
+              "datos": [
+                {
+                  "id": "venta-uuid-1",
+                  "folio": 1042,
+                  "folioFormateado": "V-001042",
+                  "total": "998.00",
+                  "metodoPago": "CASH",
+                  "estado": "COMPLETED",
+                  "fechaCreacion": "2026-11-02T15:30:00.000Z"
+                }
+              ],
+              "pagina": 1,
+              "limite": 20,
+              "total": 1
+            }
+          }
+        },
+        {
+          "id": "obtenerVentaDetalle",
+          "metodo": "GET",
+          "ruta": "/api/ventas/:id",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN",
+            "VENDEDOR"
+          ],
+          "descripcion": "Obtiene desglose completo de una venta para reimpresión de tickets.",
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": {
+              "id": "venta-uuid-1",
+              "folio": 1042,
+              "folioFormateado": "V-001042",
+              "total": "998.00",
+              "metodoPago": "CASH",
+              "cambio": "2.00",
+              "productos": [
+                {
+                  "articulo": "Playera Kamadeva Acid Wash",
+                  "cantidad": "2.000",
+                  "precioUnitario": "499.00",
+                  "subtotal": "998.00"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "devolucionVenta",
+          "metodo": "POST",
+          "ruta": "/api/ventas/:id/devolucion",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN",
+            "VENDEDOR"
+          ],
+          "descripcion": "Devolución parcial o total de artículos. Reintegra stock al Kardex con RETURN_IN y registra reembolso en caja.",
+          "pathParams": {
+            "id": "venta-uuid-1"
+          },
+          "body": {
+            "motivo": "Talla incorrecta",
+            "productos": [
+              {
+                "productoId": "p1",
+                "cantidad": 1
+              }
+            ]
+          },
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": {
+              "id": "venta-uuid-1",
+              "folio": 1042,
+              "montoReembolsado": "499.00",
+              "estado": "REFUNDED",
+              "productosDevueltos": [
+                {
+                  "productoId": "p1",
+                  "cantidad": 1
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "cancelarVenta",
+          "metodo": "POST",
+          "ruta": "/api/ventas/:id/cancelar",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN"
+          ],
+          "body": {
+            "motivo": "Error de cobro del cajero"
+          },
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": {
+              "id": "venta-uuid-1",
+              "estado": "CANCELLED"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "nombre": "Cotizaciones",
+      "prefijo": "/api/cotizaciones",
+      "descripcion": "Presupuestos para clientes con vencimiento y conversión a venta directa.",
+      "endpoints": [
+        {
+          "id": "crearCotizacion",
+          "metodo": "POST",
+          "ruta": "/api/cotizaciones",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN",
+            "VENDEDOR"
+          ],
+          "body": {
+            "clienteId": "cli-2",
+            "vigenciaDias": 15,
+            "notas": "Cotización para evento",
+            "productos": [
+              {
+                "productoId": "p1",
+                "cantidad": 5,
+                "tallaId": "s1"
+              }
+            ]
+          },
+          "respuestaExitosa": {
+            "statusCode": 201,
+            "body": {
+              "id": "cotiz-1",
+              "folio": 501,
+              "folioFormateado": "COT-000501",
+              "total": "2495.00",
+              "estado": "DRAFT",
+              "cliente": {
+                "id": "cli-2",
+                "nombre": "Mariana Treviño"
+              }
+            }
+          }
+        },
+        {
+          "id": "listarCotizaciones",
+          "metodo": "GET",
+          "ruta": "/api/cotizaciones",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN",
+            "VENDEDOR"
+          ],
+          "queryParams": {
+            "estado": "DRAFT",
+            "clienteId": "cli-2"
+          },
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": [
+              {
+                "id": "cotiz-1",
+                "folio": 501,
+                "folioFormateado": "COT-000501",
+                "total": "2495.00",
+                "estado": "DRAFT"
+              }
+            ]
+          }
+        },
+        {
+          "id": "pagarCotizacion",
+          "metodo": "POST",
+          "ruta": "/api/cotizaciones/:id/pagar",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN",
+            "VENDEDOR"
+          ],
+          "descripcion": "Convierte la cotización en una venta oficial de contado. Aplica deducción de existencias y cambia estado a CONVERTED.",
+          "pathParams": {
+            "id": "cotiz-1"
+          },
+          "body": {
+            "metodoPago": "CARD",
+            "montoRecibido": 2495
+          },
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": {
+              "id": "venta-uuid-2",
+              "folio": 1043,
+              "folioFormateado": "V-001043",
+              "total": "2495.00",
+              "estado": "COMPLETED",
+              "cotizacionOrigenId": "cotiz-1"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "nombre": "Gastos Operativos",
+      "prefijo": "/api/gastos | /api/categorias-gastos",
+      "descripcion": "Egresos de tienda asociados automáticamente al turno actual de caja.",
+      "endpoints": [
+        {
+          "id": "listarCategoriasGastos",
+          "metodo": "GET",
+          "ruta": "/api/categorias-gastos",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN",
+            "VENDEDOR"
+          ],
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": [
+              {
+                "id": "cg-1",
+                "nombre": "LIMPIEZA",
+                "activo": true
+              },
+              {
+                "id": "cg-2",
+                "nombre": "PAPELERIA",
+                "activo": true
+              },
+              {
+                "id": "cg-3",
+                "nombre": "SERVICIOS",
+                "activo": true
+              }
+            ]
+          }
+        },
+        {
+          "id": "crearGasto",
+          "metodo": "POST",
+          "ruta": "/api/gastos",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN",
+            "VENDEDOR"
+          ],
+          "descripcion": "Registra una salida de dinero en efectivo. Se descuenta del balance de caja del corte en curso.",
+          "body": {
+            "categoriaGastoId": "cg-1",
+            "monto": 120,
+            "motivo": "Compra de cloro y bolsas de basura"
+          },
+          "respuestaExitosa": {
+            "statusCode": 201,
+            "body": {
+              "id": "gasto-1",
+              "monto": "120.00",
+              "motivo": "Compra de cloro y bolsas de basura",
+              "categoriaGasto": {
+                "id": "cg-1",
+                "nombre": "LIMPIEZA"
+              },
+              "fechaCreacion": "2026-11-02T16:00:00.000Z"
+            }
+          }
+        },
+        {
+          "id": "listarGastos",
+          "metodo": "GET",
+          "ruta": "/api/gastos",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN",
+            "VENDEDOR"
+          ],
+          "queryParams": {
+            "pagina": 1,
+            "limite": 20
+          },
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": {
+              "datos": [
+                {
+                  "id": "gasto-1",
+                  "monto": "120.00",
+                  "motivo": "Compra de cloro y bolsas de basura",
+                  "fechaCreacion": "2026-11-02T16:00:00.000Z"
+                }
+              ],
+              "pagina": 1,
+              "limite": 20,
+              "total": 1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "nombre": "Arqueo y Cortes de Caja",
+      "prefijo": "/api/cortes-caja",
+      "descripcion": "Cortes de caja inmutables encadenados estrictos con desglose de denominaciones.",
+      "endpoints": [
+        {
+          "id": "resumenCorteActual",
+          "metodo": "GET",
+          "ruta": "/api/cortes-caja/resumen-actual",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN",
+            "VENDEDOR"
+          ],
+          "descripcion": "Calcula en tiempo real las ventas en efectivo, tarjeta, transferencias, gastos del turno y saldo esperado en caja.",
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": {
+              "corteAnteriorId": "corte-prev-uuid",
+              "fondoInicial": "1500.00",
+              "ventasEfectivo": "4500.00",
+              "ventasTarjeta": "3200.00",
+              "ventasTransferencia": "1100.00",
+              "totalVentas": "8800.00",
+              "totalGastos": "120.00",
+              "totalReembolsos": "0.00",
+              "saldoEsperadoEfectivo": "5880.00",
+              "cantidadVentas": 15,
+              "cantidadGastos": 1
+            }
+          }
+        },
+        {
+          "id": "cerrarCorteCaja",
+          "metodo": "POST",
+          "ruta": "/api/cortes-caja",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN",
+            "VENDEDOR"
+          ],
+          "descripcion": "Sella el turno de caja. El 'fondoDejado' se convierte automáticamente en el 'fondoInicial' del siguiente corte.",
+          "body": {
+            "corteAnteriorId": "corte-prev-uuid",
+            "efectivoContado": 5880,
+            "fondoDejado": 1500,
+            "retiroEfectivo": 4380,
+            "notas": "Turno cerrado sin diferencias",
+            "denominaciones": {
+              "billetes_1000": 3,
+              "billetes_500": 4,
+              "billetes_200": 4,
+              "billetes_100": 0,
+              "monedas_10": 8
+            }
+          },
+          "respuestaExitosa": {
+            "statusCode": 201,
+            "body": {
+              "id": "corte-uuid-nuevo",
+              "folio": 84,
+              "fondoInicial": "1500.00",
+              "totalVentas": "8800.00",
+              "totalGastos": "120.00",
+              "efectivoContado": "5880.00",
+              "saldoEsperado": "5880.00",
+              "diferencia": "0.00",
+              "fondoDejado": "1500.00",
+              "retiroEfectivo": "4380.00",
+              "fechaCierre": "2026-11-02T22:00:00.000Z"
+            }
+          },
+          "erroresComunes": [
+            {
+              "statusCode": 409,
+              "motivo": "El corteAnteriorId no coincide con la cadena secuencial"
+            }
+          ]
+        },
+        {
+          "id": "listarCortesCaja",
+          "metodo": "GET",
+          "ruta": "/api/cortes-caja",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN",
+            "VENDEDOR"
+          ],
+          "queryParams": {
+            "pagina": 1,
+            "limite": 20
+          },
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": {
+              "datos": [
+                {
+                  "id": "corte-uuid-nuevo",
+                  "folio": 84,
+                  "totalVentas": "8800.00",
+                  "diferencia": "0.00",
+                  "fechaCierre": "2026-11-02T22:00:00.000Z"
+                }
+              ],
+              "pagina": 1,
+              "limite": 20,
+              "total": 84
+            }
+          }
+        }
+      ]
+    },
+    {
+      "nombre": "Tablero y Analítica",
+      "prefijo": "/api/tablero",
+      "descripcion": "KPIs comerciales, productos más vendidos y gráfico de historial de ventas.",
+      "endpoints": [
+        {
+          "id": "resumenTablero",
+          "metodo": "GET",
+          "ruta": "/api/tablero/resumen",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN",
+            "VENDEDOR"
+          ],
+          "descripcion": "Devuelve ventas del día, gastos, saldo de caja y utilidad estimada (la utilidad solo se desglosa si el usuario es ADMIN).",
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": {
+              "ventasHoy": "12450.00",
+              "cantidadVentasHoy": 28,
+              "ticketPromedio": "444.64",
+              "gastosHoy": "350.00",
+              "utilidadEstimadaHoy": "4820.00",
+              "productosBajoInventario": 3
+            }
+          }
+        },
+        {
+          "id": "productosMasVendidos",
+          "metodo": "GET",
+          "ruta": "/api/tablero/productos-mas-vendidos",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN",
+            "VENDEDOR"
+          ],
+          "queryParams": {
+            "limite": 5
+          },
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": {
+              "productos": [
+                {
+                  "productoId": "p1",
+                  "articulo": "Playera Kamadeva Acid Wash",
+                  "codigoBarras": "7501234567890",
+                  "unidadesVendidas": "42.000",
+                  "totalVendido": "20958.00"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "historialVentas",
+          "metodo": "GET",
+          "ruta": "/api/tablero/historial-ventas",
+          "requiereToken": true,
+          "rolesPermitidos": [
+            "ADMIN",
+            "VENDEDOR"
+          ],
+          "queryParams": {
+            "periodo": "week"
+          },
+          "respuestaExitosa": {
+            "statusCode": 200,
+            "body": {
+              "periodo": "week",
+              "timezone": "America/Mexico_City",
+              "dias": [
+                {
+                  "fecha": "2026-11-02",
+                  "ventasTotales": "12450.00",
+                  "cantidadVentas": 28,
+                  "gastosTotales": "350.00"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

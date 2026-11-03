@@ -129,8 +129,8 @@ export class DashboardService {
              SUM(si.cantidad) AS units,
              SUM(si.total) AS revenue,
              COUNT(DISTINCT si."ventaId")::int AS "salesCount"
-      FROM sale_items si
-      JOIN sales s ON s.id = si."ventaId"
+      FROM renglones_venta si
+      JOIN ventas s ON s.id = si."ventaId"
       WHERE s.estado = 'COMPLETED'
         AND s."fechaCreacion" >= ${utc(startDate)}
         AND s."fechaCreacion" <= ${utc(endDate)}
@@ -181,14 +181,14 @@ export class DashboardService {
         SELECT ${day(Prisma.sql`"fechaCreacion"`)} AS day,
                SUM(total) AS total,
                COUNT(*)::int AS count
-        FROM sales
+        FROM ventas
         WHERE estado = 'COMPLETED'
           AND "fechaCreacion" >= ${utc(range.start)}
           AND "fechaCreacion" < ${utc(range.end)}
         GROUP BY 1`,
       this.prisma.$queryRaw<Array<{ day: string; total: Prisma.Decimal }>>`
         SELECT ${day(Prisma.sql`"fechaGasto"`)} AS day, SUM(monto) AS total
-        FROM expenses
+        FROM gastos
         WHERE "fechaGasto" >= ${utc(range.start)}
           AND "fechaGasto" < ${utc(range.end)}
         GROUP BY 1`,
