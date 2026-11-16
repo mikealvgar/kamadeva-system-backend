@@ -194,8 +194,7 @@ function inputNames(path: string): Record<string, string> {
   if (path.startsWith('/api/autenticacion/')) return { ...publicToInternal, ...basePagination };
   if (
     path.startsWith('/api/configuracion-negocio') ||
-    path.startsWith('/api/roles') ||
-    path.startsWith('/api/pedidos-proveedores')
+    path.startsWith('/api/roles')
   )
     return basePagination;
   if (path.startsWith('/api/compras') || path.startsWith('/api/usuarios')) {

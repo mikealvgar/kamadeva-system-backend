@@ -1,3 +1,4 @@
+import { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { BusinessConfigService } from './business-config.service.js';
 import { PHONE_PATTERN } from '../common/validation/patterns.js';
@@ -9,6 +10,7 @@ describe('BusinessConfigService', () => {
   const updatedAt = new Date('2026-10-30T12:00:00Z');
   const record = {
     nombre: 'Kamadeva',
+    razonSocial: 'Kamadeva SA',
     direccion: 'Av. 1',
     colonia: 'Roma Sur',
     municipio: 'Cuauhtémoc',
@@ -16,10 +18,14 @@ describe('BusinessConfigService', () => {
     telefono: '55-1234-5678',
     rfc: 'KAM210315ABC',
     mensajePie: 'Gracias',
+    mensajeTicket: 'Gracias',
+    moneda: 'MXN',
+    impuestoPorcentaje: new Prisma.Decimal(0),
     fechaActualizacion: updatedAt,
   };
   const dto = {
     nombre: ' Kamadeva ',
+    razonSocial: ' Kamadeva SA ',
     direccion: ' Av. 1 ',
     colonia: ' Roma Sur ',
     municipio: ' Cuauhtémoc ',
@@ -27,6 +33,9 @@ describe('BusinessConfigService', () => {
     telefono: ' 55-1234-5678 ',
     rfc: ' kam210315abc ',
     mensajePie: ' Gracias ',
+    mensajeTicket: ' Gracias ',
+    moneda: ' mxn ',
+    impuestoPorcentaje: 0,
   };
 
   beforeEach(() => {
@@ -49,6 +58,7 @@ describe('BusinessConfigService', () => {
     prisma.businessConfig.findUnique.mockResolvedValue(record);
     expect(await service.get()).toEqual({
       nombre: 'Kamadeva',
+      razonSocial: 'Kamadeva SA',
       direccion: 'Av. 1',
       colonia: 'Roma Sur',
       municipio: 'Cuauhtémoc',
@@ -56,6 +66,9 @@ describe('BusinessConfigService', () => {
       telefono: '55-1234-5678',
       rfc: 'KAM210315ABC',
       mensajePie: 'Gracias',
+      mensajeTicket: 'Gracias',
+      moneda: 'MXN',
+      impuestoPorcentaje: 0,
       updatedAt: updatedAt.toISOString(),
     });
   });
@@ -64,6 +77,7 @@ describe('BusinessConfigService', () => {
     await service.update(dto);
     const data = {
       nombre: 'Kamadeva',
+      razonSocial: 'Kamadeva SA',
       direccion: 'Av. 1',
       colonia: 'Roma Sur',
       municipio: 'Cuauhtémoc',
@@ -71,6 +85,9 @@ describe('BusinessConfigService', () => {
       telefono: '55-1234-5678',
       rfc: 'KAM210315ABC',
       mensajePie: 'Gracias',
+      mensajeTicket: 'Gracias',
+      moneda: 'MXN',
+      impuestoPorcentaje: new Prisma.Decimal(0),
     };
     expect(prisma.businessConfig.upsert).toHaveBeenCalledWith(
       expect.objectContaining({

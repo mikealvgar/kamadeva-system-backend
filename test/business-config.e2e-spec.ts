@@ -102,7 +102,14 @@ describe('Business config HTTP + PostgreSQL', () => {
         rfc: ' kam210315abc ',
       }).expect(200)
     ).body as BusinessConfigResponse;
-    expect(created).toEqual({ ...valid, fechaActualizacion: expect.any(String) });
+    expect(created).toEqual({
+      ...valid,
+      razonSocial: null,
+      mensajeTicket: null,
+      moneda: 'MXN',
+      impuestoPorcentaje: 0,
+      fechaActualizacion: expect.any(String),
+    });
 
     const replaced = (
       await put({
@@ -170,5 +177,24 @@ describe('Business config HTTP + PostgreSQL', () => {
     await put(valid, tokens.seller).expect(403);
     await put(valid, tokens.noRole).expect(403);
     await http().get(base).set('Authorization', tokens.noRole).expect(403);
+  });
+
+  it('persists razonSocial, mensajeTicket, moneda and impuestoPorcentaje', async () => {
+    const payload = {
+      nombre: 'Kamadeva Boutique',
+      razonSocial: 'Kamadeva Sex Shop',
+      direccion: 'Av. Principal',
+      colonia: 'Centro',
+      municipio: 'Teziutlán',
+      estado: 'Nuevo León',
+      telefono: '8112345678',
+      rfc: 'XAXX010101000',
+      mensajePie: 'Gracias por su compra',
+      mensajeTicket: 'Gracias por su compra',
+      moneda: 'MXN',
+      impuestoPorcentaje: 0,
+    };
+    const saved = await put(payload).expect(200);
+    expect(saved.body).toMatchObject(payload);
   });
 });
