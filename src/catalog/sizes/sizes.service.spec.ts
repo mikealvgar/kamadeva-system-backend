@@ -47,8 +47,8 @@ describe('SizesService', () => {
 
   it('lists active sizes by default ordered by nombre', async () => {
     const res = await service.findAll();
-    expect(res.items).toEqual([sizeDto]);
-    expect(res.totalRecords).toBe(1);
+    expect(res.data).toEqual([sizeDto]);
+    expect(res.total_items).toBe(1);
     expect(prisma.size.findMany).toHaveBeenCalledWith({
       where: { activo: true },
       orderBy: { nombre: 'asc' },

@@ -104,7 +104,7 @@ describe('ExpenseCategoriesService', () => {
         take: 10,
         select: expect.any(Object),
       });
-      expect(result.items).toHaveLength(1);
+      expect(result.data).toHaveLength(1);
     });
 
     it('includes inactive when requested', async () => {

@@ -2,6 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import type { AuthUser } from '../types/auth-user.type.js';
 import type { AuthResult, TokenPair } from '../types/auth-result.type.js';
 import { ROLE_NAMES } from '../../roles/role-names.js';
+import { TemporaryPermissionDto } from '../../users/dto/temporary-permission.dto.js';
 
 export class AuthUserDto implements AuthUser {
   @ApiProperty({ format: 'uuid' })
@@ -43,6 +44,11 @@ export class AuthUserDto implements AuthUser {
     isArray: true,
   })
   seccionesPermitidas!: string[];
+
+  @ApiProperty({
+    type: [TemporaryPermissionDto],
+  })
+  permisosTemporales!: TemporaryPermissionDto[];
 }
 
 export class TokenPairDto implements TokenPair {

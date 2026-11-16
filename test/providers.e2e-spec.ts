@@ -180,7 +180,7 @@ describe('Providers HTTP + PostgreSQL', () => {
           .set('Authorization', tokens.seller)
           .expect(200)
       ).body;
-      const items = (res.items ?? res) as ProviderDto[];
+      const items = res.data as ProviderDto[];
       return items.map(({ id }) => id);
     };
     expect(await list({})).not.toContain(provider.id);
@@ -210,7 +210,7 @@ describe('Providers HTTP + PostgreSQL', () => {
         .set('Authorization', tokens.seller)
         .expect(200)
     ).body;
-    const found = (res.items ?? res) as ProviderDto[];
+    const found = res.data as ProviderDto[];
     expect(found.map(({ id }) => id).sort()).toEqual(
       [byName.id, byContact.id, byEmail.id].sort(),
     );
@@ -225,7 +225,7 @@ describe('Providers HTTP + PostgreSQL', () => {
         .set('Authorization', tokens.seller)
         .expect(200)
     ).body;
-    const phoneFound = (phoneRes.items ?? phoneRes) as ProviderDto[];
+    const phoneFound = phoneRes.data as ProviderDto[];
     expect(phoneFound.map(({ id }) => id)).toContain(phone.id);
   });
 

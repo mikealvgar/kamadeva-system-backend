@@ -114,6 +114,15 @@ describe('Customers HTTP + PostgreSQL', () => {
       fechaActualizacion: expect.any(String),
     });
     expect(new Date(customer.fechaCreacion).toISOString()).toBe(customer.fechaCreacion);
+
+    const inactive = await create({
+      nombre: `Inactivo ${randomUUID().slice(0, 6)}`,
+      activo: false,
+    });
+    expect(inactive.activo).toBe(false);
+    expect(
+      await prisma.customer.findUnique({ where: { id: inactive.id } }),
+    ).toMatchObject({ activo: false });
     expect(
       await prisma.customer.findUnique({ where: { id: customer.id } }),
     ).toMatchObject({
@@ -169,7 +178,7 @@ describe('Customers HTTP + PostgreSQL', () => {
         .get(base + query)
         .set('Authorization', tokens.seller!)
         .expect(200);
-      const items = ((response.body.items ?? response.body) as CustomerResponse[]).filter(({ id }) =>
+      const items = (response.body.data as CustomerResponse[]).filter(({ id }) =>
         customerIds.includes(id),
       );
       expect(items.map(({ id }) => id)).toEqual(
@@ -203,7 +212,7 @@ describe('Customers HTTP + PostgreSQL', () => {
         .query({ search: ` ${search} ` })
         .set('Authorization', tokens.seller!)
         .expect(200);
-      expect(((response.body.items ?? response.body) as CustomerResponse[]).map(({ id }) => id)).toEqual([
+      expect((response.body.data as CustomerResponse[]).map(({ id }) => id)).toEqual([
         customer.id,
       ]);
     }
@@ -217,19 +226,19 @@ describe('Customers HTTP + PostgreSQL', () => {
       .query({ search: 'unique CONTACT' })
       .set('Authorization', tokens.admin!)
       .expect(200);
-    expect(absent.body.items ?? absent.body).toEqual([]);
+    expect(absent.body.data).toEqual([]);
     const included = await http()
       .get(base)
       .query({ search: 'unique CONTACT', includeInactive: 'true' })
       .set('Authorization', tokens.admin!)
       .expect(200);
-    expect(included.body.items ?? included.body).toHaveLength(1);
+    expect(included.body.data).toHaveLength(1);
     const empty = await http()
       .get(base)
       .query({ search: randomUUID() })
       .set('Authorization', tokens.admin!)
       .expect(200);
-    expect(empty.body.items ?? empty.body).toEqual([]);
+    expect(empty.body.data).toEqual([]);
   });
 
   it('updates specified fields, preserves creation time and clears optional contacts', async () => {
@@ -289,7 +298,8 @@ describe('Customers HTTP + PostgreSQL', () => {
       { name: 'Ana', taxId: 'old' },
       { name: 'Ana', address: 'old' },
       { name: 'Ana', isDefault: true },
-      { name: 'Ana', isActive: false },
+      { nombre: 'Ana', activo: 'false' },
+      { nombre: 'Ana', isActive: null },
       { name: 'Ana', unknown: true },
     ])
       await http()
@@ -420,7 +430,7 @@ describe('Customers HTTP + PostgreSQL', () => {
       .get(base)
       .set('Authorization', tokens.seller!)
       .expect(200);
-    expect(response.body.items ?? response.body).toEqual(
+    expect(response.body.data).toEqual(
       expect.arrayContaining([expect.objectContaining({ id: initial.id })]),
     );
     await http()

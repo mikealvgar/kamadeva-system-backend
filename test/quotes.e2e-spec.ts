@@ -134,7 +134,7 @@ describe('Quotes HTTP + PostgreSQL', () => {
       .id;
     categoryId = (
       await prisma.category.create({
-        data: { descripcion: `Quotes-${randomUUID().slice(0, 8)}` },
+        data: { nombre: `Quotes-${randomUUID().slice(0, 8)}` },
       })
     ).id;
     productId = (
@@ -268,6 +268,7 @@ describe('Quotes HTTP + PostgreSQL', () => {
         fechaCreacion: expect.any(String),
         fechaActualizacion: expect.any(String),
       },
+      customerName: 'Ana',
       productos: [
         {
           id: expect.any(String),
@@ -350,7 +351,7 @@ describe('Quotes HTTP + PostgreSQL', () => {
       const paid = await http()
         .post(`${base}/${original.id}/pagar`)
         .set('Authorization', auth())
-        .send({ method: 'CASH', amount: Number(original.total) })
+        .send({ metodoPago: 'EFECTIVO', montoRecibido: Number(original.total) })
         .expect(200);
       sales.push(paid.body as SaleQuoteResponse);
     }
@@ -406,7 +407,7 @@ describe('Quotes HTTP + PostgreSQL', () => {
       data: { fechaCreacion: new Date('2020-01-01'), estado: 'SENT' },
     });
     const all = await http().get(base).set('Authorization', auth()).expect(200);
-    const allItems = (all.body.items ?? all.body) as QuoteResponse[];
+    const allItems = all.body.data as QuoteResponse[];
     expect(allItems.map((item) => item.id)).toEqual([
       second.id,
       first.id,
@@ -426,7 +427,7 @@ describe('Quotes HTTP + PostgreSQL', () => {
         .query(query)
         .set('Authorization', auth())
         .expect(200);
-      const resItems = (response.body.items ?? response.body) as QuoteResponse[];
+      const resItems = response.body.data as QuoteResponse[];
       expect(resItems.map((item) => item.id)).toEqual([
         first.id,
       ]);
@@ -438,7 +439,7 @@ describe('Quotes HTTP + PostgreSQL', () => {
         .set('Authorization', auth())
         .expect(200)
     ).body;
-    expect(emptyRes.items ?? emptyRes).toEqual([]);
+    expect(emptyRes.data).toEqual([]);
   });
 
   it('edits draft metadata without repricing and fully replaces items using current prices', async () => {
@@ -528,7 +529,7 @@ describe('Quotes HTTP + PostgreSQL', () => {
       const paid = await http()
         .post(`${base}/${original.id}/pagar`)
         .set('Authorization', auth())
-        .send({ method: 'CASH', amount: Number(original.total) })
+        .send({ metodoPago: 'EFECTIVO', montoRecibido: Number(original.total) })
         .expect(200);
       const sale = paid.body as SaleQuoteResponse;
       expect(Object.keys(sale).sort()).toEqual(
@@ -598,7 +599,7 @@ describe('Quotes HTTP + PostgreSQL', () => {
       await http()
         .post(`${base}/${original.id}/pagar`)
         .set('Authorization', auth())
-        .send({ method: 'CASH', amount: Number(original.total) })
+        .send({ metodoPago: 'EFECTIVO', montoRecibido: Number(original.total) })
         .expect(409);
       await http()
         .post(`${base}/${original.id}/enviar`)
@@ -620,7 +621,7 @@ describe('Quotes HTTP + PostgreSQL', () => {
       const result = await http()
         .post(`${base}/${original.id}/pagar`)
         .set('Authorization', tokens.admin!)
-        .send({ method, amount: Number(original.total) })
+        .send({ metodoPago: method, montoRecibido: Number(original.total) })
         .expect(200);
       expect(
         await prisma.sale.findUniqueOrThrow({
@@ -651,12 +652,12 @@ describe('Quotes HTTP + PostgreSQL', () => {
         .query({ customerId })
         .set('Authorization', auth())
         .expect(200);
-      const listedItems = (listed.body.items ?? listed.body) as QuoteResponse[];
+      const listedItems = listed.body.data as QuoteResponse[];
       expect(listedItems[0]!.puedePagar).toBe(false);
       const result = await http()
         .post(`${base}/${original.id}/pagar`)
         .set('Authorization', auth())
-        .send({ method: 'CASH', amount: Number(original.total) })
+        .send({ metodoPago: 'EFECTIVO', montoRecibido: Number(original.total) })
         .expect(409);
       expect(result.body.message).toBe('La cotización ha expirado');
       await expectNoConversion(original.id, status);
@@ -675,7 +676,7 @@ describe('Quotes HTTP + PostgreSQL', () => {
     const result = await http()
       .post(`${base}/${original.id}/pagar`)
       .set('Authorization', auth())
-      .send({ method: 'CASH', amount: Number(original.total) })
+      .send({ metodoPago: 'EFECTIVO', montoRecibido: Number(original.total) })
       .expect(409);
     expect(result.body.message).toBe('Sin inventario suficiente');
     await expectNoConversion(original.id);
@@ -693,7 +694,7 @@ describe('Quotes HTTP + PostgreSQL', () => {
     await http()
       .post(`${base}/${original.id}/pagar`)
       .set('Authorization', auth())
-      .send({ method: 'CASH', amount: Number(original.total) })
+      .send({ metodoPago: 'EFECTIVO', montoRecibido: Number(original.total) })
       .expect(409);
     await expectNoConversion(original.id);
     const changed = await http()
@@ -710,8 +711,8 @@ describe('Quotes HTTP + PostgreSQL', () => {
       .post(`${base}/${original.id}/pagar`)
       .set('Authorization', auth())
       .send({
-        method: 'CASH',
-        amount: Number((changed.body as QuoteResponse).total),
+        metodoPago: 'EFECTIVO',
+        montoRecibido: Number((changed.body as QuoteResponse).total),
       })
       .expect(200);
     expect(await stock()).toBe('0.000');
@@ -733,7 +734,7 @@ describe('Quotes HTTP + PostgreSQL', () => {
         http()
           .post(`${base}/${original.id}/pagar`)
           .set('Authorization', auth())
-          .send({ method: 'CASH', amount: Number(original.total) }),
+          .send({ metodoPago: 'EFECTIVO', montoRecibido: Number(original.total) }),
       ),
     );
     expect(results.map((result) => result.status).sort()).toEqual([200, 409]);
@@ -757,7 +758,7 @@ describe('Quotes HTTP + PostgreSQL', () => {
         http()
           .post(`${base}/${original.id}/pagar`)
           .set('Authorization', auth())
-          .send({ method: 'CASH', amount: Number(original.total) }),
+          .send({ metodoPago: 'EFECTIVO', montoRecibido: Number(original.total) }),
       ),
     );
     expect(results.map((result) => result.status).sort()).toEqual([200, 409]);
@@ -795,7 +796,7 @@ describe('Quotes HTTP + PostgreSQL', () => {
         await http()
           .post(`${base}/${original.id}/pagar`)
           .set('Authorization', auth())
-          .send({ method: 'CASH', amount: Number(original.total) })
+          .send({ metodoPago: 'EFECTIVO', montoRecibido: Number(original.total) })
           .expect(500);
       } finally {
         spy.mockRestore();
@@ -807,7 +808,7 @@ describe('Quotes HTTP + PostgreSQL', () => {
       const paid = await http()
         .post(`${base}/${original.id}/pagar`)
         .set('Authorization', auth())
-        .send({ method: 'CASH', amount: Number(original.total) })
+        .send({ metodoPago: 'EFECTIVO', montoRecibido: Number(original.total) })
         .expect(200);
       expect(folioNumber((paid.body as SaleQuoteResponse).folio)).toBeGreaterThan(salesBefore);
     },
@@ -839,7 +840,7 @@ describe('Quotes HTTP + PostgreSQL', () => {
     await http()
       .post(`${base}/${sent.id}/pagar`)
       .set('Authorization', auth())
-      .send({ method: 'CASH', amount: Number(sent.total) })
+      .send({ metodoPago: 'EFECTIVO', montoRecibido: Number(sent.total) })
       .expect(200);
     await http()
       .delete(`${base}/${sent.id}`)
@@ -910,7 +911,7 @@ describe('Quotes HTTP + PostgreSQL', () => {
       { expiresAt: null },
       { expiresAt: '2000-01-01' },
       { notes: null },
-      { total: 0 },
+      { total: -1 },
       { status: 'CONVERTED' },
     ])
       await http()
@@ -920,14 +921,14 @@ describe('Quotes HTTP + PostgreSQL', () => {
         .expect(400);
     for (const input of [
       {},
-      { method: 'CREDIT', amount: 3346.25 },
-      { method: 'CASH' },
-      { method: 'CASH', amount: '3346.25' },
-      { method: 'CASH', amount: -1 },
-      { method: 'CASH', amount: 1.001 },
-      { method: 'CASH', amount: 3346.24 },
-      { method: 'CASH', amount: 3346.26 },
-      { method: 'CASH', amount: 3346.25, status: 'PAID' },
+      { metodoPago: 'CREDIT', montoRecibido: 3346.25 },
+      { metodoPago: 'EFECTIVO' },
+      { metodoPago: 'EFECTIVO', montoRecibido: '3346.25' },
+      { metodoPago: 'EFECTIVO', montoRecibido: -1 },
+      { metodoPago: 'EFECTIVO', montoRecibido: 1.001 },
+      { metodoPago: 'EFECTIVO', montoRecibido: 3346.24 },
+      { metodoPago: 'EFECTIVO', montoRecibido: 3346.26 },
+      { metodoPago: 'EFECTIVO', montoRecibido: 3346.25, status: 'PAID' },
     ])
       await http()
         .post(`${base}/${original.id}/pagar`)
@@ -1006,7 +1007,7 @@ describe('Quotes HTTP + PostgreSQL', () => {
       await http()
         .post(`${base}/${id}/pagar`)
         .set('Authorization', auth())
-        .send({ method: 'CASH', amount: 1 })
+        .send({ metodoPago: 'EFECTIVO', montoRecibido: 1 })
         .expect(status);
     }
   });
@@ -1065,6 +1066,7 @@ describe('Quotes HTTP + PostgreSQL', () => {
         'folio',
         'estado',
         'cliente',
+        'customerName',
         'productos',
         'subtotal',
         'descuento',
@@ -1080,5 +1082,29 @@ describe('Quotes HTTP + PostgreSQL', () => {
     expect(
       response.body.components.schemas.CustomerDto.properties.isDefault,
     ).toBeUndefined();
+  });
+
+  it('creates a quote with customerName instead of customerId, expiresAt and explicit total', async () => {
+    const expiresAt = new Date(Date.now() + 7 * 86_400_000).toISOString();
+    const response = await http()
+      .post(base)
+      .set('Authorization', auth())
+      .send({
+        customerName: 'Cliente Mostrador',
+        expiresAt,
+        total: 182,
+        items: [{ productId, quantity: 2, discount: 0 }],
+      })
+      .expect(201);
+    try {
+      expect(response.body).toMatchObject({
+        cliente: null,
+        customerName: 'Cliente Mostrador',
+        fechaVencimiento: expiresAt,
+        total: '182.00',
+      });
+    } finally {
+      await prisma.quote.delete({ where: { id: response.body.id as string } });
+    }
   });
 });

@@ -13,7 +13,7 @@ export class QuoteCreatedEvent implements DomainEvent {
   constructor(
     readonly aggregateId: string,
     readonly folio: string,
-    readonly customerId: string,
+    readonly customerId: string | null,
     readonly createdById: string,
     readonly total: string,
     readonly expiresAt: string | null,
@@ -28,7 +28,7 @@ export class QuoteSentEvent implements DomainEvent {
   constructor(
     readonly aggregateId: string,
     readonly folio: string,
-    readonly customerId: string,
+    readonly customerId: string | null,
     readonly total: string,
   ) {}
 }

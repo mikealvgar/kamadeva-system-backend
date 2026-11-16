@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { TemporaryPermissionDto } from './temporary-permission.dto.js';
 
 export class UserDto {
   @ApiProperty({ format: 'uuid' })
@@ -27,6 +28,12 @@ export class UserDto {
 
   @ApiProperty({ example: ['ADMIN'], type: [String] })
   roles!: string[];
+
+  @ApiProperty({ example: ['products.view'], type: [String] })
+  seccionesPermitidas!: string[];
+
+  @ApiProperty({ type: [TemporaryPermissionDto] })
+  permisosTemporales!: TemporaryPermissionDto[];
 
   @ApiProperty({ format: 'date-time' })
   fechaCreacion!: string;

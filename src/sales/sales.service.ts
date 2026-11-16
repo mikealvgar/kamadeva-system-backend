@@ -61,7 +61,7 @@ export class SalesService {
         'La fecha inicial no puede ser posterior a la final',
       );
     }
-    const page = query.page ?? 0;
+    const page = query.page ?? 1;
     const size = query.size ?? query.pageSize ?? 10;
     return this.listSales.execute({
       startDate,

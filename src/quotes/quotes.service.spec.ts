@@ -36,6 +36,7 @@ function quote(overrides: Partial<QuoteRecord> = {}): QuoteRecord {
     id: 'quote',
     folio: 1,
     estado: 'DRAFT',
+    clienteNombre: null,
     cliente: customer,
     notas: 'Entrega',
     fechaVencimiento: null,
@@ -94,7 +95,7 @@ describe('QuotesService', () => {
     customerId: 'customer',
     items: [{ productId: 'product', quantity: 2.5, discount: 100 }],
   };
-  const payment = { method: 'CASH' as const, amount: 3026.25 };
+  const payment = { metodoPago: 'CASH' as const, montoRecibido: 3026.25 };
 
   beforeEach(() => {
     vi.resetAllMocks();
@@ -162,6 +163,7 @@ describe('QuotesService', () => {
       id: expect.any(String),
       estado: 'DRAFT',
       clienteId: 'customer',
+      clienteNombre: null,
       creadoPorId: 'actor',
       notas: 'Entrega',
       fechaVencimiento: new Date('2026-09-21T00:00:00Z'),
@@ -190,6 +192,43 @@ describe('QuotesService', () => {
       customer: { id: 'customer' },
       items: [{ product: { id: 'product' }, quantity: '2.500', unitPrice: '1250.50' }],
     });
+  });
+
+  it('creates a draft with customerName without customerId and honors explicit total', async () => {
+    tx.quote.create.mockResolvedValue(
+      quote({
+        cliente: null,
+        clienteNombre: 'Cliente Mostrador',
+        total: decimal('182.00'),
+      }),
+    );
+
+    const result = await service.create(
+      {
+        customerName: ' Cliente Mostrador ',
+        total: 182,
+        items: [{ productId: 'product', quantity: 2 }],
+      },
+      'actor',
+    );
+
+    expect(tx.customer.count).not.toHaveBeenCalled();
+    expect(tx.quote.create.mock.calls[0]![0].data).toMatchObject({
+      clienteId: null,
+      clienteNombre: 'Cliente Mostrador',
+      total: decimal('182'),
+    });
+    expect(result).toMatchObject({
+      customer: null,
+      customerName: 'Cliente Mostrador',
+      total: '182.00',
+    });
+  });
+
+  it('rejects creating a quote when neither customerId nor customerName is provided', async () => {
+    await expect(
+      service.create({ items: [{ productId: 'product', quantity: 1 }] }, 'actor'),
+    ).rejects.toMatchObject({ status: 400 });
   });
 
   it('rounds fractional cents per line and sums the stored amounts without floating point drift', async () => {
@@ -403,8 +442,8 @@ describe('QuotesService', () => {
       status: 'DRAFT',
       customerId: 'customer',
     });
-    expect(res.items).toHaveLength(1);
-    expect(res.totalRecords).toBe(1);
+    expect(res.data).toHaveLength(1);
+    expect(res.total_items).toBe(1);
     expect(tx.quote.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
@@ -416,7 +455,7 @@ describe('QuotesService', () => {
     );
     tx.quote.count.mockResolvedValue(0);
     tx.quote.findMany.mockResolvedValue([]);
-    expect((await service.findAll()).items).toEqual([]);
+    expect((await service.findAll()).data).toEqual([]);
   });
 
   it.each(['DRAFT', 'SENT'] as const)(
@@ -526,7 +565,7 @@ describe('QuotesService', () => {
     'rejects mismatched payment %s',
     async (amount) => {
       await expect(
-        service.pay('quote', { ...payment, amount }, 'actor'),
+        service.pay('quote', { ...payment, montoRecibido: amount }, 'actor'),
       ).rejects.toMatchObject({ status: 400 });
       expect(tx.sale.create).not.toHaveBeenCalled();
     },
@@ -544,7 +583,7 @@ describe('QuotesService', () => {
     tx.inventoryMovement.groupBy.mockResolvedValue([
       { productoId: 'product', _sum: { cambioExistencias: decimal(4) } },
     ]);
-    await expect(service.pay('quote', { ...payment, amount: 6052.50 }, 'actor')).rejects.toMatchObject({
+    await expect(service.pay('quote', { ...payment, montoRecibido: 6052.50 }, 'actor')).rejects.toMatchObject({
       status: 409,
       message: 'Sin inventario suficiente',
     });

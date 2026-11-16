@@ -77,7 +77,7 @@ describe('Catalog HTTP + PostgreSQL', () => {
   });
 
   async function create(
-    body: object = { descripcion: `Cat-${randomUUID().slice(0, 8)}` },
+    body: object = { nombre: `Cat-${randomUUID().slice(0, 8)}` },
   ): Promise<CategoryResponse> {
     const response = await http()
       .post(base)
@@ -91,7 +91,7 @@ describe('Catalog HTTP + PostgreSQL', () => {
 
   it('creates normalized public fields and persists defaults', async () => {
     const category = await create({
-      name: '  Ánillos & colección!  ',
+      nombre: '  Ánillos & colección!  ',
     });
     expect(category).toMatchObject({
       id: expect.any(String),
@@ -102,18 +102,35 @@ describe('Catalog HTTP + PostgreSQL', () => {
       await prisma.category.findUnique({ where: { id: category.id } }),
     ).toMatchObject({
       id: category.id,
-      descripcion: category.descripcion,
-      activo: category.activo,
+      nombre: category.descripcion,
+      isActive: category.activo,
+    });
+
+    const withNombreAndIsActive = await create({
+      nombre: `ropa-${randomUUID().slice(0, 6)}`,
+      isActive: false,
+    });
+    expect(withNombreAndIsActive).toMatchObject({
+      id: expect.any(String),
+      activo: false,
+    });
+    expect(
+      await prisma.category.findUnique({
+        where: { id: withNombreAndIsActive.id },
+      }),
+    ).toMatchObject({
+      id: withNombreAndIsActive.id,
+      isActive: false,
     });
   });
 
   it('returns 409 for duplicate descriptions including concurrent inserts', async () => {
     const tag = randomUUID().slice(0, 8).toUpperCase();
-    await create({ descripcion: `JOYAS-${tag}` });
+    await create({ nombre: `JOYAS-${tag}` });
     await http()
       .post(base)
       .set('Authorization', tokens.admin!)
-      .send({ descripcion: `joyas-${tag.toLowerCase()}` })
+      .send({ nombre: `joyas-${tag.toLowerCase()}` })
       .expect(409);
     const raceTag = `RACE-${randomUUID().slice(0, 8)}`.toUpperCase();
     const responses = await Promise.all(
@@ -121,7 +138,7 @@ describe('Catalog HTTP + PostgreSQL', () => {
         http()
           .post(base)
           .set('Authorization', tokens.admin!)
-          .send({ descripcion: raceTag }),
+          .send({ nombre: raceTag }),
       ),
     );
     for (const response of responses)
@@ -130,18 +147,18 @@ describe('Catalog HTTP + PostgreSQL', () => {
     expect(responses.map((response) => response.status).sort()).toEqual([
       201, 409,
     ]);
-    expect(await prisma.category.count({ where: { descripcion: raceTag } })).toBe(1);
+    expect(await prisma.category.count({ where: { nombre: raceTag } })).toBe(1);
   });
 
   it('lists active categories in order and includes inactive only on request', async () => {
     const tag = randomUUID().slice(0, 6).toUpperCase();
-    const z = await create({ descripcion: `ZAFIR-${tag}` });
-    const a = await create({ descripcion: `ANIL-${tag}` });
-    const inactive = await create({ descripcion: `INACT-${tag}` });
+    const z = await create({ nombre: `ZAFIR-${tag}` });
+    const a = await create({ nombre: `ANIL-${tag}` });
+    const inactive = await create({ nombre: `INACT-${tag}` });
     await http()
       .patch(`${base}/${inactive.id}`)
       .set('Authorization', tokens.admin!)
-      .send({ activo: false })
+      .send({ isActive: false })
       .expect(200);
     for (const query of [
       '',
@@ -152,7 +169,7 @@ describe('Catalog HTTP + PostgreSQL', () => {
         .get(base + query)
         .set('Authorization', tokens.seller!)
         .expect(200);
-      const items = ((response.body.items ?? response.body) as CategoryResponse[]).filter(({ id }) =>
+      const items = (response.body.data as CategoryResponse[]).filter(({ id }) =>
         categoryIds.includes(id),
       );
       expect(items.map(({ id }) => id)).toEqual(
@@ -167,14 +184,14 @@ describe('Catalog HTTP + PostgreSQL', () => {
   });
 
   it('updates description and toggles active status', async () => {
-    const category = await create({ descripcion: `CAT-${randomUUID().slice(0, 8)}` });
-    const other = await create({ descripcion: `OTHER-${randomUUID().slice(0, 8)}` });
+    const category = await create({ nombre: `CAT-${randomUUID().slice(0, 8)}` });
+    const other = await create({ nombre: `OTHER-${randomUUID().slice(0, 8)}` });
     const target = `${base}/${category.id}`;
     const newDesc = `NUEVA-${randomUUID().slice(0, 8)}`.toUpperCase();
     let response = await http()
       .patch(target)
       .set('Authorization', tokens.admin!)
-      .send({ descripcion: newDesc.toLowerCase() })
+      .send({ nombre: newDesc.toLowerCase() })
       .expect(200);
     expect(response.body).toMatchObject({
       id: category.id,
@@ -183,7 +200,7 @@ describe('Catalog HTTP + PostgreSQL', () => {
     response = await http()
       .patch(target)
       .set('Authorization', tokens.admin!)
-      .send({ activo: false })
+      .send({ isActive: false })
       .expect(200);
     expect(response.body).toMatchObject({
       activo: false,
@@ -191,19 +208,22 @@ describe('Catalog HTTP + PostgreSQL', () => {
     await http()
       .patch(target)
       .set('Authorization', tokens.admin!)
-      .send({ descripcion: other.descripcion })
+      .send({ nombre: other.descripcion })
       .expect(409);
   });
 
   it('rejects invalid creates and unknown fields', async () => {
     for (const body of [
       {},
-      { descripcion: '' },
-      { descripcion: '  ' },
-      { descripcion: null },
-      { descripcion: 1 },
-      { descripcion: 'a'.repeat(101) },
-      { descripcion: 'Oro', unknown: true },
+      { nombre: '' },
+      { nombre: '  ' },
+      { nombre: null },
+      { nombre: 1 },
+      { nombre: 'a'.repeat(101) },
+      { nombre: 'Oro', unknown: true },
+      { nombre: 'Oro', descripcion: 'desc' },
+      { nombre: 'Oro', name: 'Oro' },
+      { nombre: 'Oro', activo: true },
     ])
       await http()
         .post(base)
@@ -217,11 +237,11 @@ describe('Catalog HTTP + PostgreSQL', () => {
     for (const body of [
       {},
       { unknown: true },
-      { descripcion: null },
-      { descripcion: ' ' },
-      { descripcion: 'a'.repeat(101) },
-      { activo: null },
-      { activo: 'false' },
+      { nombre: null },
+      { nombre: ' ' },
+      { nombre: 'a'.repeat(101) },
+      { isActive: null },
+      { isActive: 'false' },
     ])
       await http()
         .patch(`${base}/${category.id}`)
@@ -256,7 +276,7 @@ describe('Catalog HTTP + PostgreSQL', () => {
         const operation = http()
           [method](`${base}/${id}`)
           .set('Authorization', tokens.admin!);
-        if (method === 'patch') operation.send({ descripcion: 'ORO' });
+        if (method === 'patch') operation.send({ nombre: 'ORO' });
         await operation.expect(status);
       }
     }
@@ -314,7 +334,7 @@ describe('Catalog HTTP + PostgreSQL', () => {
         await http()
           [method](path)
           .set('Authorization', tokens.seller!)
-          .send({ descripcion: 'DENIED' })
+          .send({ nombre: 'DENIED' })
           .expect(403);
       }
     }

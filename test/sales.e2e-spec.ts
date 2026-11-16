@@ -79,7 +79,7 @@ interface SaleSummaryResponse {
 }
 
 interface SalePageResponse {
-  datos: SaleSummaryResponse[];
+  data: SaleSummaryResponse[];
   total: number;
   pagina: number;
   limite: number;
@@ -134,7 +134,7 @@ describe('Sales HTTP + PostgreSQL', () => {
   beforeEach(async () => {
     categoriaId = (
       await prisma.category.create({
-        data: { descripcion: `Ventas-${randomUUID().slice(0, 8)}` },
+        data: { nombre: `Ventas-${randomUUID().slice(0, 8)}` },
       })
     ).id;
     customerId = (await prisma.customer.create({ data: { nombre: 'Ana Pérez' } }))
@@ -527,7 +527,7 @@ describe('Sales HTTP + PostgreSQL', () => {
     const paid = await http()
       .post(`/api/cotizaciones/${quote.id}/pagar`)
       .set('Authorization', tokens.seller)
-      .send({ method: 'TRANSFER', amount: Number(quote.total) })
+      .send({ metodoPago: 'TRANSFERENCIA', montoRecibido: Number(quote.total) })
       .expect(200);
     const saleId = (paid.body as { id: string }).id;
     const detail = (
@@ -585,41 +585,56 @@ describe('Sales HTTP + PostgreSQL', () => {
     const mine = { customerId };
 
     const all = await list(mine);
-    expect(all.datos.map(({ id }) => id)).toEqual([byAdmin.id, cash.id]);
-    expect(all).toMatchObject({ total: 2, pagina: 0, limite: 10 });
-    expect(all.datos[1]).toEqual({
+    expect(all.data.map(({ id }) => id)).toEqual([byAdmin.id, cash.id]);
+    expect(all).toMatchObject({
+      current_page: 1,
+      total_items: 2,
+      total_pages: 1,
+      has_next_page: false,
+      has_prev_page: false,
+    });
+    expect(all.data[1]).toEqual({
       id: cash.id,
       folio: cash.folio,
       estado: 'CANCELLED',
+      subtotal: '698.00',
+      descuento: '10.00',
       total: '688.00',
       metodoPago: 'CASH',
       cliente: { id: customerId, nombre: 'Ana Pérez' },
       creadoPor: { id: users.seller, nombre: 'Sales seller' },
       cotizacionId: null,
+      productos: cash.productos,
       fechaCreacion: cash.fechaCreacion,
     });
 
-    expect((await list({ ...mine, status: 'CANCELLED' })).datos).toHaveLength(1);
+    expect((await list({ ...mine, status: 'CANCELLED' })).data).toHaveLength(1);
     expect(
-      (await list({ ...mine, createdById: users.admin })).datos[0]!.id,
+      (await list({ ...mine, createdById: users.admin })).data[0]!.id,
     ).toBe(byAdmin.id);
-    expect((await list({ folio: card.folio.toLowerCase() })).datos).toEqual([
+    expect((await list({ folio: card.folio.toLowerCase() })).data).toEqual([
       expect.objectContaining({ id: card.id, metodoPago: 'CARD' }),
     ]);
     const cardOnly = await list({
       createdById: users.seller,
       paymentMethod: 'CARD',
     });
-    expect(cardOnly.datos.map(({ id }) => id)).toEqual([card.id]);
+    expect(cardOnly.data.map(({ id }) => id)).toEqual([card.id]);
 
-    const page2 = await list({ ...mine, page: 1, pageSize: 1 });
-    expect(page2).toMatchObject({ total: 2, pagina: 1, limite: 1 });
-    expect(page2.datos.map(({ id }) => id)).toEqual([cash.id]);
+    const page2 = await list({ ...mine, page: 2, pageSize: 1 });
+    expect(page2).toMatchObject({
+      current_page: 2,
+      total_items: 2,
+      total_pages: 2,
+      has_next_page: false,
+      has_prev_page: true,
+    });
+    expect(page2.data.map(({ id }) => id)).toEqual([cash.id]);
 
     const after = await list({ ...mine, startDate: byAdmin.fechaCreacion });
-    expect(after.datos.map(({ id }) => id)).toEqual([byAdmin.id]);
+    expect(after.data.map(({ id }) => id)).toEqual([byAdmin.id]);
     const before = await list({ ...mine, endDate: cash.fechaCreacion });
-    expect(before.datos.map(({ id }) => id)).toEqual([cash.id]);
+    expect(before.data.map(({ id }) => id)).toEqual([cash.id]);
 
     for (const query of [
       { startDate: '2026-10-02T00:00:00Z', endDate: '2026-10-01T00:00:00Z' },

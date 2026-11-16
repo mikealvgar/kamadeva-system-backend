@@ -84,6 +84,10 @@ export class CustomersService implements OnModuleInit {
     const nombre = rawNombre.trim();
     const telefono = (dto.telefono ?? dto.phone)?.trim() || null;
     const correo = (dto.correo ?? dto.email)?.trim().toLowerCase() || null;
+    const activo = dto.activo !== undefined ? dto.activo : dto.isActive;
+    if (activo !== undefined && typeof activo !== 'boolean') {
+      throw new BadRequestException('El estado activo debe ser un valor booleano');
+    }
     try {
       return this.toDto(
         await this.prisma.customer.create({
@@ -91,6 +95,7 @@ export class CustomersService implements OnModuleInit {
             nombre,
             telefono,
             correo,
+            ...(activo !== undefined ? { activo } : {}),
           },
           select: customerSelect,
         }),

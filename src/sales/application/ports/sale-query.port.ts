@@ -52,11 +52,14 @@ export interface SaleSummaryView {
   id: string;
   folio: string;
   status: SaleStatus;
+  subtotal: string;
+  discount: string;
   total: string;
   paymentMethod: PaymentMethod | null;
   customer: SaleRef | null;
   createdBy: SaleRef | null;
   quoteId: string | null;
+  items: SaleDetailView['items'];
   createdAt: string;
 }
 
@@ -76,17 +79,12 @@ export interface SaleListFilter {
 }
 
 export interface SalePage {
-  items: SaleSummaryView[];
   data: SaleSummaryView[];
-  total: number;
-  totalRecords: number;
-  totalElements: number;
-  page: number;
-  size: number;
-  pageSize: number;
-  totalPages: number;
-  isLastPage: boolean;
-  lastPage: boolean;
+  current_page: number;
+  total_items: number;
+  total_pages: number;
+  has_next_page: boolean;
+  has_prev_page: boolean;
 }
 
 export interface SaleQueryPort {

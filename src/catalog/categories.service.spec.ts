@@ -20,8 +20,8 @@ describe('CategoriesService', () => {
   const now = new Date('2026-09-19T10:00:00.000Z');
   const record = {
     id: 'category',
-    descripcion: 'ANILLOS',
-    activo: true,
+    nombre: 'ANILLOS',
+    isActive: true,
     fechaCreacion: now,
     fechaActualizacion: now,
   };
@@ -56,21 +56,24 @@ describe('CategoriesService', () => {
   });
 
   it('creates upper-case descriptions, normalized fields and relies on the unique constraint', async () => {
-    expect(await service.create({ descripcion: ' anillos ' })).toEqual(dto);
+    expect(await service.create({ nombre: ' anillos ' })).toEqual(dto);
     expect(prisma.category.create).toHaveBeenCalledWith({
-      data: { descripcion: 'ANILLOS' },
+      data: { nombre: 'ANILLOS' },
     });
   });
 
-  it('accepts name alias as description on create', async () => {
-    expect(await service.create({ name: ' anillos ' })).toEqual(dto);
+  it('accepts nombre and isActive on create', async () => {
+    prisma.category.create.mockResolvedValue({ ...record, isActive: false });
+    expect(
+      await service.create({ nombre: ' anillos ', isActive: false }),
+    ).toEqual({ ...dto, activo: false, isActive: false });
     expect(prisma.category.create).toHaveBeenCalledWith({
-      data: { descripcion: 'ANILLOS' },
+      data: { nombre: 'ANILLOS', isActive: false },
     });
   });
 
   it('rejects empty or whitespace descriptions before writing', async () => {
-    await expect(service.create({ descripcion: '   ' })).rejects.toMatchObject({
+    await expect(service.create({ nombre: '   ' })).rejects.toMatchObject({
       status: 400,
       message: 'La descripción es obligatoria',
     });
@@ -81,15 +84,15 @@ describe('CategoriesService', () => {
     'lists public fields with includeInactive=%s in description order',
     async (includeInactive) => {
       const result = await service.findAll(includeInactive);
-      expect(result.items).toEqual([dto]);
-      expect(result.totalRecords).toBe(1);
-      expect(result.page).toBe(0);
-      expect(result.size).toBe(10);
-      expect(result.totalPages).toBe(1);
-      expect(result.isLastPage).toBe(true);
+      expect(result.data).toEqual([dto]);
+      expect(result.total_items).toBe(1);
+      expect(result.current_page).toBe(1);
+      expect(result.total_pages).toBe(1);
+      expect(result.has_next_page).toBe(false);
+      expect(result.has_prev_page).toBe(false);
       expect(prisma.category.findMany).toHaveBeenCalledWith({
-        where: includeInactive ? {} : { activo: true },
-        orderBy: { descripcion: 'asc' },
+        where: includeInactive ? {} : { isActive: true },
+        orderBy: { nombre: 'asc' },
         skip: 0,
         take: 10,
       });
@@ -109,20 +112,20 @@ describe('CategoriesService', () => {
   });
 
   it('normalizes description on update and returns the updated category', async () => {
-    expect(await service.update(record.id, { descripcion: ' Oro   rosa ' })).toEqual(
+    expect(await service.update(record.id, { nombre: ' Oro   rosa ' })).toEqual(
       dto,
     );
     expect(prisma.category.update).toHaveBeenCalledWith({
       where: { id: record.id },
-      data: { descripcion: 'ORO ROSA' },
+      data: { nombre: 'ORO ROSA' },
     });
   });
 
   it('updates active status', async () => {
-    await service.update(record.id, { activo: false });
+    await service.update(record.id, { isActive: false });
     expect(prisma.category.update).toHaveBeenCalledWith({
       where: { id: record.id },
-      data: { activo: false },
+      data: { isActive: false },
     });
   });
 
@@ -147,8 +150,8 @@ describe('CategoriesService', () => {
       prisma.category[method].mockRejectedValue(failure('P2002'));
       await expect(
         method === 'create'
-          ? service.create({ descripcion: 'Anillos' })
-          : service.update(record.id, { descripcion: 'Anillos' }),
+          ? service.create({ nombre: 'Anillos' })
+          : service.update(record.id, { nombre: 'Anillos' }),
       ).rejects.toMatchObject({ status: 409, message: 'La categoría ya existe' });
     },
   );
@@ -159,7 +162,7 @@ describe('CategoriesService', () => {
       prisma.category[method].mockRejectedValue(failure('P2025'));
       await expect(
         method === 'update'
-          ? service.update('missing', { descripcion: 'Oro' })
+          ? service.update('missing', { nombre: 'Oro' })
           : service.delete('missing'),
       ).rejects.toMatchObject({ status: 404, message: 'Categoría inexistente' });
     },
@@ -176,6 +179,6 @@ describe('CategoriesService', () => {
   it('preserves unexpected infrastructure failures', async () => {
     const error = new Error('database offline');
     prisma.category.create.mockRejectedValue(error);
-    await expect(service.create({ descripcion: 'Anillos' })).rejects.toBe(error);
+    await expect(service.create({ nombre: 'Anillos' })).rejects.toBe(error);
   });
 });

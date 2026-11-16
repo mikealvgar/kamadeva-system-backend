@@ -1,3 +1,5 @@
+import type { TemporaryPermissionItem } from '../../users/dto/temporary-permission.dto.js';
+
 export type AuthUser = {
   id: string;
   nombre: string;
@@ -10,4 +12,5 @@ export type AuthUser = {
   roles: string[];
   hasAdmin: boolean;
   seccionesPermitidas: string[];
+  permisosTemporales: TemporaryPermissionItem[];
 };

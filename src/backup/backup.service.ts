@@ -52,7 +52,7 @@ export class BackupService {
       this.prisma.role.findMany({ orderBy: { nombre: 'asc' } }),
       this.prisma.user.findMany({ orderBy: { fechaCreacion: 'asc' } }),
       this.prisma.businessConfig.findMany(),
-      this.prisma.category.findMany({ orderBy: { descripcion: 'asc' } }),
+      this.prisma.category.findMany({ orderBy: { nombre: 'asc' } }),
       this.prisma.brand.findMany({ orderBy: { descripcion: 'asc' } }),
       this.prisma.size.findMany({ orderBy: { nombre: 'asc' } }),
       this.prisma.expenseCategory.findMany({ orderBy: { nombre: 'asc' } }),
@@ -77,7 +77,10 @@ export class BackupService {
 
     const datos: BackupData = {
       roles,
-      usuarios,
+      usuarios: usuarios.map((u) => ({
+        ...u,
+        permisosTemporales: (u.permisosTemporales ?? []) as Prisma.InputJsonValue,
+      })),
       configuracionNegocio,
       categorias,
       marcas,

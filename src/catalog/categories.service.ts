@@ -28,15 +28,20 @@ export class CategoriesService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateCategoryDto): Promise<CategoryDto> {
-    const raw = dto.descripcion !== undefined ? dto.descripcion : dto.name;
+    const raw = dto.nombre;
     if (!raw || !raw.trim()) {
       throw new BadRequestException('La descripción es obligatoria');
     }
     const descripcion = normalizeCategoryDescription(raw);
+    const activo = dto.isActive;
+    if (activo !== undefined && typeof activo !== 'boolean') {
+      throw new BadRequestException('El estado activo debe ser un valor booleano');
+    }
     try {
       const record = await this.prisma.category.create({
         data: {
-          descripcion,
+          nombre: descripcion,
+          ...(activo !== undefined ? { isActive: activo } : {}),
         },
       });
       return this.mapToDto(record);
@@ -54,19 +59,20 @@ export class CategoriesService {
         : queryOrIncludeInactive ?? {};
 
     const includeInactive = query.includeInactive === 'true';
-    const where = includeInactive ? {} : { activo: true };
+    const where = includeInactive ? {} : { isActive: true };
 
     const { skip, take } = calculateSkipTake(query);
     const orderBy = resolvePrismaOrderBy({
       sortBy: query.sortBy,
       direction: query.direction,
       allowedFields: {
-        descripcion: 'descripcion',
-        name: 'descripcion',
+        nombre: 'nombre',
+        descripcion: 'nombre',
+        name: 'nombre',
         fechaCreacion: 'fechaCreacion',
         createdAt: 'fechaCreacion',
       },
-      defaultOrderBy: { descripcion: 'asc' },
+      defaultOrderBy: { nombre: 'asc' },
     });
 
     const [totalRecords, records] = await Promise.all([
@@ -100,19 +106,19 @@ export class CategoriesService {
       throw new BadRequestException('Debe enviar al menos un campo');
     }
     const data: Prisma.CategoryUpdateInput = {};
-    const raw = dto.descripcion !== undefined ? dto.descripcion : dto.name;
+    const raw = dto.nombre;
     if (raw !== undefined) {
       if (typeof raw !== 'string' || !raw.trim()) {
         throw new BadRequestException('La descripción es obligatoria');
       }
-      data.descripcion = normalizeCategoryDescription(raw);
+      data.nombre = normalizeCategoryDescription(raw);
     }
-    const activo = dto.activo !== undefined ? dto.activo : dto.isActive;
+    const activo = dto.isActive;
     if (activo !== undefined) {
       if (typeof activo !== 'boolean') {
         throw new BadRequestException('El estado activo debe ser un valor booleano');
       }
-      data.activo = activo;
+      data.isActive = activo;
     }
     try {
       const updated = await this.prisma.category.update({
@@ -137,17 +143,17 @@ export class CategoriesService {
 
   private mapToDto(r: {
     id: string;
-    descripcion: string;
-    activo: boolean;
+    nombre: string;
+    isActive: boolean;
     fechaCreacion: Date;
     fechaActualizacion: Date;
   }): CategoryDto {
     return {
       id: r.id,
-      descripcion: r.descripcion,
-      name: r.descripcion,
-      activo: r.activo,
-      isActive: r.activo,
+      descripcion: r.nombre,
+      name: r.nombre,
+      activo: r.isActive,
+      isActive: r.isActive,
       fechaCreacion: r.fechaCreacion.toISOString(),
       fechaActualizacion: r.fechaActualizacion.toISOString(),
     };

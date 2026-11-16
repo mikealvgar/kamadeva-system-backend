@@ -1,5 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsArray,
   IsByteLength,
   IsEmail,
   IsOptional,
@@ -7,8 +8,10 @@ import {
   IsUUID,
   MaxLength,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
+import { TemporaryPermissionDto } from '../../users/dto/temporary-permission.dto.js';
 
 export class RegisterDto {
   @ApiPropertyOptional({
@@ -117,4 +120,23 @@ export class RegisterDto {
   @IsOptional()
   @IsUUID()
   rolId?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    example: ['products.view', 'products.create'],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(100, { each: true })
+  seccionesPermitidas?: string[];
+
+  @ApiPropertyOptional({
+    type: [TemporaryPermissionDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TemporaryPermissionDto)
+  permisosTemporales?: TemporaryPermissionDto[];
 }

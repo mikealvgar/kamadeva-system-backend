@@ -14,11 +14,17 @@ describe('PurchasesService', () => {
   const purchaseRecord = {
     id: 'purchase-1',
     proveedor: { id: provider.id, nombre: 'Proveedor Norte' },
+    fechaCompra: new Date('2026-10-29T18:00:00.000Z'),
     fechaRecepcion: new Date('2026-10-30T18:00:00.000Z'),
     folioProveedor: 'FAC-1842',
     notas: 'Compra de mercancía',
+    iva: new Prisma.Decimal('0.00'),
     total: new Prisma.Decimal('251.00'),
     creadoPorId: 'admin-1',
+    estado: 'COMPLETED' as const,
+    fechaCancelacion: null as Date | null,
+    canceladoPor: null as { id: string; nombre: string } | null,
+    motivoCancelacion: null as string | null,
     fechaCreacion: new Date('2026-10-30T18:00:00.000Z'),
     items: [
       {
@@ -35,9 +41,9 @@ describe('PurchasesService', () => {
 
   const tx = {
     provider: { findUnique: vi.fn() },
-    product: { findMany: vi.fn() },
-    purchase: { create: vi.fn() },
-    inventoryMovement: { createMany: vi.fn() },
+    product: { findMany: vi.fn(), update: vi.fn() },
+    purchase: { create: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
+    inventoryMovement: { createMany: vi.fn(), groupBy: vi.fn() },
   };
   const prisma = {
     ...tx,
@@ -110,6 +116,43 @@ describe('PurchasesService', () => {
     });
   });
 
+  it('updates product precioCompra and precioVenta, and persists fechaCompra, iva and total', async () => {
+    tx.purchase.create.mockResolvedValue({
+      ...purchaseRecord,
+      fechaCompra: new Date('2026-10-28T10:00:00.000Z'),
+      iva: new Prisma.Decimal('48.00'),
+      total: new Prisma.Decimal('348.00'),
+    });
+    const result = await service.create(
+      {
+        ...input,
+        fechaCompra: '2026-10-28T10:00:00.000Z',
+        iva: 48,
+        productos: [
+          {
+            productoId: product.id,
+            cantidad: 2,
+            precioCompra: 150,
+            precioVenta: 220,
+          },
+        ],
+      },
+      'admin-1',
+    );
+    expect(tx.product.update).toHaveBeenCalledWith({
+      where: { id: product.id },
+      data: {
+        precioCompra: new Prisma.Decimal('150.00'),
+        precioVenta: new Prisma.Decimal('220.00'),
+      },
+    });
+    expect(result).toMatchObject({
+      fechaCompra: '2026-10-28T10:00:00.000Z',
+      iva: '48.00',
+      total: '348.00',
+    });
+  });
+
   it('rejects an unknown or inactive provider without writing', async () => {
     tx.provider.findUnique.mockResolvedValue(null);
     await expect(service.create(input, 'admin-1')).rejects.toMatchObject({
@@ -152,7 +195,13 @@ describe('PurchasesService', () => {
       pagina: 2,
       limite: 5,
     });
-    expect(result).toMatchObject({ pagina: 2, limite: 5, total: 7 });
+    expect(result).toMatchObject({
+      current_page: 2,
+      total_items: 7,
+      total_pages: 2,
+      has_next_page: false,
+      has_prev_page: true,
+    });
     expect(prisma.purchase.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
@@ -163,7 +212,7 @@ describe('PurchasesService', () => {
           },
         },
         orderBy: [{ fechaRecepcion: 'desc' }, { id: 'desc' }],
-        skip: 10,
+        skip: 5,
         take: 5,
       }),
     );
@@ -174,5 +223,90 @@ describe('PurchasesService', () => {
     await expect(service.findById('missing')).rejects.toMatchObject({
       status: 404,
     });
+  });
+
+  it('cancels a completed purchase and creates ADJUSTMENT_OUT kardex movements', async () => {
+    const cancelledRecord = {
+      ...purchaseRecord,
+      estado: 'CANCELLED' as const,
+      fechaCancelacion: new Date('2026-11-01T12:00:00.000Z'),
+      canceladoPor: { id: 'admin-1', nombre: 'Admin' },
+      motivoCancelacion: 'Factura cancelada',
+    };
+    tx.purchase.findUnique.mockResolvedValue(purchaseRecord);
+    tx.inventoryMovement.groupBy.mockResolvedValue([
+      { productoId: product.id, _sum: { cambioExistencias: new Prisma.Decimal('5.000') } },
+    ]);
+    tx.purchase.update.mockResolvedValue(cancelledRecord);
+
+    const result = await service.cancel(
+      purchaseRecord.id,
+      'Factura cancelada',
+      'admin-1',
+    );
+
+    expect(result).toMatchObject({
+      id: purchaseRecord.id,
+      estado: 'CANCELLED',
+      fechaCancelacion: '2026-11-01T12:00:00.000Z',
+      canceladoPor: { id: 'admin-1', nombre: 'Admin' },
+      motivoCancelacion: 'Factura cancelada',
+    });
+    expect(tx.inventoryMovement.createMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({
+          productoId: product.id,
+          tipo: 'ADJUSTMENT_OUT',
+          cambioExistencias: new Prisma.Decimal('-2.000'),
+          costoUnitario: new Prisma.Decimal('125.50'),
+          tipoReferencia: 'PURCHASE_CANCELLATION',
+          referenciaId: purchaseRecord.id,
+          creadoPorId: 'admin-1',
+          notas: 'Cancelación de compra: Factura cancelada',
+        }),
+      ],
+    });
+  });
+
+  it('returns an already cancelled purchase idempotently without moving stock again', async () => {
+    const cancelledRecord = {
+      ...purchaseRecord,
+      estado: 'CANCELLED' as const,
+      fechaCancelacion: new Date('2026-11-01T12:00:00.000Z'),
+      canceladoPor: { id: 'admin-1', nombre: 'Admin' },
+      motivoCancelacion: 'Factura cancelada',
+    };
+    tx.purchase.findUnique.mockResolvedValue(cancelledRecord);
+
+    const result = await service.cancel(
+      purchaseRecord.id,
+      'Otro motivo',
+      'admin-2',
+    );
+
+    expect(result.estado).toBe('CANCELLED');
+    expect(result.motivoCancelacion).toBe('Factura cancelada');
+    expect(tx.purchase.update).not.toHaveBeenCalled();
+    expect(tx.inventoryMovement.createMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects cancellation with 409 when current stock is less than purchased quantity', async () => {
+    tx.purchase.findUnique.mockResolvedValue(purchaseRecord);
+    tx.inventoryMovement.groupBy.mockResolvedValue([
+      { productoId: product.id, _sum: { cambioExistencias: new Prisma.Decimal('1.000') } },
+    ]);
+
+    await expect(
+      service.cancel(purchaseRecord.id, 'Error de captura', 'admin-1'),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(tx.purchase.update).not.toHaveBeenCalled();
+    expect(tx.inventoryMovement.createMany).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 when cancelling an unknown purchase', async () => {
+    tx.purchase.findUnique.mockResolvedValue(null);
+    await expect(
+      service.cancel('missing', 'Motivo', 'admin-1'),
+    ).rejects.toMatchObject({ status: 404 });
   });
 });

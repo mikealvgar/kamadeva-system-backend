@@ -4,6 +4,7 @@ import {
   ArrayMinSize,
   IsArray,
   IsISO8601,
+  IsNotEmpty,
   IsNumber,
   IsPositive,
   IsString,
@@ -61,9 +62,26 @@ export class QuoteItemInputDto {
 }
 
 export class CreateQuoteDto {
-  @ApiProperty({ format: 'uuid' })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'UUID de cliente existente (obligatorio si no se envía customerName)',
+  })
+  @ValidateIf((_object: unknown, value: unknown) => value !== undefined)
   @IsUUID()
-  customerId: string;
+  customerId?: string;
+
+  @ApiPropertyOptional({
+    maxLength: 150,
+    description: 'Nombre libre de cliente (obligatorio si no se envía customerId)',
+  })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @ValidateIf((_object: unknown, value: unknown) => value !== undefined)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(150)
+  customerName?: string;
 
   @ApiPropertyOptional({
     format: 'date-time',
@@ -72,6 +90,18 @@ export class CreateQuoteDto {
   @ValidateIf((_object: unknown, value: unknown) => value !== undefined)
   @IsISO8601({ strict: true })
   expiresAt?: string;
+
+  @ApiPropertyOptional({
+    minimum: 0,
+    maximum: 999999999999.99,
+    multipleOf: 0.01,
+    description: 'Total explícito de la cotización; si se omite se calcula desde los ítems',
+  })
+  @ValidateIf((_object: unknown, value: unknown) => value !== undefined)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(999999999999.99)
+  total?: number;
 
   @ApiPropertyOptional({ maxLength: 500 })
   @Transform(({ value }: { value: unknown }) =>

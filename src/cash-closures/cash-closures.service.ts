@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { createPaginatedResponse } from '../common/dto/paginated-response.dto.js';
 import { Prisma, type PaymentMethod } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { serializableTransaction } from '../prisma/serializable-transaction.js';
@@ -342,7 +343,7 @@ export class CashClosuresService {
             },
           }
         : {};
-    const page = query.page ?? 0;
+    const page = query.page ?? 1;
     const size = query.size ?? query.pageSize ?? 10;
     const { skip, take } = calculateSkipTake({ page, size });
     const orderBy = resolvePrismaOrderBy({
@@ -368,25 +369,13 @@ export class CashClosuresService {
       }),
     ]);
     const items = closures.map(toDto);
-    const totalPages = total === 0 ? 0 : Math.ceil(total / size);
-    const isLastPage = totalPages === 0 || page >= totalPages - 1;
 
-    return {
+    return createPaginatedResponse({
       items,
-      data: items,
-      datos: items,
-      total,
       totalRecords: total,
-      totalElements: total,
       page,
-      pagina: page,
       size,
-      limite: size,
-      pageSize: size,
-      totalPages,
-      isLastPage,
-      lastPage: isLastPage,
-    };
+    });
   }
 
   async findById(id: string): Promise<CashClosureDto> {

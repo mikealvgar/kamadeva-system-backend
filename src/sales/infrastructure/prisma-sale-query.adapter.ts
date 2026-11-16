@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { createPaginatedResponse } from '../../common/dto/paginated-response.dto.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type {
@@ -13,6 +14,19 @@ import {
 } from '../../common/pagination/prisma-pagination.helper.js';
 
 const ref = { select: { id: true, nombre: true } } as const;
+
+const itemSelect = {
+  orderBy: [{ fechaCreacion: 'asc' }, { id: 'asc' }],
+  select: {
+    id: true,
+    cantidad: true,
+    precioUnitario: true,
+    descuento: true,
+    total: true,
+    producto: { select: { id: true, codigoBarras: true, nombre: true } },
+    talla: ref,
+  },
+} satisfies Prisma.SaleItemFindManyArgs;
 
 const detailSelect = {
   id: true,
@@ -32,33 +46,42 @@ const detailSelect = {
   cliente: ref,
   creadoPor: ref,
   canceladoPor: ref,
-  items: {
-    orderBy: [{ fechaCreacion: 'asc' }, { id: 'asc' }],
-    select: {
-      id: true,
-      cantidad: true,
-      precioUnitario: true,
-      descuento: true,
-      total: true,
-      producto: { select: { id: true, codigoBarras: true, nombre: true } },
-      talla: ref,
-    },
-  },
+  items: itemSelect,
 } satisfies Prisma.SaleSelect;
 
 const summarySelect = {
   id: true,
   folio: true,
   estado: true,
+  subtotal: true,
+  descuento: true,
   total: true,
   metodoPago: true,
   cotizacionId: true,
   fechaCreacion: true,
   cliente: ref,
   creadoPor: ref,
+  items: itemSelect,
 } satisfies Prisma.SaleSelect;
 
 type DetailRecord = Prisma.SaleGetPayload<{ select: typeof detailSelect }>;
+
+function mapSaleItems(items: DetailRecord['items']): SaleDetailView['items'] {
+  return items.map((item) => ({
+    id: item.id,
+    product: {
+      id: item.producto.id,
+      barcode: item.producto.codigoBarras,
+      name: item.producto.nombre,
+    },
+    size: item.talla ? { id: item.talla.id, name: item.talla.nombre } : null,
+    quantity: item.cantidad.toFixed(3),
+    unitPrice: item.precioUnitario.toFixed(2),
+    discount: item.descuento.toFixed(2),
+    tax: '0.00',
+    total: item.total.toFixed(2),
+  }));
+}
 
 function toDetail(sale: DetailRecord): SaleDetailView {
   const folioFormatted = `V-${sale.folio.toString().padStart(6, '0')}`;
@@ -74,20 +97,7 @@ function toDetail(sale: DetailRecord): SaleDetailView {
     discount: sale.descuento.toFixed(2),
     tax: '0.00',
     total: sale.total.toFixed(2),
-    items: sale.items.map((item) => ({
-      id: item.id,
-      product: {
-        id: item.producto.id,
-        barcode: item.producto.codigoBarras,
-        name: item.producto.nombre,
-      },
-      size: item.talla ? { id: item.talla.id, name: item.talla.nombre } : null,
-      quantity: item.cantidad.toFixed(3),
-      unitPrice: item.precioUnitario.toFixed(2),
-      discount: item.descuento.toFixed(2),
-      tax: '0.00',
-      total: item.total.toFixed(2),
-    })),
+    items: mapSaleItems(sale.items),
     payments: [
       {
         id: sale.id,
@@ -139,7 +149,7 @@ export class PrismaSaleQueryAdapter implements SaleQueryPort {
       page: filter.page,
       size: filter.size ?? filter.pageSize,
     });
-    const page = filter.page ?? 0;
+    const page = filter.page ?? 1;
     const size = filter.size ?? filter.pageSize ?? 10;
 
     const orderBy = resolvePrismaOrderBy({
@@ -170,28 +180,21 @@ export class PrismaSaleQueryAdapter implements SaleQueryPort {
       id: sale.id,
       folio: `V-${sale.folio.toString().padStart(6, '0')}`,
       status: sale.estado,
+      subtotal: sale.subtotal.toFixed(2),
+      discount: sale.descuento.toFixed(2),
       total: sale.total.toFixed(2),
       paymentMethod: sale.metodoPago,
       customer: sale.cliente ? { id: sale.cliente.id, name: sale.cliente.nombre } : null,
       createdBy: sale.creadoPor ? { id: sale.creadoPor.id, name: sale.creadoPor.nombre } : null,
       quoteId: sale.cotizacionId,
+      items: mapSaleItems(sale.items),
       createdAt: sale.fechaCreacion.toISOString(),
     }));
-    const totalPages = total === 0 ? 0 : Math.ceil(total / size);
-    const isLastPage = totalPages === 0 || page >= totalPages - 1;
-
-    return {
+    return createPaginatedResponse({
       items,
-      data: items,
-      total,
       totalRecords: total,
-      totalElements: total,
       page,
       size,
-      pageSize: size,
-      totalPages,
-      isLastPage,
-      lastPage: isLastPage,
-    };
+    });
   }
 }

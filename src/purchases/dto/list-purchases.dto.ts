@@ -26,11 +26,11 @@ export class ListPurchasesDto extends PaginationQueryDto {
   @IsISO8601({ strict: true })
   fechaFin?: string;
 
-  @ApiPropertyOptional({ minimum: 0, default: 0, description: 'Alias para page' })
+  @ApiPropertyOptional({ minimum: 1, default: 1, description: 'Alias para page' })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @Min(0)
+  @Min(1)
   pagina?: number;
 
   @ApiPropertyOptional({ minimum: 1, maximum: 100, default: 10, description: 'Alias para size' })

@@ -42,7 +42,7 @@ describe('ProductsService', () => {
     imageUrl: null,
     activo: true,
     categoriaId: 'category',
-    categoria: { id: 'category', descripcion: 'ANILLOS' },
+    categoria: { id: 'category', nombre: 'ANILLOS' },
     fechaCreacion: date,
     fechaActualizacion: date,
   };
@@ -196,7 +196,7 @@ describe('ProductsService', () => {
       includeInactive: 'true',
       search: 'ORO',
     });
-    expect(result.items.map(({ stock }) => stock)).toEqual(['-3.125', '0.000']);
+    expect(result.data.map(({ stock }) => stock)).toEqual(['-3.125', '0.000']);
     expect(prisma.inventoryMovement.groupBy).toHaveBeenCalledExactlyOnceWith({
       by: ['productoId'],
       where: { productoId: { in: ['product', 'other'] } },
@@ -225,7 +225,7 @@ describe('ProductsService', () => {
   it('does not aggregate an empty list', async () => {
     prisma.product.count.mockResolvedValue(0);
     prisma.product.findMany.mockResolvedValue([]);
-    expect((await service.findAll()).items).toEqual([]);
+    expect((await service.findAll()).data).toEqual([]);
     expect(prisma.inventoryMovement.groupBy).not.toHaveBeenCalled();
   });
 
@@ -380,7 +380,7 @@ describe('ProductsService', () => {
         fechaCreacion: date,
       },
     ]);
-    expect((await service.movements('product')).items).toEqual([
+    expect((await service.movements('product')).data).toEqual([
       {
         id: 'movement',
         type: 'SALE_OUT',

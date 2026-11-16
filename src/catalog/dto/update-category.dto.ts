@@ -13,24 +13,7 @@ export class UpdateCategoryDto {
   )
   @IsString()
   @MaxLength(100)
-  descripcion?: string;
-
-  @ApiPropertyOptional({
-    example: 'ANILLOS',
-    maxLength: 100,
-  })
-  @IsOptional()
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim().toUpperCase() : value,
-  )
-  @IsString()
-  @MaxLength(100)
-  name?: string;
-
-  @ApiPropertyOptional({ example: true })
-  @IsOptional()
-  @IsBoolean()
-  activo?: boolean;
+  nombre?: string;
 
   @ApiPropertyOptional({ example: true })
   @IsOptional()

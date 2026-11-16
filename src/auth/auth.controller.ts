@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Header,
+  Headers,
   HttpCode,
   HttpStatus,
   Post,
@@ -39,8 +40,11 @@ export class AuthController {
   })
   @ApiCreatedResponse({ type: AuthResultDto })
   @ApiConflictResponse({ description: 'Correo ya registrado' })
-  register(@Body() dto: RegisterDto): Promise<AuthResult> {
-    return this.auth.register(dto);
+  register(
+    @Body() dto: RegisterDto,
+    @Headers('authorization') authorization?: string,
+  ): Promise<AuthResult> {
+    return this.auth.register(dto, authorization);
   }
 
   @Post('login')

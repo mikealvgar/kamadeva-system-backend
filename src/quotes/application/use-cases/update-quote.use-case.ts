@@ -17,13 +17,16 @@ import {
   UNIT_OF_WORK_PORT,
   type UnitOfWorkPort,
 } from '../../../common/application/unit-of-work.port.js';
+import { Money } from '../../../common/domain/money.js';
 import type { CreateQuoteItemCommand } from './create-quote.use-case.js';
 
 export interface UpdateQuoteCommand {
   customerId?: string;
+  customerName?: string;
   items?: CreateQuoteItemCommand[];
   notes?: string;
   expiresAt?: string;
+  total?: number;
 }
 
 function parseFutureDate(value?: string): Date | undefined {
@@ -102,6 +105,7 @@ export class UpdateQuoteUseCase {
 
       quote.updateDetails({
         customerId: command.customerId,
+        customerName: command.customerName,
         notes: command.notes,
         expiresAt:
           expiresAt !== undefined
@@ -110,16 +114,23 @@ export class UpdateQuoteUseCase {
               ? undefined
               : null,
         items,
+        total: command.total !== undefined ? new Money(command.total) : undefined,
       });
 
       const data: Record<string, unknown> = {
         ...(command.customerId !== undefined
           ? { customerId: command.customerId }
           : {}),
+        ...(command.customerName !== undefined
+          ? { customerName: command.customerName.trim() || null }
+          : {}),
         ...(command.notes !== undefined
           ? { notes: command.notes.trim() || null }
           : {}),
         ...(expiresAt !== undefined ? { expiresAt } : {}),
+        ...(command.total !== undefined
+          ? { total: quote.total.toDecimal() }
+          : {}),
       };
 
       if (items !== undefined) {

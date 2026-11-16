@@ -11,6 +11,7 @@ import {
   IsUUID,
   Max,
   MaxLength,
+  Min,
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
@@ -30,12 +31,31 @@ export class CreatePurchaseProductDto {
   @IsPositive()
   @Max(99999999999.999)
   cantidad: number;
+
+  @ApiPropertyOptional({ minimum: 0, maximum: 9999999999.99 })
+  @ValidateIf(optional)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(9999999999.99)
+  precioCompra?: number;
+
+  @ApiPropertyOptional({ minimum: 0.01, maximum: 9999999999.99 })
+  @ValidateIf(optional)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @IsPositive()
+  @Max(9999999999.99)
+  precioVenta?: number;
 }
 
 export class CreatePurchaseDto {
   @ApiProperty({ format: 'uuid' })
   @IsUUID('4')
   proveedorId: string;
+
+  @ApiPropertyOptional({ format: 'date-time' })
+  @ValidateIf(optional)
+  @IsISO8601({ strict: true })
+  fechaCompra?: string;
 
   @ApiPropertyOptional({ format: 'date-time' })
   @ValidateIf(optional)
@@ -59,6 +79,20 @@ export class CreatePurchaseDto {
   @IsString()
   @MaxLength(500)
   notas?: string | null;
+
+  @ApiPropertyOptional({ minimum: 0, maximum: 9999999999.99, example: 0 })
+  @ValidateIf(optional)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(9999999999.99)
+  iva?: number;
+
+  @ApiPropertyOptional({ minimum: 0, maximum: 999999999999.99 })
+  @ValidateIf(optional)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(999999999999.99)
+  total?: number;
 
   @ApiProperty({ type: [CreatePurchaseProductDto], minItems: 1 })
   @ValidateIf(optional)
