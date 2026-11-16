@@ -1,6 +1,15 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsNotEmpty, IsString, Matches, MaxLength } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { PHONE_PATTERN } from '../../common/validation/patterns.js';
 
 const trim = ({ value }: { value: unknown }): unknown =>
@@ -16,6 +25,19 @@ export class UpdateBusinessConfigDto {
   @IsNotEmpty()
   @MaxLength(150)
   nombre: string;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'Kamadeva Sex Shop',
+    maxLength: 200,
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(200)
+  razonSocial?: string | null;
 
   @ApiProperty({ example: 'Av. Insurgentes Sur #450 Int. 2B', maxLength: 255 })
   @Transform(trim)
@@ -78,6 +100,42 @@ export class UpdateBusinessConfigDto {
   @IsNotEmpty()
   @MaxLength(500)
   mensajePie: string;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'Gracias por su compra',
+    maxLength: 500,
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(500)
+  mensajeTicket?: string | null;
+
+  @ApiPropertyOptional({ example: 'MXN', default: 'MXN', maxLength: 10 })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toUpperCase() : value,
+  )
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(10)
+  moneda?: string;
+
+  @ApiPropertyOptional({
+    example: 0,
+    default: 0,
+    minimum: 0,
+    maximum: 100,
+    multipleOf: 0.01,
+  })
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100)
+  impuestoPorcentaje?: number;
 }
 
 export class BusinessConfigDto extends UpdateBusinessConfigDto {

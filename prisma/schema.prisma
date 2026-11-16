@@ -539,15 +539,19 @@ model CashClosureAdjustment {
 }
 
 model BusinessConfig {
-  clave      String @id @default("default")
-  nombre     String
-  direccion  String
-  colonia    String
-  municipio  String
-  estado     String
-  telefono   String
-  rfc        String
-  mensajePie String
+  clave              String  @id @default("default")
+  nombre             String
+  razonSocial        String?
+  direccion          String
+  colonia            String
+  municipio          String
+  estado             String
+  telefono           String
+  rfc                String
+  mensajePie         String
+  mensajeTicket      String?
+  moneda             String  @default("MXN")
+  impuestoPorcentaje Decimal @default(0) @db.Decimal(5, 2)
 
   fechaCreacion      DateTime @default(now())
   fechaActualizacion DateTime @updatedAt

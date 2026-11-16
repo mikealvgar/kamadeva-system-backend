@@ -10,6 +10,7 @@ const KEY = 'default';
 
 const configSelect = {
   nombre: true,
+  razonSocial: true,
   direccion: true,
   colonia: true,
   municipio: true,
@@ -17,6 +18,9 @@ const configSelect = {
   telefono: true,
   rfc: true,
   mensajePie: true,
+  mensajeTicket: true,
+  moneda: true,
+  impuestoPorcentaje: true,
   fechaActualizacion: true,
 } satisfies Prisma.BusinessConfigSelect;
 type ConfigRecord = Prisma.BusinessConfigGetPayload<{
@@ -26,6 +30,7 @@ type ConfigRecord = Prisma.BusinessConfigGetPayload<{
 function toDto(config: ConfigRecord): BusinessConfigDto {
   return {
     nombre: config.nombre,
+    razonSocial: config.razonSocial,
     direccion: config.direccion,
     colonia: config.colonia,
     municipio: config.municipio,
@@ -33,6 +38,9 @@ function toDto(config: ConfigRecord): BusinessConfigDto {
     telefono: config.telefono,
     rfc: config.rfc,
     mensajePie: config.mensajePie,
+    mensajeTicket: config.mensajeTicket,
+    moneda: config.moneda,
+    impuestoPorcentaje: Number(config.impuestoPorcentaje),
     updatedAt: config.fechaActualizacion.toISOString(),
   };
 }
@@ -54,6 +62,7 @@ export class BusinessConfigService {
   async update(dto: UpdateBusinessConfigDto): Promise<BusinessConfigDto> {
     const data = {
       nombre: dto.nombre.trim(),
+      razonSocial: dto.razonSocial?.trim() || null,
       direccion: dto.direccion.trim(),
       colonia: dto.colonia.trim(),
       municipio: dto.municipio.trim(),
@@ -61,6 +70,9 @@ export class BusinessConfigService {
       telefono: dto.telefono.trim(),
       rfc: dto.rfc.trim().toUpperCase(),
       mensajePie: dto.mensajePie.trim(),
+      mensajeTicket: dto.mensajeTicket?.trim() || null,
+      moneda: dto.moneda?.trim().toUpperCase() || 'MXN',
+      impuestoPorcentaje: new Prisma.Decimal(dto.impuestoPorcentaje ?? 0),
     };
     const config = await this.prisma.businessConfig.upsert({
       where: { clave: KEY },
