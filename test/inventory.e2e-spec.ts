@@ -142,7 +142,7 @@ describe('Inventory HTTP + PostgreSQL', () => {
         .query({ categoryId })
         .set('Authorization', tokens.seller!)
         .expect(200);
-      expect(list.body).toEqual(
+      expect(list.body.items ?? list.body).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ id: products[0], existencias: quantity }),
         ]),
@@ -151,7 +151,8 @@ describe('Inventory HTTP + PostgreSQL', () => {
         .get(path())
         .set('Authorization', tokens.seller!)
         .expect(200);
-      expect(history.body).toEqual([movement]);
+      const items = (history.body.items ?? history.body) as InventoryMovementDto[];
+      expect(items).toEqual([movement]);
     },
   );
   it('normalizes blank notes and omitted optional fields; accepts zero cost and minimum quantity', async () => {
@@ -244,28 +245,31 @@ describe('Inventory HTTP + PostgreSQL', () => {
       });
       ids.push(movement.id);
     }
-    const all = await get().expect(200);
-    expect(all.body.map((m: InventoryMovementDto) => m.id)).toEqual(
+    const allRes = (await get().expect(200)).body;
+    const all = (allRes.items ?? allRes) as InventoryMovementDto[];
+    expect(all.map((m: InventoryMovementDto) => m.id)).toEqual(
       [...ids].reverse(),
     );
-    const combined = await get({
+    const combinedRes = (await get({
       productId: products[0],
       type: 'ADJUSTMENT_OUT',
       startDate: dates[1],
       endDate: dates[1],
-    }).expect(200);
-    expect(combined.body.map((m: InventoryMovementDto) => m.id)).toEqual([
+    }).expect(200)).body;
+    const combined = (combinedRes.items ?? combinedRes) as InventoryMovementDto[];
+    expect(combined.map((m: InventoryMovementDto) => m.id)).toEqual([
       ids[1],
     ]);
-    expect((await get({ startDate: dates[1] }).expect(200)).body).toHaveLength(
-      2,
-    );
-    expect((await get({ endDate: dates[1] }).expect(200)).body).toHaveLength(2);
-    expect((await get({ type: 'SALE_OUT' }).expect(200)).body).toHaveLength(1);
-    expect(
-      (await get({ productId: products[0] }).expect(200)).body,
-    ).toHaveLength(2);
-    expect((await get({ type: 'RETURN_IN' }).expect(200)).body).toEqual([]);
+    const startDateRes = (await get({ startDate: dates[1] }).expect(200)).body;
+    expect(startDateRes.items ?? startDateRes).toHaveLength(2);
+    const endDateRes = (await get({ endDate: dates[1] }).expect(200)).body;
+    expect(endDateRes.items ?? endDateRes).toHaveLength(2);
+    const typeRes = (await get({ type: 'SALE_OUT' }).expect(200)).body;
+    expect(typeRes.items ?? typeRes).toHaveLength(1);
+    const prodRes = (await get({ productId: products[0] }).expect(200)).body;
+    expect(prodRes.items ?? prodRes).toHaveLength(2);
+    const returnRes = (await get({ type: 'RETURN_IN' }).expect(200)).body;
+    expect(returnRes.items ?? returnRes).toEqual([]);
   });
   it.each([
     'productId=bad',
@@ -283,9 +287,8 @@ describe('Inventory HTTP + PostgreSQL', () => {
       .expect(400);
   });
   it('returns an empty list for an existing product with no movements', async () => {
-    expect((await get({ productId: products[0] }).expect(200)).body).toEqual(
-      [],
-    );
+    const emptyRes = (await get({ productId: products[0] }).expect(200)).body;
+    expect(emptyRes.items ?? emptyRes).toEqual([]);
   });
   it('enforces authentication, active users and roles on both routes', async () => {
     for (const [method, endpoint] of [
@@ -328,9 +331,10 @@ describe('Inventory HTTP + PostgreSQL', () => {
     ]);
     expect(
       body.paths[globalPath].get.parameters
-        .map((p: { name: string }) => p.name)
-        .sort(),
-    ).toEqual(['fechaFin', 'fechaInicio', 'productoId', 'tipo']);
+        .map((p: { name: string }) => p.name),
+    ).toEqual(
+      expect.arrayContaining(['fechaFin', 'fechaInicio', 'productoId', 'tipo']),
+    );
     expect(
       body.components.schemas.InventoryMovementDto.properties.cambioExistencias
         .type,

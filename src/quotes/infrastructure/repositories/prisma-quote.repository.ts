@@ -17,6 +17,10 @@ import type {
   QuoteQueryFilter,
   QuoteRepositoryPort,
 } from '../../application/ports/quote-repository.port.js';
+import {
+  calculateSkipTake,
+  resolvePrismaOrderBy,
+} from '../../../common/pagination/prisma-pagination.helper.js';
 
 @Injectable()
 export class PrismaQuoteRepository implements QuoteRepositoryPort {
@@ -51,26 +55,52 @@ export class PrismaQuoteRepository implements QuoteRepositoryPort {
   }
 
   async findAll(filter: QuoteQueryFilter = {}): Promise<QuoteAggregate[]> {
-    const records = await this.findAllRecords(filter);
+    const { records } = await this.findAllRecords(filter);
     return records.map((r) => this.toDomain(r));
   }
 
-  async findAllRecords(filter: QuoteQueryFilter = {}): Promise<QuoteRecord[]> {
+  async findAllRecords(
+    filter: QuoteQueryFilter = {},
+  ): Promise<{ totalRecords: number; records: QuoteRecord[] }> {
     let folioFilter: number | undefined = undefined;
     if (filter.search) {
       const trimmed = filter.search.trim();
       const match = trimmed.match(/^(?:c-?)?0*(\d+)$/i);
       folioFilter = match ? parseInt(match[1], 10) : -1;
     }
-    return this.prisma.quote.findMany({
-      where: {
-        ...(filter.status ? { estado: filter.status as never } : {}),
-        ...(filter.customerId ? { clienteId: filter.customerId } : {}),
-        ...(folioFilter !== undefined ? { folio: folioFilter } : {}),
+    const where = {
+      ...(filter.status ? { estado: filter.status as never } : {}),
+      ...(filter.customerId ? { clienteId: filter.customerId } : {}),
+      ...(folioFilter !== undefined ? { folio: folioFilter } : {}),
+    };
+
+    const { skip, take } = calculateSkipTake(filter);
+    const orderBy = resolvePrismaOrderBy({
+      sortBy: filter.sortBy,
+      direction: filter.direction,
+      allowedFields: {
+        fechaCreacion: 'fechaCreacion',
+        createdAt: 'fechaCreacion',
+        folio: 'folio',
+        total: 'total',
+        estado: 'estado',
+        status: 'estado',
       },
-      orderBy: { fechaCreacion: 'desc' },
-      select: quoteSelect,
+      defaultOrderBy: { fechaCreacion: 'desc' },
     });
+
+    const [totalRecords, records] = await Promise.all([
+      this.prisma.quote.count({ where }),
+      this.prisma.quote.findMany({
+        where,
+        orderBy,
+        skip,
+        take,
+        select: quoteSelect,
+      }),
+    ]);
+
+    return { totalRecords, records };
   }
 
   async save(quote: QuoteAggregate, tx?: Prisma.TransactionClient): Promise<QuoteRecord> {

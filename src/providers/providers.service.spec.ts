@@ -14,6 +14,7 @@ describe('ProvidersService', () => {
       create: vi.fn(),
       update: vi.fn(),
       findMany: vi.fn(),
+      count: vi.fn(),
       findUnique: vi.fn(),
       findFirst: vi.fn(),
       delete: vi.fn(),
@@ -38,6 +39,8 @@ describe('ProvidersService', () => {
     prisma.provider.findFirst.mockResolvedValue(null);
     prisma.provider.create.mockResolvedValue(record);
     prisma.provider.update.mockResolvedValue(record);
+    prisma.provider.count.mockResolvedValue(1);
+    prisma.provider.findMany.mockResolvedValue([record]);
   });
 
   it('normalizes input and maps to the Spanish contract', async () => {

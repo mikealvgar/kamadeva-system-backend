@@ -1,11 +1,12 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, IsISO8601, Max, Min, ValidateIf } from 'class-validator';
+import { IsInt, IsISO8601, IsOptional, Max, Min, ValidateIf } from 'class-validator';
+import { PaginationQueryDto } from '../../common/dto/pagination-query.dto.js';
 
 const optional = (_object: unknown, value: unknown): boolean =>
   value !== undefined;
 
-export class ListCashClosuresDto {
+export class ListCashClosuresDto extends PaginationQueryDto {
   @ApiPropertyOptional({
     format: 'date-time',
     description: 'Sobre closedAt, inclusivo',
@@ -22,16 +23,9 @@ export class ListCashClosuresDto {
   @IsISO8601({ strict: true })
   endDate?: string;
 
-  @ApiPropertyOptional({ default: 1, minimum: 1 })
+  @ApiPropertyOptional({ description: 'Alias para size', minimum: 1, maximum: 100 })
   @Type(() => Number)
-  @ValidateIf(optional)
-  @IsInt()
-  @Min(1)
-  page?: number;
-
-  @ApiPropertyOptional({ default: 20, minimum: 1, maximum: 100 })
-  @Type(() => Number)
-  @ValidateIf(optional)
+  @IsOptional()
   @IsInt()
   @Min(1)
   @Max(100)

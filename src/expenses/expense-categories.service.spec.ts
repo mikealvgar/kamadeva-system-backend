@@ -23,6 +23,7 @@ describe('ExpenseCategoriesService', () => {
     expenseCategory: {
       ...tx.expenseCategory,
       findMany: vi.fn(),
+      count: vi.fn(),
       findUnique: vi.fn(),
       delete: vi.fn(),
     },
@@ -45,6 +46,7 @@ describe('ExpenseCategoriesService', () => {
     tx.expenseCategory.create.mockResolvedValue(categoryRecord);
     tx.expenseCategory.update.mockResolvedValue(categoryRecord);
     tx.expenseCategory.findUnique.mockResolvedValue(categoryRecord);
+    prisma.expenseCategory.count.mockResolvedValue(1);
   });
 
   describe('create', () => {
@@ -98,9 +100,11 @@ describe('ExpenseCategoriesService', () => {
       expect(prisma.expenseCategory.findMany).toHaveBeenCalledWith({
         where: { activo: true },
         orderBy: { nombre: 'asc' },
+        skip: 0,
+        take: 10,
         select: expect.any(Object),
       });
-      expect(result).toHaveLength(1);
+      expect(result.items).toHaveLength(1);
     });
 
     it('includes inactive when requested', async () => {
@@ -109,6 +113,8 @@ describe('ExpenseCategoriesService', () => {
       expect(prisma.expenseCategory.findMany).toHaveBeenCalledWith({
         where: {},
         orderBy: { nombre: 'asc' },
+        skip: 0,
+        take: 10,
         select: expect.any(Object),
       });
     });

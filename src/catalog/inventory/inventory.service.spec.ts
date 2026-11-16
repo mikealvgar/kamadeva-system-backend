@@ -6,7 +6,7 @@ import { manualMovementTypes } from './dto/create-inventory-movement.dto.js';
 describe('InventoryMovementsService', () => {
   const prisma = {
     product: { findUnique: vi.fn() },
-    inventoryMovement: { create: vi.fn(), findMany: vi.fn() },
+    inventoryMovement: { create: vi.fn(), findMany: vi.fn(), count: vi.fn() },
   };
   const service = new InventoryMovementsService(
     prisma as unknown as PrismaService,
@@ -28,6 +28,7 @@ describe('InventoryMovementsService', () => {
     prisma.product.findUnique.mockResolvedValue({ id: 'product' });
     prisma.inventoryMovement.create.mockResolvedValue(movement);
     prisma.inventoryMovement.findMany.mockResolvedValue([movement]);
+    prisma.inventoryMovement.count.mockResolvedValue(1);
   });
 
   it.each(manualMovementTypes)(
@@ -115,12 +116,14 @@ describe('InventoryMovementsService', () => {
       { ...movement, costoUnitario: new Prisma.Decimal('780.25') },
     ]);
     expect(
-      await service.findAll({
-        productId: 'product',
-        type: 'SALE_OUT',
-        startDate: date.toISOString(),
-        endDate: date.toISOString(),
-      }),
+      (
+        await service.findAll({
+          productId: 'product',
+          type: 'SALE_OUT',
+          startDate: date.toISOString(),
+          endDate: date.toISOString(),
+        })
+      ).items,
     ).toEqual([
       {
         id: 'movement',
@@ -153,8 +156,9 @@ describe('InventoryMovementsService', () => {
   });
 
   it('returns an empty global list without checking a product', async () => {
+    prisma.inventoryMovement.count.mockResolvedValue(0);
     prisma.inventoryMovement.findMany.mockResolvedValue([]);
-    expect(await service.findAll()).toEqual([]);
+    expect((await service.findAll()).items).toEqual([]);
     expect(prisma.product.findUnique).not.toHaveBeenCalled();
   });
 

@@ -9,6 +9,15 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import type { BrandDto } from './dto/brand.dto.js';
 import type { CreateBrandDto } from './dto/create-brand.dto.js';
 import type { UpdateBrandDto } from './dto/update-brand.dto.js';
+import type { ListBrandsDto } from './dto/list-brands.dto.js';
+import {
+  calculateSkipTake,
+  resolvePrismaOrderBy,
+} from '../../common/pagination/prisma-pagination.helper.js';
+import {
+  createPaginatedResponse,
+  PaginatedResponseDto,
+} from '../../common/dto/paginated-response.dto.js';
 
 export function normalizeBrandDescription(desc: string): string {
   return desc.trim().replace(/\s+/g, ' ').toUpperCase();
@@ -30,12 +39,45 @@ export class BrandsService {
     }
   }
 
-  async findAll(includeInactive = false): Promise<BrandDto[]> {
-    const records = await this.prisma.brand.findMany({
-      where: includeInactive ? {} : { activo: true },
-      orderBy: { descripcion: 'asc' },
+  async findAll(
+    queryOrIncludeInactive: ListBrandsDto | boolean = false,
+  ): Promise<PaginatedResponseDto<BrandDto>> {
+    const query: ListBrandsDto =
+      typeof queryOrIncludeInactive === 'boolean'
+        ? { includeInactive: queryOrIncludeInactive ? 'true' : 'false' }
+        : queryOrIncludeInactive ?? {};
+
+    const includeInactive = query.includeInactive === 'true';
+    const where = includeInactive ? {} : { activo: true };
+
+    const { skip, take } = calculateSkipTake(query);
+    const orderBy = resolvePrismaOrderBy({
+      sortBy: query.sortBy,
+      direction: query.direction,
+      allowedFields: {
+        descripcion: 'descripcion',
+        fechaCreacion: 'fechaCreacion',
+        createdAt: 'fechaCreacion',
+      },
+      defaultOrderBy: { descripcion: 'asc' },
     });
-    return records.map((r) => this.mapToDto(r));
+
+    const [totalRecords, records] = await Promise.all([
+      this.prisma.brand.count({ where }),
+      this.prisma.brand.findMany({
+        where,
+        orderBy,
+        skip,
+        take,
+      }),
+    ]);
+
+    return createPaginatedResponse({
+      items: records.map((r) => this.mapToDto(r)),
+      totalRecords,
+      page: query.page,
+      size: query.size,
+    });
   }
 
   async findById(id: string): Promise<BrandDto> {

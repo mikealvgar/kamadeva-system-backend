@@ -23,6 +23,7 @@ import { BusinessConfigModule } from './business-config/business-config.module.j
 import { ProvidersModule } from './providers/providers.module.js';
 import { PurchasesModule } from './purchases/purchases.module.js';
 import { MaintenanceModule } from './maintenance/maintenance.module.js';
+import { BackupModule } from './backup/backup.module.js';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { MaintenanceModule } from './maintenance/maintenance.module.js';
     ProvidersModule,
     PurchasesModule,
     MaintenanceModule,
+    BackupModule,
   ],
   controllers: [AppController],
   providers: [AppService],

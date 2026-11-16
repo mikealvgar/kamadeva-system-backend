@@ -11,6 +11,14 @@ import {
 } from './dto/create-inventory-movement.dto.js';
 import type { ListInventoryMovementsDto } from './dto/list-inventory-movements.dto.js';
 import type { InventoryMovementDto } from '../products/dto/inventory-movement.dto.js';
+import {
+  calculateSkipTake,
+  resolvePrismaOrderBy,
+} from '../../common/pagination/prisma-pagination.helper.js';
+import {
+  createPaginatedResponse,
+  PaginatedResponseDto,
+} from '../../common/dto/paginated-response.dto.js';
 
 const movementSelect = {
   id: true,
@@ -83,7 +91,7 @@ export class InventoryMovementsService {
 
   async findAll(
     query: ListInventoryMovementsDto = {},
-  ): Promise<InventoryMovementDto[]> {
+  ): Promise<PaginatedResponseDto<InventoryMovementDto>> {
     for (const value of [query.startDate, query.endDate]) {
       if (value !== undefined && !Number.isFinite(new Date(value).getTime()))
         throw new BadRequestException('Fecha inválida');
@@ -98,12 +106,37 @@ export class InventoryMovementsService {
         ...(query.endDate ? { lte: new Date(query.endDate) } : {}),
       };
     }
-    const movements = await this.prisma.inventoryMovement.findMany({
-      where,
-      orderBy: { fechaCreacion: 'desc' },
-      select: movementSelect,
+
+    const { skip, take } = calculateSkipTake(query);
+    const orderBy = resolvePrismaOrderBy({
+      sortBy: query.sortBy,
+      direction: query.direction,
+      allowedFields: {
+        fechaCreacion: 'fechaCreacion',
+        createdAt: 'fechaCreacion',
+        tipo: 'tipo',
+        type: 'tipo',
+      },
+      defaultOrderBy: { fechaCreacion: 'desc' },
     });
-    return movements.map(toDto);
+
+    const [totalRecords, movements] = await Promise.all([
+      this.prisma.inventoryMovement.count({ where }),
+      this.prisma.inventoryMovement.findMany({
+        where,
+        orderBy,
+        skip,
+        take,
+        select: movementSelect,
+      }),
+    ]);
+
+    return createPaginatedResponse({
+      items: movements.map(toDto),
+      totalRecords,
+      page: query.page,
+      size: query.size,
+    });
   }
 
   private async requireProduct(id: string): Promise<void> {

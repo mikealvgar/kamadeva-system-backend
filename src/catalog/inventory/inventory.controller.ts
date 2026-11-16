@@ -29,6 +29,7 @@ import { InventoryMovementDto } from '../products/dto/inventory-movement.dto.js'
 import { CreateInventoryMovementDto } from './dto/create-inventory-movement.dto.js';
 import { ListInventoryMovementsDto } from './dto/list-inventory-movements.dto.js';
 import { InventoryMovementsService } from './inventory.service.js';
+import { PaginatedResponseDto } from '../../common/dto/paginated-response.dto.js';
 
 @ApiTags('inventario')
 @ApiBearerAuth()
@@ -57,10 +58,10 @@ export class InventoryController {
   @Get('inventario/movimientos')
   @Roles('ADMIN', 'VENDEDOR')
   @ApiOperation({ summary: 'Listar movimientos (ADMIN o VENDEDOR)' })
-  @ApiOkResponse({ type: [InventoryMovementDto] })
+  @ApiOkResponse({ type: PaginatedResponseDto })
   findAll(
     @Query() query: ListInventoryMovementsDto,
-  ): Promise<InventoryMovementDto[]> {
+  ): Promise<PaginatedResponseDto<InventoryMovementDto>> {
     return this.movements.findAll(query);
   }
 }

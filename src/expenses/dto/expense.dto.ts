@@ -31,13 +31,20 @@ export class ExpenseDto {
 }
 
 export class ExpensePageDto {
-  @ApiProperty({ type: [ExpenseDto] }) datos!: ExpenseDto[];
+  @ApiProperty({ type: [ExpenseDto] }) items!: ExpenseDto[];
   @ApiProperty({ type: [ExpenseDto], required: false }) data?: ExpenseDto[];
-  @ApiProperty({ example: 1 }) total!: number;
-  @ApiProperty({ example: 1 }) pagina!: number;
-  @ApiProperty({ example: 1, required: false }) page?: number;
-  @ApiProperty({ example: 20 }) limite!: number;
-  @ApiProperty({ example: 20, required: false }) pageSize?: number;
+  @ApiProperty({ type: [ExpenseDto], required: false }) datos?: ExpenseDto[];
+  @ApiProperty({ example: 0 }) page!: number;
+  @ApiProperty({ example: 0, required: false }) pagina?: number;
+  @ApiProperty({ example: 10 }) size!: number;
+  @ApiProperty({ example: 10, required: false }) limite?: number;
+  @ApiProperty({ example: 10, required: false }) pageSize?: number;
+  @ApiProperty({ example: 1 }) totalRecords!: number;
+  @ApiProperty({ example: 1, required: false }) totalElements?: number;
+  @ApiProperty({ example: 1, required: false }) total?: number;
+  @ApiProperty({ example: 1 }) totalPages!: number;
+  @ApiProperty({ example: true }) isLastPage!: boolean;
+  @ApiProperty({ example: true, required: false }) lastPage?: boolean;
   @ApiProperty({ example: '355.50' }) montoTotal!: string;
   @ApiProperty({ example: '355.50', required: false }) totalAmount?: string;
 }

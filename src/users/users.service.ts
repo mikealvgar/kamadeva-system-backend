@@ -17,6 +17,10 @@ import type { ListUsersDto } from './dto/list-users.dto.js';
 import type { UserListPageDto } from './dto/user-list.dto.js';
 import { UserDto } from './dto/user.dto.js';
 import type { UpdateUserDto } from './dto/update-user.dto.js';
+import {
+  calculateSkipTake,
+  resolvePrismaOrderBy,
+} from '../common/pagination/prisma-pagination.helper.js';
 
 @Injectable()
 export class UsersService {
@@ -187,13 +191,30 @@ export class UsersService {
           }
         : {}),
     };
+    const page = query.page ?? query.pagina ?? 0;
+    const size = query.size ?? query.limite ?? 10;
+    const { skip, take } = calculateSkipTake({ page, size });
+    const orderBy = resolvePrismaOrderBy({
+      sortBy: query.sortBy,
+      direction: query.direction,
+      allowedFields: {
+        nombre: 'nombre',
+        name: 'nombre',
+        correo: 'email',
+        email: 'email',
+        fechaCreacion: 'fechaCreacion',
+        createdAt: 'fechaCreacion',
+      },
+      defaultOrderBy: [{ nombre: 'asc' }, { id: 'asc' }],
+    });
+
     const [total, users] = await Promise.all([
       this.prisma.user.count({ where }),
       this.prisma.user.findMany({
         where,
-        orderBy: [{ nombre: 'asc' }, { id: 'asc' }],
-        skip: (query.pagina - 1) * query.limite,
-        take: query.limite,
+        orderBy,
+        skip,
+        take,
         select: {
           id: true,
           nombre: true,
@@ -205,19 +226,32 @@ export class UsersService {
         },
       }),
     ]);
+    const items = users.map((user) => ({
+      id: user.id,
+      nombre: user.nombre,
+      correo: user.email,
+      telefono: user.telefono,
+      roles: user.rol && isRoleName(user.rol.nombre) ? [user.rol.nombre] : [],
+      activo: user.activo,
+      fechaCreacion: user.fechaCreacion.toISOString(),
+    }));
+    const totalPages = total === 0 ? 0 : Math.ceil(total / size);
+    const isLastPage = totalPages === 0 || page >= totalPages - 1;
+
     return {
-      datos: users.map((user) => ({
-        id: user.id,
-        nombre: user.nombre,
-        correo: user.email,
-        telefono: user.telefono,
-        roles: user.rol && isRoleName(user.rol.nombre) ? [user.rol.nombre] : [],
-        activo: user.activo,
-        fechaCreacion: user.fechaCreacion.toISOString(),
-      })),
-      pagina: query.pagina,
-      limite: query.limite,
+      items,
+      data: items,
+      datos: items,
       total,
+      totalRecords: total,
+      totalElements: total,
+      page,
+      pagina: page,
+      size,
+      limite: size,
+      totalPages,
+      isLastPage,
+      lastPage: isLastPage,
     };
   }
 

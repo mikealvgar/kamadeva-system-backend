@@ -163,7 +163,7 @@ describe('PurchasesService', () => {
           },
         },
         orderBy: [{ fechaRecepcion: 'desc' }, { id: 'desc' }],
-        skip: 5,
+        skip: 10,
         take: 5,
       }),
     );

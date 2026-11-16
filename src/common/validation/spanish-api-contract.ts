@@ -1,5 +1,10 @@
 import type { Request, Response, NextFunction } from 'express';
-import { CallHandler, Injectable, NestInterceptor } from '@nestjs/common';
+import {
+  CallHandler,
+  Injectable,
+  NestInterceptor,
+  StreamableFile,
+} from '@nestjs/common';
 import type { ExecutionContext } from '@nestjs/common';
 import { map, type Observable } from 'rxjs';
 
@@ -128,9 +133,24 @@ const publicToInternal = Object.fromEntries(
   ]),
 );
 
+const paginationQueryToInternal: Record<string, string> = {
+  pagina: 'page',
+  tamano: 'size',
+  limite: 'size',
+  pageSize: 'size',
+  ordenarPor: 'sortBy',
+  direccion: 'direction',
+};
+
 function mapKeys(value: unknown, names: Record<string, string>): unknown {
   if (Array.isArray(value)) return value.map((item) => mapKeys(item, names));
-  if (!value || typeof value !== 'object' || value instanceof Date)
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    value instanceof Date ||
+    value instanceof StreamableFile ||
+    Buffer.isBuffer(value)
+  )
     return value;
   return Object.fromEntries(
     Object.entries(value).map(([key, child]) => [
@@ -140,22 +160,66 @@ function mapKeys(value: unknown, names: Record<string, string>): unknown {
   );
 }
 
-function inputNames(path: string): Record<string, string> {
-  if (path.startsWith('/api/autenticacion/')) return publicToInternal;
+function mapResponseKeys(value: unknown, names: Record<string, string>): unknown {
+  if (Array.isArray(value)) return value.map((item) => mapResponseKeys(item, names));
   if (
-    path.startsWith('/api/compras') ||
+    !value ||
+    typeof value !== 'object' ||
+    value instanceof Date ||
+    value instanceof StreamableFile ||
+    Buffer.isBuffer(value)
+  )
+    return value;
+
+  const mapped: Record<string, unknown> = {};
+
+  for (const [key, child] of Object.entries(value)) {
+    const mappedKey = names[key] ?? key;
+    mapped[mappedKey] = mapResponseKeys(child, names);
+  }
+
+  // Preserve standard pagination envelope properties if this is a paginated response
+  if ('totalRecords' in value || 'totalPages' in value || 'isLastPage' in value) {
+    const val = value as Record<string, unknown>;
+    if (val.items !== undefined) mapped.items = mapResponseKeys(val.items, names);
+    if (val.data !== undefined) mapped.data = mapResponseKeys(val.data, names);
+    if (val.page !== undefined) mapped.page = val.page;
+    if (val.size !== undefined) mapped.size = val.size;
+    if (val.totalRecords !== undefined) mapped.totalRecords = val.totalRecords;
+    if (val.totalElements !== undefined) mapped.totalElements = val.totalElements;
+    if (val.totalPages !== undefined) mapped.totalPages = val.totalPages;
+    if (val.isLastPage !== undefined) mapped.isLastPage = val.isLastPage;
+    if (val.lastPage !== undefined) mapped.lastPage = val.lastPage;
+
+    // Spanish compatibility fields
+    if (val.items !== undefined) mapped.datos = mapResponseKeys(val.items, names);
+    if (val.page !== undefined) mapped.pagina = val.page;
+    if (val.size !== undefined) mapped.limite = val.size;
+    if (val.totalRecords !== undefined) mapped.total = val.totalRecords;
+  }
+
+  return mapped;
+}
+
+function inputNames(path: string): Record<string, string> {
+  const basePagination = { ...paginationQueryToInternal };
+  if (path.startsWith('/api/autenticacion/')) return { ...publicToInternal, ...basePagination };
+  if (
     path.startsWith('/api/configuracion-negocio') ||
-    path.startsWith('/api/usuarios') ||
     path.startsWith('/api/roles') ||
     path.startsWith('/api/pedidos-proveedores')
   )
-    return {};
+    return basePagination;
+  if (path.startsWith('/api/compras') || path.startsWith('/api/usuarios')) {
+    return basePagination;
+  }
   if (
     path.startsWith('/api/catalogo/categorias') ||
     path.startsWith('/api/categorias')
   )
     return {
       ...publicToInternal,
+      ...basePagination,
       nombre: 'name',
       descripcion: 'description',
       activo: 'isActive',
@@ -167,6 +231,7 @@ function inputNames(path: string): Record<string, string> {
   )
     return {
       ...publicToInternal,
+      ...basePagination,
       nombre: 'name',
       orden: 'sortOrder',
       activo: 'isActive',
@@ -177,6 +242,7 @@ function inputNames(path: string): Record<string, string> {
       return { vistaPrevia: 'dryRun', mapaCategorias: 'categoryMap' };
     return {
       ...publicToInternal,
+      ...basePagination,
       categoriaId: 'categoryId',
       existencias: 'stock',
       activo: 'isActive',
@@ -187,6 +253,7 @@ function inputNames(path: string): Record<string, string> {
   if (path.startsWith('/api/clientes'))
     return {
       ...publicToInternal,
+      ...basePagination,
       nombre: 'name',
       correo: 'email',
       telefono: 'phone',
@@ -197,6 +264,7 @@ function inputNames(path: string): Record<string, string> {
   if (path.startsWith('/api/proveedores'))
     return {
       ...publicToInternal,
+      ...basePagination,
       nombreContacto: 'contactName',
       telefono: 'phone',
       direccion: 'address',
@@ -205,7 +273,7 @@ function inputNames(path: string): Record<string, string> {
       busqueda: 'search',
       incluirInactivos: 'includeInactive',
     };
-  return publicToInternal;
+  return { ...publicToInternal, ...basePagination };
 }
 
 export function spanishApiMiddleware(
@@ -236,7 +304,7 @@ export class SpanishApiResponseInterceptor implements NestInterceptor {
   ): Observable<unknown> {
     return next
       .handle()
-      .pipe(map((value: unknown) => mapKeys(value, publicNames)));
+      .pipe(map((value: unknown) => mapResponseKeys(value, publicNames)));
   }
 }
 

@@ -10,6 +10,7 @@ describe('CategoriesService', () => {
     category: {
       create: vi.fn(),
       findMany: vi.fn(),
+      count: vi.fn(),
       findUnique: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
@@ -44,6 +45,7 @@ describe('CategoriesService', () => {
     prisma.category.create.mockResolvedValue(record);
     prisma.category.update.mockResolvedValue(record);
     prisma.category.findUnique.mockResolvedValue(record);
+    prisma.category.count.mockResolvedValue(1);
     prisma.category.findMany.mockResolvedValue([record]);
   });
 
@@ -78,10 +80,18 @@ describe('CategoriesService', () => {
   it.each([false, true])(
     'lists public fields with includeInactive=%s in description order',
     async (includeInactive) => {
-      expect(await service.findAll(includeInactive)).toEqual([dto]);
+      const result = await service.findAll(includeInactive);
+      expect(result.items).toEqual([dto]);
+      expect(result.totalRecords).toBe(1);
+      expect(result.page).toBe(0);
+      expect(result.size).toBe(10);
+      expect(result.totalPages).toBe(1);
+      expect(result.isLastPage).toBe(true);
       expect(prisma.category.findMany).toHaveBeenCalledWith({
         where: includeInactive ? {} : { activo: true },
         orderBy: { descripcion: 'asc' },
+        skip: 0,
+        take: 10,
       });
     },
   );

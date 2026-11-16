@@ -68,15 +68,25 @@ export interface SaleListFilter {
   customerId?: string;
   paymentMethod?: PaymentMethod;
   folio?: string;
-  page: number;
-  pageSize: number;
+  page?: number;
+  size?: number;
+  pageSize?: number;
+  sortBy?: string;
+  direction?: 'ASC' | 'DESC' | 'asc' | 'desc';
 }
 
 export interface SalePage {
+  items: SaleSummaryView[];
   data: SaleSummaryView[];
   total: number;
+  totalRecords: number;
+  totalElements: number;
   page: number;
+  size: number;
   pageSize: number;
+  totalPages: number;
+  isLastPage: boolean;
+  lastPage: boolean;
 }
 
 export interface SaleQueryPort {

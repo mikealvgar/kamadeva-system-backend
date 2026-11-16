@@ -7,6 +7,10 @@ import type {
   SalePage,
   SaleQueryPort,
 } from '../application/ports/sale-query.port.js';
+import {
+  calculateSkipTake,
+  resolvePrismaOrderBy,
+} from '../../common/pagination/prisma-pagination.helper.js';
 
 const ref = { select: { id: true, nombre: true } } as const;
 
@@ -131,31 +135,63 @@ export class PrismaSaleQueryAdapter implements SaleQueryPort {
         ...(filter.startDate ? { gte: filter.startDate } : {}),
         ...(filter.endDate ? { lte: filter.endDate } : {}),
       };
+    const { skip, take } = calculateSkipTake({
+      page: filter.page,
+      size: filter.size ?? filter.pageSize,
+    });
+    const page = filter.page ?? 0;
+    const size = filter.size ?? filter.pageSize ?? 10;
+
+    const orderBy = resolvePrismaOrderBy({
+      sortBy: filter.sortBy,
+      direction: filter.direction,
+      allowedFields: {
+        fechaCreacion: 'fechaCreacion',
+        createdAt: 'fechaCreacion',
+        total: 'total',
+        folio: 'folio',
+        estado: 'estado',
+        status: 'estado',
+      },
+      defaultOrderBy: [{ fechaCreacion: 'desc' }, { id: 'desc' }],
+    });
+
     const [total, sales] = await this.prisma.$transaction([
       this.prisma.sale.count({ where }),
       this.prisma.sale.findMany({
         where,
-        orderBy: [{ fechaCreacion: 'desc' }, { id: 'desc' }],
-        skip: (filter.page - 1) * filter.pageSize,
-        take: filter.pageSize,
+        orderBy,
+        skip,
+        take,
         select: summarySelect,
       }),
     ]);
+    const items = sales.map((sale) => ({
+      id: sale.id,
+      folio: `V-${sale.folio.toString().padStart(6, '0')}`,
+      status: sale.estado,
+      total: sale.total.toFixed(2),
+      paymentMethod: sale.metodoPago,
+      customer: sale.cliente ? { id: sale.cliente.id, name: sale.cliente.nombre } : null,
+      createdBy: sale.creadoPor ? { id: sale.creadoPor.id, name: sale.creadoPor.nombre } : null,
+      quoteId: sale.cotizacionId,
+      createdAt: sale.fechaCreacion.toISOString(),
+    }));
+    const totalPages = total === 0 ? 0 : Math.ceil(total / size);
+    const isLastPage = totalPages === 0 || page >= totalPages - 1;
+
     return {
-      data: sales.map((sale) => ({
-        id: sale.id,
-        folio: `V-${sale.folio.toString().padStart(6, '0')}`,
-        status: sale.estado,
-        total: sale.total.toFixed(2),
-        paymentMethod: sale.metodoPago,
-        customer: sale.cliente ? { id: sale.cliente.id, name: sale.cliente.nombre } : null,
-        createdBy: sale.creadoPor ? { id: sale.creadoPor.id, name: sale.creadoPor.nombre } : null,
-        quoteId: sale.cotizacionId,
-        createdAt: sale.fechaCreacion.toISOString(),
-      })),
+      items,
+      data: items,
       total,
-      page: filter.page,
-      pageSize: filter.pageSize,
+      totalRecords: total,
+      totalElements: total,
+      page,
+      size,
+      pageSize: size,
+      totalPages,
+      isLastPage,
+      lastPage: isLastPage,
     };
   }
 }

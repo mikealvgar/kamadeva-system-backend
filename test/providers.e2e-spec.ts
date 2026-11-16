@@ -172,16 +172,17 @@ describe('Providers HTTP + PostgreSQL', () => {
       .set('Authorization', tokens.admin)
       .send({ isActive: false })
       .expect(200);
-    const list = async (query: Record<string, string>) =>
-      (
-        (
-          await http()
-            .get(base)
-            .query(query)
-            .set('Authorization', tokens.seller)
-            .expect(200)
-        ).body as ProviderDto[]
-      ).map(({ id }) => id);
+    const list = async (query: Record<string, string>) => {
+      const res = (
+        await http()
+          .get(base)
+          .query(query)
+          .set('Authorization', tokens.seller)
+          .expect(200)
+      ).body;
+      const items = (res.items ?? res) as ProviderDto[];
+      return items.map(({ id }) => id);
+    };
     expect(await list({})).not.toContain(provider.id);
     expect(await list({ includeInactive: 'true' })).toContain(provider.id);
     await http()
@@ -202,13 +203,14 @@ describe('Providers HTTP + PostgreSQL', () => {
       nombre: unique('Proveedor'),
       email: `ventas-${tag}@mail.mx`,
     });
-    const found = (
+    const res = (
       await http()
         .get(base)
         .query({ search: tag.toUpperCase() })
         .set('Authorization', tokens.seller)
         .expect(200)
-    ).body as ProviderDto[];
+    ).body;
+    const found = (res.items ?? res) as ProviderDto[];
     expect(found.map(({ id }) => id).sort()).toEqual(
       [byName.id, byContact.id, byEmail.id].sort(),
     );
@@ -216,17 +218,15 @@ describe('Providers HTTP + PostgreSQL', () => {
       nombre: unique('Teléfono'),
       telefono: '33-9876-5432',
     });
-    expect(
-      (
-        (
-          await http()
-            .get(base)
-            .query({ search: '9876' })
-            .set('Authorization', tokens.seller)
-            .expect(200)
-        ).body as ProviderDto[]
-      ).map(({ id }) => id),
-    ).toContain(phone.id);
+    const phoneRes = (
+      await http()
+        .get(base)
+        .query({ search: '9876' })
+        .set('Authorization', tokens.seller)
+        .expect(200)
+    ).body;
+    const phoneFound = (phoneRes.items ?? phoneRes) as ProviderDto[];
+    expect(phoneFound.map(({ id }) => id)).toContain(phone.id);
   });
 
   it('rejects invalid input', async () => {

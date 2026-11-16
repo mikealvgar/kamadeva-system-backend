@@ -9,8 +9,9 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { PaginationQueryDto } from '../../common/dto/pagination-query.dto.js';
 
-export class ListUsersDto {
+export class ListUsersDto extends PaginationQueryDto {
   @ApiPropertyOptional({ maxLength: 150 })
   @IsOptional()
   @IsString()
@@ -25,16 +26,18 @@ export class ListUsersDto {
   @IsIn(['true', 'false'])
   activo?: 'true' | 'false';
 
-  @ApiPropertyOptional({ minimum: 1, default: 1 })
+  @ApiPropertyOptional({ minimum: 0, default: 0, description: 'Alias para page' })
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @Min(1)
-  pagina = 1;
+  @Min(0)
+  pagina?: number;
 
-  @ApiPropertyOptional({ minimum: 1, maximum: 100, default: 20 })
+  @ApiPropertyOptional({ minimum: 1, maximum: 100, default: 10, description: 'Alias para size' })
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(100)
-  limite = 20;
+  limite?: number;
 }

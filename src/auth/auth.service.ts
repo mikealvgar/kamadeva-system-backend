@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   InternalServerErrorException,
@@ -56,12 +57,21 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto): Promise<AuthResult> {
-    const email = dto.email.trim().toLowerCase();
-    if (await this.users.findByEmail(email)) {
+    const rawName = (dto.name ?? dto.nombre)?.trim();
+    const rawEmail = (dto.email ?? dto.correo)?.trim().toLowerCase();
+    const rawPassword = dto.password ?? dto.contrasena;
+
+    if (!rawName || !rawEmail || !rawPassword) {
+      throw new BadRequestException(
+        'El nombre, correo y contraseña son obligatorios',
+      );
+    }
+
+    if (await this.users.findByEmail(rawEmail)) {
       throw new ConflictException('Correo ya registrado');
     }
     const passwordHash = await bcrypt.hash(
-      dto.password,
+      rawPassword,
       this.config.getOrThrow<number>('BCRYPT_ROUNDS'),
     );
 
@@ -88,8 +98,8 @@ export class AuthService {
         const createdUser = await tx.user.create({
           data: {
             id: userId,
-            nombre: dto.name.trim(),
-            email,
+            nombre: rawName,
+            email: rawEmail,
             passwordHash,
             telefono: dto.telefono ? dto.telefono.trim() : null,
             rolId: role.id,
@@ -115,10 +125,19 @@ export class AuthService {
   }
 
   async login(dto: LoginDto): Promise<AuthResult> {
-    const user = await this.users.findByEmail(dto.email.trim().toLowerCase());
+    const rawEmail = (dto.email ?? dto.correo)?.trim().toLowerCase();
+    const rawPassword = dto.password ?? dto.contrasena;
+
+    if (!rawEmail || !rawPassword) {
+      throw new BadRequestException(
+        'El correo y la contraseña son obligatorios',
+      );
+    }
+
+    const user = await this.users.findByEmail(rawEmail);
     if (
       !user ||
-      !(await bcrypt.compare(dto.password, user.passwordHash)) ||
+      !(await bcrypt.compare(rawPassword, user.passwordHash)) ||
       !user.activo
     ) {
       throw new UnauthorizedException('Credenciales inválidas');

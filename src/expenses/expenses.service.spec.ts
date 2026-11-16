@@ -148,7 +148,7 @@ describe('ExpensesService', () => {
       expect.objectContaining({
         where,
         orderBy: [{ fechaGasto: 'desc' }, { id: 'desc' }],
-        skip: 1,
+        skip: 2,
         take: 1,
       }),
     );
@@ -164,19 +164,24 @@ describe('ExpensesService', () => {
     prisma.expense.count.mockResolvedValue(0);
     prisma.expense.aggregate.mockResolvedValue({ _sum: { monto: null } });
     prisma.expense.findMany.mockResolvedValue([]);
-    expect(await service.findAll()).toEqual({
+    expect(await service.findAll()).toMatchObject({
+      items: [],
       datos: [],
       data: [],
       total: 0,
-      pagina: 1,
-      page: 1,
-      limite: 20,
-      pageSize: 20,
+      totalRecords: 0,
+      totalPages: 0,
+      isLastPage: true,
+      pagina: 0,
+      page: 0,
+      limite: 10,
+      size: 10,
+      pageSize: 10,
       montoTotal: '0.00',
       totalAmount: '0.00',
     });
     expect(prisma.expense.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: {}, skip: 0, take: 20 }),
+      expect.objectContaining({ where: {}, skip: 0, take: 10 }),
     );
     await expect(
       service.findAll({

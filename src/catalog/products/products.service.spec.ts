@@ -9,6 +9,7 @@ describe('ProductsService', () => {
       create: vi.fn(),
       findUnique: vi.fn(),
       findMany: vi.fn(),
+      count: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
     },
@@ -17,6 +18,7 @@ describe('ProductsService', () => {
     inventoryMovement: {
       groupBy: vi.fn(),
       findMany: vi.fn(),
+      count: vi.fn(),
       aggregate: vi.fn(),
       create: vi.fn(),
     },
@@ -65,9 +67,11 @@ describe('ProductsService', () => {
     prisma.product.update.mockResolvedValue(product);
     prisma.product.findUnique.mockResolvedValue(product);
     prisma.product.findMany.mockResolvedValue([product]);
+    prisma.product.count.mockResolvedValue(1);
     prisma.category.findUnique.mockResolvedValue({ id: 'category' });
     prisma.brand.findUnique.mockResolvedValue(null);
     prisma.inventoryMovement.groupBy.mockResolvedValue([]);
+    prisma.inventoryMovement.count.mockResolvedValue(1);
     prisma.inventoryMovement.aggregate.mockResolvedValue({
       _sum: { cambioExistencias: null },
     });
@@ -192,7 +196,7 @@ describe('ProductsService', () => {
       includeInactive: 'true',
       search: 'ORO',
     });
-    expect(result.map(({ stock }) => stock)).toEqual(['-3.125', '0.000']);
+    expect(result.items.map(({ stock }) => stock)).toEqual(['-3.125', '0.000']);
     expect(prisma.inventoryMovement.groupBy).toHaveBeenCalledExactlyOnceWith({
       by: ['productoId'],
       where: { productoId: { in: ['product', 'other'] } },
@@ -219,8 +223,9 @@ describe('ProductsService', () => {
   });
 
   it('does not aggregate an empty list', async () => {
+    prisma.product.count.mockResolvedValue(0);
     prisma.product.findMany.mockResolvedValue([]);
-    expect(await service.findAll()).toEqual([]);
+    expect((await service.findAll()).items).toEqual([]);
     expect(prisma.inventoryMovement.groupBy).not.toHaveBeenCalled();
   });
 
@@ -375,7 +380,7 @@ describe('ProductsService', () => {
         fechaCreacion: date,
       },
     ]);
-    expect(await service.movements('product')).toEqual([
+    expect((await service.movements('product')).items).toEqual([
       {
         id: 'movement',
         type: 'SALE_OUT',

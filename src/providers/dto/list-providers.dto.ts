@@ -1,8 +1,9 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsIn, IsString, MaxLength, ValidateIf } from 'class-validator';
+import { PaginationQueryDto } from '../../common/dto/pagination-query.dto.js';
 
-export class ListProvidersDto {
+export class ListProvidersDto extends PaginationQueryDto {
   @ApiPropertyOptional({
     description:
       'Buscar en nombre, contacto, correo o teléfono, sin distinguir mayúsculas',

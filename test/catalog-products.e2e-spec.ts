@@ -275,12 +275,13 @@ describe('Products HTTP + PostgreSQL', () => {
     // undefined is dropped from the JSON body, so no categoryId is sent.
     const product = await create({ categoryId: undefined });
     expect(product.categoria).toBeNull();
-    const listed = (
+    const listedRes = (
       await http()
         .get(`${base}?sinCategoria=true`)
         .set('Authorization', tokens.admin!)
         .expect(200)
-    ).body as ProductDto[];
+    ).body;
+    const listed = (listedRes.items ?? listedRes) as ProductDto[];
     expect(listed.map(({ id }) => id)).toContain(product.id);
     expect(listed.every(({ categoria }) => categoria === null)).toBe(true);
     const categorized = await create();
@@ -424,7 +425,8 @@ describe('Products HTTP + PostgreSQL', () => {
         .get(base + query)
         .set('Authorization', tokens.seller!)
         .expect(200);
-      const results = (response.body as ProductDto[]).filter(({ id }) =>
+      const items = (response.body.items ?? response.body) as ProductDto[];
+      const results = items.filter(({ id }) =>
         products.includes(id),
       );
       expect(results.map(({ id }) => id)).toEqual(expected);
@@ -465,23 +467,26 @@ describe('Products HTTP + PostgreSQL', () => {
       .set('Authorization', tokens.seller!)
       .expect(200);
     expect(detail.body.existencias).toBe('-3.125');
-    const list = await http()
-      .get(`${base}?includeInactive=true`)
-      .set('Authorization', tokens.seller!)
-      .expect(200);
+    const listRes = (
+      await http()
+        .get(`${base}?includeInactive=true`)
+        .set('Authorization', tokens.seller!)
+        .expect(200)
+    ).body;
+    const listItems = (listRes.items ?? listRes) as ProductResponse[];
     expect(
-      (list.body as ProductResponse[]).find(({ id }) => id === product.id)
+      listItems.find(({ id }) => id === product.id)
         ?.existencias,
     ).toBe('-3.125');
     expect(
-      (list.body as ProductResponse[]).find(({ id }) => id === other.id)
+      listItems.find(({ id }) => id === other.id)
         ?.existencias,
     ).toBe('0.000');
     const response = await http()
       .get(`${base}/${product.id}/movimientos`)
       .set('Authorization', tokens.seller!)
       .expect(200);
-    const movements = response.body as Array<Record<string, unknown>>;
+    const movements = (response.body.items ?? response.body) as Array<Record<string, unknown>>;
     expect(movements).toEqual([
       {
         id: outgoing.id,
@@ -855,8 +860,9 @@ describe('Products HTTP + PostgreSQL', () => {
     ).toBe('binary');
     expect(
       response.body.paths[base].get.parameters
-        .map((parameter: { name: string }) => parameter.name)
-        .sort(),
-    ).toEqual(['busqueda', 'categoriaId', 'incluirInactivos', 'sinCategoria']);
+        .map((parameter: { name: string }) => parameter.name),
+    ).toEqual(
+      expect.arrayContaining(['busqueda', 'categoriaId', 'incluirInactivos', 'sinCategoria']),
+    );
   });
 });

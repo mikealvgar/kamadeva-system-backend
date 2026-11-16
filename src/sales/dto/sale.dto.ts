@@ -91,8 +91,15 @@ export class SaleSummaryDto {
 }
 
 export class SalePageDto {
+  @ApiProperty({ type: [SaleSummaryDto] }) items: SaleSummaryDto[];
   @ApiProperty({ type: [SaleSummaryDto] }) data: SaleSummaryDto[];
+  @ApiProperty({ example: 0 }) page: number;
+  @ApiProperty({ example: 10 }) size: number;
+  @ApiProperty({ example: 10 }) pageSize: number;
+  @ApiProperty({ example: 1 }) totalRecords: number;
+  @ApiProperty({ example: 1 }) totalElements: number;
   @ApiProperty({ example: 1 }) total: number;
-  @ApiProperty({ example: 1 }) page: number;
-  @ApiProperty({ example: 20 }) pageSize: number;
+  @ApiProperty({ example: 1 }) totalPages: number;
+  @ApiProperty({ example: true }) isLastPage: boolean;
+  @ApiProperty({ example: true }) lastPage: boolean;
 }

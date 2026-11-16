@@ -12,6 +12,14 @@ import type { CustomerDto } from './dto/customer.dto.js';
 import type { CreateCustomerDto } from './dto/create-customer.dto.js';
 import type { UpdateCustomerDto } from './dto/update-customer.dto.js';
 import type { ListCustomersDto } from './dto/list-customers.dto.js';
+import {
+  calculateSkipTake,
+  resolvePrismaOrderBy,
+} from '../common/pagination/prisma-pagination.helper.js';
+import {
+  createPaginatedResponse,
+  PaginatedResponseDto,
+} from '../common/dto/paginated-response.dto.js';
 
 export const DEFAULT_CUSTOMER_NAME = 'PÚBLICO EN GENERAL';
 const customerSelect = {
@@ -92,7 +100,7 @@ export class CustomersService implements OnModuleInit {
     }
   }
 
-  async findAll(query: ListCustomersDto = {}): Promise<CustomerDto[]> {
+  async findAll(query: ListCustomersDto = {}): Promise<PaginatedResponseDto<CustomerDto>> {
     const search = query.search?.trim();
     const where: Prisma.CustomerWhereInput = {
       ...(query.includeInactive === 'true' ? {} : { activo: true }),
@@ -106,12 +114,41 @@ export class CustomersService implements OnModuleInit {
           }
         : {}),
     };
-    const customers = await this.prisma.customer.findMany({
-      where,
-      orderBy: { nombre: 'asc' },
-      select: customerSelect,
+
+    const { skip, take } = calculateSkipTake(query);
+    const orderBy = resolvePrismaOrderBy({
+      sortBy: query.sortBy,
+      direction: query.direction,
+      allowedFields: {
+        nombre: 'nombre',
+        name: 'nombre',
+        correo: 'correo',
+        email: 'correo',
+        telefono: 'telefono',
+        phone: 'telefono',
+        fechaCreacion: 'createdAt',
+        createdAt: 'createdAt',
+      },
+      defaultOrderBy: { nombre: 'asc' },
     });
-    return customers.map((customer) => this.toDto(customer));
+
+    const [totalRecords, customers] = await Promise.all([
+      this.prisma.customer.count({ where }),
+      this.prisma.customer.findMany({
+        where,
+        orderBy,
+        skip,
+        take,
+        select: customerSelect,
+      }),
+    ]);
+
+    return createPaginatedResponse({
+      items: customers.map((customer) => this.toDto(customer)),
+      totalRecords,
+      page: query.page,
+      size: query.size,
+    });
   }
 
   async findById(id: string): Promise<CustomerDto> {

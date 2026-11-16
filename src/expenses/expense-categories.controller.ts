@@ -32,6 +32,7 @@ import { ExpenseCategoryDto } from './dto/expense-category.dto.js';
 import { ListExpenseCategoriesDto } from './dto/list-expense-categories.dto.js';
 import { UpdateExpenseCategoryDto } from './dto/update-expense-category.dto.js';
 import { ExpenseCategoriesService } from './expense-categories.service.js';
+import { PaginatedResponseDto } from '../common/dto/paginated-response.dto.js';
 
 @ApiTags('categorias-gastos')
 @ApiBearerAuth()
@@ -53,11 +54,11 @@ export class ExpenseCategoriesController {
 
   @Get()
   @Roles('ADMIN', 'VENDEDOR')
-  @ApiOkResponse({ type: [ExpenseCategoryDto] })
+  @ApiOkResponse({ type: PaginatedResponseDto })
   findAll(
     @Query() query: ListExpenseCategoriesDto,
-  ): Promise<ExpenseCategoryDto[]> {
-    return this.categories.findAll(query.includeInactive === 'true');
+  ): Promise<PaginatedResponseDto<ExpenseCategoryDto>> {
+    return this.categories.findAll(query);
   }
 
   @Get(':id')

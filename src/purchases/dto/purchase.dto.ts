@@ -33,8 +33,17 @@ export class PurchaseDto {
 }
 
 export class PurchasePageDto {
+  @ApiProperty({ type: [PurchaseDto] }) items: PurchaseDto[];
+  @ApiProperty({ type: [PurchaseDto] }) data: PurchaseDto[];
   @ApiProperty({ type: [PurchaseDto] }) datos: PurchaseDto[];
+  @ApiProperty() page: number;
   @ApiProperty() pagina: number;
+  @ApiProperty() size: number;
   @ApiProperty() limite: number;
+  @ApiProperty() totalRecords: number;
+  @ApiProperty() totalElements: number;
   @ApiProperty() total: number;
+  @ApiProperty() totalPages: number;
+  @ApiProperty() isLastPage: boolean;
+  @ApiProperty() lastPage: boolean;
 }

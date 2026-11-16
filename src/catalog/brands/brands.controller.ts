@@ -32,6 +32,7 @@ import { BrandDto } from './dto/brand.dto.js';
 import { CreateBrandDto } from './dto/create-brand.dto.js';
 import { UpdateBrandDto } from './dto/update-brand.dto.js';
 import { ListBrandsDto } from './dto/list-brands.dto.js';
+import { PaginatedResponseDto } from '../../common/dto/paginated-response.dto.js';
 
 @ApiTags('catalogo/marcas')
 @ApiBearerAuth()
@@ -53,9 +54,9 @@ export class BrandsController {
 
   @Get()
   @Roles('ADMIN', 'VENDEDOR')
-  @ApiOkResponse({ type: [BrandDto] })
-  findAll(@Query() query: ListBrandsDto): Promise<BrandDto[]> {
-    return this.brands.findAll(query.includeInactive === 'true');
+  @ApiOkResponse({ type: PaginatedResponseDto })
+  findAll(@Query() query: ListBrandsDto): Promise<PaginatedResponseDto<BrandDto>> {
+    return this.brands.findAll(query);
   }
 
   @Get(':id')

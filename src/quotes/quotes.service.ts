@@ -23,6 +23,10 @@ import { PrismaInventoryQueryAdapter } from '../sales/infrastructure/prisma-inve
 import { RegisterSaleUseCase } from '../sales/application/use-cases/register-sale.use-case.js';
 import { saleSelect } from './quote-records.js';
 import { PrismaUnitOfWorkAdapter } from './infrastructure/adapters/prisma-unit-of-work.adapter.js';
+import {
+  createPaginatedResponse,
+  PaginatedResponseDto,
+} from '../common/dto/paginated-response.dto.js';
 import { PrismaFolioSequenceAdapter } from '../common/infrastructure/prisma-folio-sequence.adapter.js';
 import {
   EVENT_PUBLISHER_PORT,
@@ -110,13 +114,18 @@ export class QuotesService {
     }
   }
 
-  async findAll(query: ListQuotesDto = {}): Promise<QuoteDto[]> {
+  async findAll(query: ListQuotesDto = {}): Promise<PaginatedResponseDto<QuoteDto>> {
     try {
       if (query.customerId) {
         await this.quoteRepo.requireCustomerExists(query.customerId);
       }
-      const records = await this.quoteRepo.findAllRecords(query);
-      return records.map(quoteDto);
+      const { totalRecords, records } = await this.quoteRepo.findAllRecords(query);
+      return createPaginatedResponse({
+        items: records.map(quoteDto),
+        totalRecords,
+        page: query.page,
+        size: query.size,
+      });
     } catch (err) {
       handleDomainError(err);
     }

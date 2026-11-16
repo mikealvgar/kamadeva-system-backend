@@ -8,8 +8,9 @@ import {
   Max,
   Min,
 } from 'class-validator';
+import { PaginationQueryDto } from '../../common/dto/pagination-query.dto.js';
 
-export class ListPurchasesDto {
+export class ListPurchasesDto extends PaginationQueryDto {
   @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()
   @IsUUID('4')
@@ -25,14 +26,14 @@ export class ListPurchasesDto {
   @IsISO8601({ strict: true })
   fechaFin?: string;
 
-  @ApiPropertyOptional({ minimum: 1, default: 1 })
+  @ApiPropertyOptional({ minimum: 0, default: 0, description: 'Alias para page' })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @Min(1)
+  @Min(0)
   pagina?: number;
 
-  @ApiPropertyOptional({ minimum: 1, maximum: 100, default: 50 })
+  @ApiPropertyOptional({ minimum: 1, maximum: 100, default: 10, description: 'Alias para size' })
   @IsOptional()
   @Type(() => Number)
   @IsInt()

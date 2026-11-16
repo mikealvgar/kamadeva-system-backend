@@ -406,7 +406,8 @@ describe('Quotes HTTP + PostgreSQL', () => {
       data: { fechaCreacion: new Date('2020-01-01'), estado: 'SENT' },
     });
     const all = await http().get(base).set('Authorization', auth()).expect(200);
-    expect((all.body as QuoteResponse[]).map((item) => item.id)).toEqual([
+    const allItems = (all.body.items ?? all.body) as QuoteResponse[];
+    expect(allItems.map((item) => item.id)).toEqual([
       second.id,
       first.id,
     ]);
@@ -425,19 +426,19 @@ describe('Quotes HTTP + PostgreSQL', () => {
         .query(query)
         .set('Authorization', auth())
         .expect(200);
-      expect((response.body as QuoteResponse[]).map((item) => item.id)).toEqual([
+      const resItems = (response.body.items ?? response.body) as QuoteResponse[];
+      expect(resItems.map((item) => item.id)).toEqual([
         first.id,
       ]);
     }
-    expect(
-      (
-        await http()
-          .get(base)
-          .query({ search: randomUUID() })
-          .set('Authorization', auth())
-          .expect(200)
-      ).body,
-    ).toEqual([]);
+    const emptyRes = (
+      await http()
+        .get(base)
+        .query({ search: randomUUID() })
+        .set('Authorization', auth())
+        .expect(200)
+    ).body;
+    expect(emptyRes.items ?? emptyRes).toEqual([]);
   });
 
   it('edits draft metadata without repricing and fully replaces items using current prices', async () => {
@@ -650,7 +651,8 @@ describe('Quotes HTTP + PostgreSQL', () => {
         .query({ customerId })
         .set('Authorization', auth())
         .expect(200);
-      expect((listed.body as QuoteResponse[])[0]!.puedePagar).toBe(false);
+      const listedItems = (listed.body.items ?? listed.body) as QuoteResponse[];
+      expect(listedItems[0]!.puedePagar).toBe(false);
       const result = await http()
         .post(`${base}/${original.id}/pagar`)
         .set('Authorization', auth())

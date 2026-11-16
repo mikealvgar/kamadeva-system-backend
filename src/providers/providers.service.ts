@@ -10,6 +10,14 @@ import type { ProviderDto } from './dto/provider.dto.js';
 import type { CreateProviderDto } from './dto/create-provider.dto.js';
 import type { UpdateProviderDto } from './dto/update-provider.dto.js';
 import type { ListProvidersDto } from './dto/list-providers.dto.js';
+import {
+  calculateSkipTake,
+  resolvePrismaOrderBy,
+} from '../common/pagination/prisma-pagination.helper.js';
+import {
+  createPaginatedResponse,
+  PaginatedResponseDto,
+} from '../common/dto/paginated-response.dto.js';
 
 const providerSelect = {
   id: true,
@@ -59,7 +67,7 @@ export class ProvidersService {
     }
   }
 
-  async findAll(query: ListProvidersDto = {}): Promise<ProviderDto[]> {
+  async findAll(query: ListProvidersDto = {}): Promise<PaginatedResponseDto<ProviderDto>> {
     const search = query.search?.trim();
     const where: Prisma.ProviderWhereInput = {
       ...(query.includeInactive === 'true' ? {} : { activo: true }),
@@ -74,12 +82,45 @@ export class ProvidersService {
           }
         : {}),
     };
-    const providers = await this.prisma.provider.findMany({
-      where,
-      orderBy: { nombre: 'asc' },
-      select: providerSelect,
+
+    const { skip, take } = calculateSkipTake(query);
+    const orderBy = resolvePrismaOrderBy({
+      sortBy: query.sortBy,
+      direction: query.direction,
+      allowedFields: {
+        nombre: 'nombre',
+        name: 'nombre',
+        correo: 'correo',
+        email: 'correo',
+        telefono: 'telefono',
+        phone: 'telefono',
+        nombreContacto: 'nombreContacto',
+        contactName: 'nombreContacto',
+        direccion: 'direccion',
+        address: 'direccion',
+        fechaCreacion: 'createdAt',
+        createdAt: 'createdAt',
+      },
+      defaultOrderBy: { nombre: 'asc' },
     });
-    return providers.map((provider) => this.toDto(provider));
+
+    const [totalRecords, providers] = await Promise.all([
+      this.prisma.provider.count({ where }),
+      this.prisma.provider.findMany({
+        where,
+        orderBy,
+        skip,
+        take,
+        select: providerSelect,
+      }),
+    ]);
+
+    return createPaginatedResponse({
+      items: providers.map((provider) => this.toDto(provider)),
+      totalRecords,
+      page: query.page,
+      size: query.size,
+    });
   }
 
   async findById(id: string): Promise<ProviderDto> {

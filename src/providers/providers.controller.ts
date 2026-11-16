@@ -32,6 +32,7 @@ import { ListProvidersDto } from './dto/list-providers.dto.js';
 import { ProviderDto } from './dto/provider.dto.js';
 import { UpdateProviderDto } from './dto/update-provider.dto.js';
 import { ProvidersService } from './providers.service.js';
+import { PaginatedResponseDto } from '../common/dto/paginated-response.dto.js';
 
 @ApiTags('proveedores')
 @ApiBearerAuth()
@@ -53,8 +54,8 @@ export class ProvidersController {
 
   @Get()
   @Roles('ADMIN', 'VENDEDOR')
-  @ApiOkResponse({ type: [ProviderDto] })
-  findAll(@Query() query: ListProvidersDto): Promise<ProviderDto[]> {
+  @ApiOkResponse({ type: PaginatedResponseDto })
+  findAll(@Query() query: ListProvidersDto): Promise<PaginatedResponseDto<ProviderDto>> {
     return this.providers.findAll(query);
   }
 

@@ -5,6 +5,7 @@ import {
   IsInt,
   IsISO8601,
   IsNotEmpty,
+  IsOptional,
   IsString,
   IsUUID,
   Max,
@@ -13,11 +14,12 @@ import {
   ValidateIf,
 } from 'class-validator';
 import { PaymentMethod, SaleStatus } from '../../generated/prisma/client.js';
+import { PaginationQueryDto } from '../../common/dto/pagination-query.dto.js';
 
 const optional = (_object: unknown, value: unknown): boolean =>
   value !== undefined;
 
-export class ListSalesDto {
+export class ListSalesDto extends PaginationQueryDto {
   @ApiPropertyOptional({ format: 'date-time', description: 'Inclusivo' })
   @ValidateIf(optional)
   @IsISO8601({ strict: true })
@@ -61,16 +63,9 @@ export class ListSalesDto {
   @MaxLength(30)
   folio?: string;
 
-  @ApiPropertyOptional({ default: 1, minimum: 1 })
+  @ApiPropertyOptional({ description: 'Alias para size', minimum: 1, maximum: 100 })
   @Type(() => Number)
-  @ValidateIf(optional)
-  @IsInt()
-  @Min(1)
-  page?: number;
-
-  @ApiPropertyOptional({ default: 20, minimum: 1, maximum: 100 })
-  @Type(() => Number)
-  @ValidateIf(optional)
+  @IsOptional()
   @IsInt()
   @Min(1)
   @Max(100)

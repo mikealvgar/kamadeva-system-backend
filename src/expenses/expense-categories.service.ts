@@ -10,6 +10,15 @@ import { serializableTransaction } from '../prisma/serializable-transaction.js';
 import type { CreateExpenseCategoryDto } from './dto/create-expense-category.dto.js';
 import type { ExpenseCategoryDto } from './dto/expense-category.dto.js';
 import type { UpdateExpenseCategoryDto } from './dto/update-expense-category.dto.js';
+import type { ListExpenseCategoriesDto } from './dto/list-expense-categories.dto.js';
+import {
+  calculateSkipTake,
+  resolvePrismaOrderBy,
+} from '../common/pagination/prisma-pagination.helper.js';
+import {
+  createPaginatedResponse,
+  PaginatedResponseDto,
+} from '../common/dto/paginated-response.dto.js';
 
 const categorySelect = {
   id: true,
@@ -54,13 +63,45 @@ export class ExpenseCategoriesService {
     }
   }
 
-  async findAll(includeInactive = false): Promise<ExpenseCategoryDto[]> {
-    const records = await this.prisma.expenseCategory.findMany({
-      where: includeInactive ? {} : { activo: true },
-      orderBy: { nombre: 'asc' },
-      select: categorySelect,
+  async findAll(
+    queryOrIncludeInactive: ListExpenseCategoriesDto | boolean = false,
+  ): Promise<PaginatedResponseDto<ExpenseCategoryDto>> {
+    const query: ListExpenseCategoriesDto =
+      typeof queryOrIncludeInactive === 'boolean'
+        ? { includeInactive: queryOrIncludeInactive ? 'true' : 'false' }
+        : queryOrIncludeInactive ?? {};
+
+    const includeInactive = query.includeInactive === 'true';
+    const where = includeInactive ? {} : { activo: true };
+
+    const { skip, take } = calculateSkipTake(query);
+    const orderBy = resolvePrismaOrderBy({
+      sortBy: query.sortBy,
+      direction: query.direction,
+      allowedFields: {
+        nombre: 'nombre',
+        name: 'nombre',
+      },
+      defaultOrderBy: { nombre: 'asc' },
     });
-    return records.map(toDto);
+
+    const [totalRecords, records] = await Promise.all([
+      this.prisma.expenseCategory.count({ where }),
+      this.prisma.expenseCategory.findMany({
+        where,
+        orderBy,
+        skip,
+        take,
+        select: categorySelect,
+      }),
+    ]);
+
+    return createPaginatedResponse({
+      items: records.map(toDto),
+      totalRecords,
+      page: query.page,
+      size: query.size,
+    });
   }
 
   async findById(id: string): Promise<ExpenseCategoryDto> {

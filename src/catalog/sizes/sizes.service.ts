@@ -9,6 +9,15 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import type { CreateSizeDto } from './dto/create-size.dto.js';
 import type { SizeDto } from './dto/size.dto.js';
 import type { UpdateSizeDto } from './dto/update-size.dto.js';
+import type { ListSizesDto } from './dto/list-sizes.dto.js';
+import {
+  calculateSkipTake,
+  resolvePrismaOrderBy,
+} from '../../common/pagination/prisma-pagination.helper.js';
+import {
+  createPaginatedResponse,
+  PaginatedResponseDto,
+} from '../../common/dto/paginated-response.dto.js';
 
 @Injectable()
 export class SizesService {
@@ -32,12 +41,44 @@ export class SizesService {
     }
   }
 
-  async findAll(includeInactive = false): Promise<SizeDto[]> {
-    const records = await this.prisma.size.findMany({
-      where: includeInactive ? {} : { activo: true },
-      orderBy: { nombre: 'asc' },
+  async findAll(
+    queryOrIncludeInactive: ListSizesDto | boolean = false,
+  ): Promise<PaginatedResponseDto<SizeDto>> {
+    const query: ListSizesDto =
+      typeof queryOrIncludeInactive === 'boolean'
+        ? { includeInactive: queryOrIncludeInactive ? 'true' : 'false' }
+        : queryOrIncludeInactive ?? {};
+
+    const includeInactive = query.includeInactive === 'true';
+    const where = includeInactive ? {} : { activo: true };
+
+    const { skip, take } = calculateSkipTake(query);
+    const orderBy = resolvePrismaOrderBy({
+      sortBy: query.sortBy,
+      direction: query.direction,
+      allowedFields: {
+        nombre: 'nombre',
+        name: 'nombre',
+      },
+      defaultOrderBy: { nombre: 'asc' },
     });
-    return records.map((r) => this.mapToDto(r));
+
+    const [totalRecords, records] = await Promise.all([
+      this.prisma.size.count({ where }),
+      this.prisma.size.findMany({
+        where,
+        orderBy,
+        skip,
+        take,
+      }),
+    ]);
+
+    return createPaginatedResponse({
+      items: records.map((r) => this.mapToDto(r)),
+      totalRecords,
+      page: query.page,
+      size: query.size,
+    });
   }
 
   async findById(id: string): Promise<SizeDto> {

@@ -189,10 +189,10 @@ describe('Purchases HTTP + PostgreSQL', () => {
     const created = await receivePurchase().expect(201);
     purchases.push(created.body.id as string);
     const response = await http()
-      .get(`${base}?proveedorId=${providerId}&pagina=1&limite=1`)
+      .get(`${base}?proveedorId=${providerId}&pagina=0&limite=1`)
       .set('Authorization', tokens.admin!)
       .expect(200);
-    expect(response.body).toMatchObject({ pagina: 1, limite: 1, total: 1 });
+    expect(response.body).toMatchObject({ pagina: 0, limite: 1, total: 1 });
     expect(response.body.datos[0].id).toBe(created.body.id);
     await http()
       .get(`${base}?fechaInicio=2027-01-01T00:00:00.000Z`)

@@ -33,6 +33,7 @@ import { ListQuotesDto } from './dto/list-quotes.dto.js';
 import { PayQuoteDto } from './dto/pay-quote.dto.js';
 import { QuoteDto, SaleDto } from './dto/quote.dto.js';
 import { QuotesService } from './quotes.service.js';
+import { PaginatedResponseDto } from '../common/dto/paginated-response.dto.js';
 
 @ApiTags('cotizaciones')
 @ApiBearerAuth()
@@ -59,8 +60,8 @@ export class QuotesController {
   }
 
   @Get()
-  @ApiOkResponse({ type: [QuoteDto] })
-  findAll(@Query() query: ListQuotesDto): Promise<QuoteDto[]> {
+  @ApiOkResponse({ type: PaginatedResponseDto })
+  findAll(@Query() query: ListQuotesDto): Promise<PaginatedResponseDto<QuoteDto>> {
     return this.quotes.findAll(query);
   }
 

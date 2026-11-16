@@ -9,6 +9,10 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import type { CreateExpenseDto } from './dto/create-expense.dto.js';
 import type { ExpenseDto, ExpensePageDto } from './dto/expense.dto.js';
 import type { ListExpensesDto } from './dto/list-expenses.dto.js';
+import {
+  calculateSkipTake,
+  resolvePrismaOrderBy,
+} from '../common/pagination/prisma-pagination.helper.js';
 
 const FUTURE_TOLERANCE_MS = 60_000;
 
@@ -156,29 +160,54 @@ export class ExpensesService {
         ...(startDate ? { gte: startDate } : {}),
         ...(endDate ? { lte: endDate } : {}),
       };
-    const page = query.page ?? 1;
-    const pageSize = query.pageSize ?? 20;
+    const page = query.page ?? 0;
+    const size = query.size ?? query.pageSize ?? 10;
+    const { skip, take } = calculateSkipTake({ page, size });
+    const orderBy = resolvePrismaOrderBy({
+      sortBy: query.sortBy,
+      direction: query.direction,
+      allowedFields: {
+        fechaGasto: 'fechaGasto',
+        spentAt: 'fechaGasto',
+        monto: 'monto',
+        amount: 'monto',
+        fechaCreacion: 'createdAt',
+        createdAt: 'createdAt',
+      },
+      defaultOrderBy: [{ fechaGasto: 'desc' }, { id: 'desc' }],
+    });
+
     const [total, sum, expenses] = await this.prisma.$transaction([
       this.prisma.expense.count({ where }),
       this.prisma.expense.aggregate({ where, _sum: { monto: true } }),
       this.prisma.expense.findMany({
         where,
-        orderBy: [{ fechaGasto: 'desc' }, { id: 'desc' }],
-        skip: (page - 1) * pageSize,
-        take: pageSize,
+        orderBy,
+        skip,
+        take,
         select: expenseSelect,
       }),
     ]);
     const dtos = expenses.map(toDto);
     const totalAmount = sum._sum.monto?.toFixed(2) ?? '0.00';
+    const totalPages = total === 0 ? 0 : Math.ceil(total / size);
+    const isLastPage = totalPages === 0 || page >= totalPages - 1;
+
     return {
+      items: dtos,
       datos: dtos,
       data: dtos,
       total,
+      totalRecords: total,
+      totalElements: total,
       pagina: page,
       page,
-      limite: pageSize,
-      pageSize,
+      limite: size,
+      pageSize: size,
+      size,
+      totalPages,
+      isLastPage,
+      lastPage: isLastPage,
       montoTotal: totalAmount,
       totalAmount,
     };

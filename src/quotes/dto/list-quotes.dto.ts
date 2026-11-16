@@ -2,8 +2,9 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsEnum, IsString, IsUUID, ValidateIf } from 'class-validator';
 import { QuoteStatus } from '../../generated/prisma/client.js';
+import { PaginationQueryDto } from '../../common/dto/pagination-query.dto.js';
 
-export class ListQuotesDto {
+export class ListQuotesDto extends PaginationQueryDto {
   @ApiPropertyOptional({ enum: QuoteStatus })
   @ValidateIf((_object: unknown, value: unknown) => value !== undefined)
   @IsEnum(QuoteStatus)

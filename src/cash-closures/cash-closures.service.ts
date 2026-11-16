@@ -20,6 +20,10 @@ import type {
 } from './dto/cash-closure.dto.js';
 import type { CreateCashClosureDto } from './dto/create-cash-closure.dto.js';
 import type { ListCashClosuresDto } from './dto/list-cash-closures.dto.js';
+import {
+  calculateSkipTake,
+  resolvePrismaOrderBy,
+} from '../common/pagination/prisma-pagination.helper.js';
 
 const STALE_SUMMARY = 'Ya se registró otro corte; consulte de nuevo el resumen';
 
@@ -338,19 +342,51 @@ export class CashClosuresService {
             },
           }
         : {};
-    const page = query.page ?? 1;
-    const pageSize = query.pageSize ?? 20;
+    const page = query.page ?? 0;
+    const size = query.size ?? query.pageSize ?? 10;
+    const { skip, take } = calculateSkipTake({ page, size });
+    const orderBy = resolvePrismaOrderBy({
+      sortBy: query.sortBy,
+      direction: query.direction,
+      allowedFields: {
+        fechaCierre: 'fechaCierre',
+        closedAt: 'fechaCierre',
+        fechaCreacion: 'createdAt',
+        createdAt: 'createdAt',
+      },
+      defaultOrderBy: [{ fechaCierre: 'desc' }, { id: 'desc' }],
+    });
+
     const [total, closures] = await this.prisma.$transaction([
       this.prisma.cashClosure.count({ where }),
       this.prisma.cashClosure.findMany({
         where,
-        orderBy: [{ fechaCierre: 'desc' }, { id: 'desc' }],
-        skip: (page - 1) * pageSize,
-        take: pageSize,
+        orderBy,
+        skip,
+        take,
         select: closureSelect,
       }),
     ]);
-    return { data: closures.map(toDto), total, page, pageSize };
+    const items = closures.map(toDto);
+    const totalPages = total === 0 ? 0 : Math.ceil(total / size);
+    const isLastPage = totalPages === 0 || page >= totalPages - 1;
+
+    return {
+      items,
+      data: items,
+      datos: items,
+      total,
+      totalRecords: total,
+      totalElements: total,
+      page,
+      pagina: page,
+      size,
+      limite: size,
+      pageSize: size,
+      totalPages,
+      isLastPage,
+      lastPage: isLastPage,
+    };
   }
 
   async findById(id: string): Promise<CashClosureDto> {

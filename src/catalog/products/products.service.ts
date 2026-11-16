@@ -10,6 +10,7 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import type { CreateProductDto } from './dto/create-product.dto.js';
 import type { UpdateProductDto } from './dto/update-product.dto.js';
 import type { ListProductsDto } from './dto/list-products.dto.js';
+import type { ExportProductsDto } from './dto/export-products.dto.js';
 import type { ProductDto } from './dto/product.dto.js';
 import type { InventoryMovementDto } from './dto/inventory-movement.dto.js';
 import { serializableTransaction } from '../../prisma/serializable-transaction.js';
@@ -17,6 +18,15 @@ import {
   PRODUCT_IMAGES,
   type ProductImageUploader,
 } from './product-images.service.js';
+import {
+  calculateSkipTake,
+  resolvePrismaOrderBy,
+} from '../../common/pagination/prisma-pagination.helper.js';
+import {
+  createPaginatedResponse,
+  PaginatedResponseDto,
+} from '../../common/dto/paginated-response.dto.js';
+import type { PaginationQueryDto } from '../../common/dto/pagination-query.dto.js';
 
 const productSelect = {
   id: true,
@@ -115,22 +125,88 @@ export class ProductsService {
     }
   }
 
-  async findAll(query: ListProductsDto = {}): Promise<ProductDto[]> {
-    const where: Prisma.ProductWhereInput = {};
-    if (query.includeInactive !== 'true') where.activo = true;
-    const catId = query.categoryId;
-    if (catId) where.categoriaId = catId;
-    else if (query.sinCategoria === 'true') where.categoriaId = null;
-    if (query.search) {
-      const filter = { contains: query.search, mode: 'insensitive' } as const;
-      where.OR = [{ nombre: filter }, { codigoBarras: filter }];
-    }
+  async findAll(query: ListProductsDto = {}): Promise<PaginatedResponseDto<ProductDto>> {
+    const where = this.buildProductWhere(query);
+
+    const { skip, take } = calculateSkipTake(query);
+    const orderBy = resolvePrismaOrderBy({
+      sortBy: query.sortBy,
+      direction: query.direction,
+      allowedFields: {
+        nombre: 'nombre',
+        name: 'nombre',
+        codigoBarras: 'codigoBarras',
+        barcode: 'codigoBarras',
+        precioVenta: 'precioVenta',
+        price: 'precioVenta',
+        precioCompra: 'precioCompra',
+        cost: 'precioCompra',
+        fechaCreacion: 'createdAt',
+        createdAt: 'createdAt',
+      },
+      defaultOrderBy: { nombre: 'asc' },
+    });
+
+    const [totalRecords, products] = await Promise.all([
+      this.prisma.product.count({ where }),
+      this.prisma.product.findMany({
+        where,
+        orderBy,
+        skip,
+        take,
+        select: productSelect,
+      }),
+    ]);
+
+    const items = await this.withStock(products);
+    return createPaginatedResponse({
+      items,
+      totalRecords,
+      page: query.page,
+      size: query.size,
+    });
+  }
+
+  /**
+   * Consulta todos los productos que cumplen los filtros para exportación,
+   * ordenados alfabéticamente y con existencias derivadas del Kardex.
+   */
+  async findForExport(query: ExportProductsDto = {}): Promise<ProductDto[]> {
+    const where = this.buildProductWhere(query);
+    if (query.stockBajo === 'true') where.existenciaMinima = { not: null };
+
     const products = await this.prisma.product.findMany({
       where,
       orderBy: { nombre: 'asc' },
       select: productSelect,
     });
-    return this.withStock(products);
+
+    const items = await this.withStock(products);
+    if (query.stockBajo !== 'true') return items;
+
+    return items.filter(
+      (item) =>
+        item.existenciaMinima !== null &&
+        new Prisma.Decimal(item.stock).lte(item.existenciaMinima),
+    );
+  }
+
+  private buildProductWhere(
+    query: Pick<
+      ExportProductsDto,
+      'includeInactive' | 'categoryId' | 'sinCategoria' | 'marcaId' | 'search'
+    >,
+  ): Prisma.ProductWhereInput {
+    const where: Prisma.ProductWhereInput = {};
+    if (query.includeInactive !== 'true') where.activo = true;
+    if (query.categoryId) where.categoriaId = query.categoryId;
+    else if (query.sinCategoria === 'true') where.categoriaId = null;
+    if (query.marcaId) where.marcaId = query.marcaId;
+    if (query.search) {
+      const filter = { contains: query.search, mode: 'insensitive' } as const;
+      where.OR = [{ nombre: filter }, { codigoBarras: filter }];
+    }
+    return where;
   }
 
   async findById(id: string): Promise<ProductDto> {
@@ -142,23 +218,44 @@ export class ProductsService {
     return (await this.withStock([product]))[0]!;
   }
 
-  async movements(id: string): Promise<InventoryMovementDto[]> {
+  async movements(
+    id: string,
+    query: PaginationQueryDto = {},
+  ): Promise<PaginatedResponseDto<InventoryMovementDto>> {
     await this.requireProduct(id);
-    const movements = await this.prisma.inventoryMovement.findMany({
-      where: { productoId: id },
-      orderBy: { fechaCreacion: 'desc' },
-      select: {
-        id: true,
-        tipo: true,
-        cambioExistencias: true,
-        costoUnitario: true,
-        tipoReferencia: true,
-        referenciaId: true,
-        notas: true,
-        fechaCreacion: true,
+    const where = { productoId: id };
+    const { skip, take } = calculateSkipTake(query);
+    const orderBy = resolvePrismaOrderBy({
+      sortBy: query.sortBy,
+      direction: query.direction,
+      allowedFields: {
+        fechaCreacion: 'fechaCreacion',
+        createdAt: 'fechaCreacion',
       },
+      defaultOrderBy: { fechaCreacion: 'desc' },
     });
-    return movements.map((movement) => ({
+
+    const [totalRecords, movements] = await Promise.all([
+      this.prisma.inventoryMovement.count({ where }),
+      this.prisma.inventoryMovement.findMany({
+        where,
+        orderBy,
+        skip,
+        take,
+        select: {
+          id: true,
+          tipo: true,
+          cambioExistencias: true,
+          costoUnitario: true,
+          tipoReferencia: true,
+          referenciaId: true,
+          notas: true,
+          fechaCreacion: true,
+        },
+      }),
+    ]);
+
+    const items = movements.map((movement) => ({
       id: movement.id,
       type: movement.tipo,
       quantityChange: movement.cambioExistencias.toFixed(3),
@@ -168,6 +265,13 @@ export class ProductsService {
       notes: movement.notas,
       createdAt: movement.fechaCreacion.toISOString(),
     }));
+
+    return createPaginatedResponse({
+      items,
+      totalRecords,
+      page: query.page,
+      size: query.size,
+    });
   }
 
   async update(

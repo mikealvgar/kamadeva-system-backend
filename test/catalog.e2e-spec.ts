@@ -152,7 +152,7 @@ describe('Catalog HTTP + PostgreSQL', () => {
         .get(base + query)
         .set('Authorization', tokens.seller!)
         .expect(200);
-      const items = (response.body as CategoryResponse[]).filter(({ id }) =>
+      const items = ((response.body.items ?? response.body) as CategoryResponse[]).filter(({ id }) =>
         categoryIds.includes(id),
       );
       expect(items.map(({ id }) => id)).toEqual(

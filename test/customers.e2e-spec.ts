@@ -169,7 +169,7 @@ describe('Customers HTTP + PostgreSQL', () => {
         .get(base + query)
         .set('Authorization', tokens.seller!)
         .expect(200);
-      const items = (response.body as CustomerResponse[]).filter(({ id }) =>
+      const items = ((response.body.items ?? response.body) as CustomerResponse[]).filter(({ id }) =>
         customerIds.includes(id),
       );
       expect(items.map(({ id }) => id)).toEqual(
@@ -203,7 +203,7 @@ describe('Customers HTTP + PostgreSQL', () => {
         .query({ search: ` ${search} ` })
         .set('Authorization', tokens.seller!)
         .expect(200);
-      expect((response.body as CustomerResponse[]).map(({ id }) => id)).toEqual([
+      expect(((response.body.items ?? response.body) as CustomerResponse[]).map(({ id }) => id)).toEqual([
         customer.id,
       ]);
     }
@@ -217,19 +217,19 @@ describe('Customers HTTP + PostgreSQL', () => {
       .query({ search: 'unique CONTACT' })
       .set('Authorization', tokens.admin!)
       .expect(200);
-    expect(absent.body).toEqual([]);
+    expect(absent.body.items ?? absent.body).toEqual([]);
     const included = await http()
       .get(base)
       .query({ search: 'unique CONTACT', includeInactive: 'true' })
       .set('Authorization', tokens.admin!)
       .expect(200);
-    expect(included.body).toHaveLength(1);
+    expect(included.body.items ?? included.body).toHaveLength(1);
     const empty = await http()
       .get(base)
       .query({ search: randomUUID() })
       .set('Authorization', tokens.admin!)
       .expect(200);
-    expect(empty.body).toEqual([]);
+    expect(empty.body.items ?? empty.body).toEqual([]);
   });
 
   it('updates specified fields, preserves creation time and clears optional contacts', async () => {
@@ -420,7 +420,7 @@ describe('Customers HTTP + PostgreSQL', () => {
       .get(base)
       .set('Authorization', tokens.seller!)
       .expect(200);
-    expect(response.body).toEqual(
+    expect(response.body.items ?? response.body).toEqual(
       expect.arrayContaining([expect.objectContaining({ id: initial.id })]),
     );
     await http()

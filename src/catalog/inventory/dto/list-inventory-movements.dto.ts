@@ -1,8 +1,9 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEnum, IsISO8601, IsOptional, IsUUID } from 'class-validator';
 import { InventoryMovementType } from '../../../generated/prisma/client.js';
+import { PaginationQueryDto } from '../../../common/dto/pagination-query.dto.js';
 
-export class ListInventoryMovementsDto {
+export class ListInventoryMovementsDto extends PaginationQueryDto {
   @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()
   @IsUUID('4')

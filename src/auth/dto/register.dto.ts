@@ -1,8 +1,7 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsByteLength,
   IsEmail,
-  IsNotEmpty,
   IsOptional,
   IsString,
   IsUUID,
@@ -12,37 +11,94 @@ import {
 import { Transform } from 'class-transformer';
 
 export class RegisterDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: 'Juan Perez',
   })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(200)
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim() : value,
+  @Transform(
+    ({
+      value,
+      obj,
+    }: {
+      value: unknown;
+      obj?: Record<string, unknown>;
+    }) => {
+      const val = value ?? obj?.nombre;
+      return typeof val === 'string' ? val.trim() : val;
+    },
   )
-  name!: string;
+  name?: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
+    example: 'Juan Perez',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  nombre?: string;
+
+  @ApiPropertyOptional({
     example: 'juan@kamadeva.com',
   })
+  @IsOptional()
   @IsEmail()
   @MaxLength(254)
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  @Transform(
+    ({
+      value,
+      obj,
+    }: {
+      value: unknown;
+      obj?: Record<string, unknown>;
+    }) => {
+      const val = value ?? obj?.correo;
+      return typeof val === 'string' ? val.trim().toLowerCase() : val;
+    },
   )
-  email!: string;
+  email?: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
+    example: 'juan@kamadeva.com',
+  })
+  @IsOptional()
+  @IsEmail()
+  @MaxLength(254)
+  correo?: string;
+
+  @ApiPropertyOptional({
     example: 'Password123!',
     minLength: 8,
   })
+  @IsOptional()
   @IsString()
   @MinLength(8)
   @IsByteLength(0, 72)
-  password!: string;
+  @Transform(
+    ({
+      value,
+      obj,
+    }: {
+      value: unknown;
+      obj?: Record<string, unknown>;
+    }) => {
+      return value ?? obj?.contrasena;
+    },
+  )
+  password?: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
+    example: 'Password123!',
+    minLength: 8,
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(8)
+  @IsByteLength(0, 72)
+  contrasena?: string;
+
+  @ApiPropertyOptional({
     example: '8112345678',
     required: false,
   })
@@ -54,7 +110,7 @@ export class RegisterDto {
   )
   telefono?: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     format: 'uuid',
     required: false,
   })

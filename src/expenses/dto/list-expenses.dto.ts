@@ -4,16 +4,18 @@ import {
   IsIn,
   IsInt,
   IsISO8601,
+  IsOptional,
   IsUUID,
   Max,
   Min,
   ValidateIf,
 } from 'class-validator';
+import { PaginationQueryDto } from '../../common/dto/pagination-query.dto.js';
 
 const optional = (_object: unknown, value: unknown): boolean =>
   value !== undefined;
 
-export class ListExpensesDto {
+export class ListExpensesDto extends PaginationQueryDto {
   @ApiPropertyOptional({
     format: 'date-time',
     description: 'Sobre spentAt, inclusivo',
@@ -58,16 +60,9 @@ export class ListExpensesDto {
   @IsUUID()
   cashClosureId?: string;
 
-  @ApiPropertyOptional({ default: 1, minimum: 1 })
+  @ApiPropertyOptional({ description: 'Alias para size', minimum: 1, maximum: 100 })
   @Type(() => Number)
-  @ValidateIf(optional)
-  @IsInt()
-  @Min(1)
-  page?: number;
-
-  @ApiPropertyOptional({ default: 20, minimum: 1, maximum: 100 })
-  @Type(() => Number)
-  @ValidateIf(optional)
+  @IsOptional()
   @IsInt()
   @Min(1)
   @Max(100)

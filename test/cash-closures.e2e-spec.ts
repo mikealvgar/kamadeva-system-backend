@@ -536,7 +536,7 @@ describe('Cash closures HTTP + PostgreSQL', () => {
         .set('Authorization', tokens.seller)
         .expect(200)
     ).body as CashClosurePageResponse;
-    expect(page).toMatchObject({ total: 2, pagina: 1, limite: 1 });
+    expect(page).toMatchObject({ total: 2, pagina: 0, limite: 1 });
     expect(page.datos.map(({ id }) => id)).toEqual([second.id]);
     const only = (
       await http()
@@ -548,7 +548,7 @@ describe('Cash closures HTTP + PostgreSQL', () => {
     expect(only.datos.map(({ id }) => id)).toEqual([first.id]);
     for (const query of [
       { startDate: second.fechaCierre, endDate: first.fechaCierre },
-      { page: 0 },
+      { page: -1 },
       { pageSize: 101 },
       { unknown: 1 },
     ]) {

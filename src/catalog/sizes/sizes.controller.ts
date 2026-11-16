@@ -32,6 +32,7 @@ import { ListSizesDto } from './dto/list-sizes.dto.js';
 import { SizeDto } from './dto/size.dto.js';
 import { UpdateSizeDto } from './dto/update-size.dto.js';
 import { SizesService } from './sizes.service.js';
+import { PaginatedResponseDto } from '../../common/dto/paginated-response.dto.js';
 
 @ApiTags('catalogo/tallas')
 @ApiBearerAuth()
@@ -53,9 +54,9 @@ export class SizesController {
 
   @Get()
   @Roles('ADMIN', 'VENDEDOR')
-  @ApiOkResponse({ type: [SizeDto] })
-  findAll(@Query() query: ListSizesDto): Promise<SizeDto[]> {
-    return this.sizes.findAll(query.includeInactive === 'true');
+  @ApiOkResponse({ type: PaginatedResponseDto })
+  findAll(@Query() query: ListSizesDto): Promise<PaginatedResponseDto<SizeDto>> {
+    return this.sizes.findAll(query);
   }
 
   @Get(':id')

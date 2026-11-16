@@ -9,6 +9,15 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import type { CategoryDto } from './dto/category.dto.js';
 import type { CreateCategoryDto } from './dto/create-category.dto.js';
 import type { UpdateCategoryDto } from './dto/update-category.dto.js';
+import type { ListCategoriesDto } from './dto/list-categories.dto.js';
+import {
+  calculateSkipTake,
+  resolvePrismaOrderBy,
+} from '../common/pagination/prisma-pagination.helper.js';
+import {
+  createPaginatedResponse,
+  PaginatedResponseDto,
+} from '../common/dto/paginated-response.dto.js';
 
 export function normalizeCategoryDescription(desc: string): string {
   return desc.trim().replace(/\s+/g, ' ').toUpperCase();
@@ -36,12 +45,46 @@ export class CategoriesService {
     }
   }
 
-  async findAll(includeInactive = false): Promise<CategoryDto[]> {
-    const records = await this.prisma.category.findMany({
-      where: includeInactive ? {} : { activo: true },
-      orderBy: { descripcion: 'asc' },
+  async findAll(
+    queryOrIncludeInactive: ListCategoriesDto | boolean = false,
+  ): Promise<PaginatedResponseDto<CategoryDto>> {
+    const query: ListCategoriesDto =
+      typeof queryOrIncludeInactive === 'boolean'
+        ? { includeInactive: queryOrIncludeInactive ? 'true' : 'false' }
+        : queryOrIncludeInactive ?? {};
+
+    const includeInactive = query.includeInactive === 'true';
+    const where = includeInactive ? {} : { activo: true };
+
+    const { skip, take } = calculateSkipTake(query);
+    const orderBy = resolvePrismaOrderBy({
+      sortBy: query.sortBy,
+      direction: query.direction,
+      allowedFields: {
+        descripcion: 'descripcion',
+        name: 'descripcion',
+        fechaCreacion: 'fechaCreacion',
+        createdAt: 'fechaCreacion',
+      },
+      defaultOrderBy: { descripcion: 'asc' },
     });
-    return records.map((r) => this.mapToDto(r));
+
+    const [totalRecords, records] = await Promise.all([
+      this.prisma.category.count({ where }),
+      this.prisma.category.findMany({
+        where,
+        orderBy,
+        skip,
+        take,
+      }),
+    ]);
+
+    return createPaginatedResponse({
+      items: records.map((r) => this.mapToDto(r)),
+      totalRecords,
+      page: query.page,
+      size: query.size,
+    });
   }
 
   async findById(id: string): Promise<CategoryDto> {

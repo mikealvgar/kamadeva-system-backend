@@ -8,6 +8,7 @@ describe('SizesService', () => {
     size: {
       create: vi.fn(),
       findMany: vi.fn(),
+      count: vi.fn(),
       findUnique: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
@@ -33,6 +34,7 @@ describe('SizesService', () => {
     prisma.size.create.mockResolvedValue(sizeRecord);
     prisma.size.update.mockResolvedValue(sizeRecord);
     prisma.size.findUnique.mockResolvedValue(sizeRecord);
+    prisma.size.count.mockResolvedValue(1);
     prisma.size.findMany.mockResolvedValue([sizeRecord]);
   });
 
@@ -44,15 +46,21 @@ describe('SizesService', () => {
   });
 
   it('lists active sizes by default ordered by nombre', async () => {
-    await service.findAll();
+    const res = await service.findAll();
+    expect(res.items).toEqual([sizeDto]);
+    expect(res.totalRecords).toBe(1);
     expect(prisma.size.findMany).toHaveBeenCalledWith({
       where: { activo: true },
       orderBy: { nombre: 'asc' },
+      skip: 0,
+      take: 10,
     });
     await service.findAll(true);
     expect(prisma.size.findMany).toHaveBeenLastCalledWith({
       where: {},
       orderBy: { nombre: 'asc' },
+      skip: 0,
+      take: 10,
     });
   });
 

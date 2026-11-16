@@ -586,7 +586,7 @@ describe('Sales HTTP + PostgreSQL', () => {
 
     const all = await list(mine);
     expect(all.datos.map(({ id }) => id)).toEqual([byAdmin.id, cash.id]);
-    expect(all).toMatchObject({ total: 2, pagina: 1, limite: 20 });
+    expect(all).toMatchObject({ total: 2, pagina: 0, limite: 10 });
     expect(all.datos[1]).toEqual({
       id: cash.id,
       folio: cash.folio,
@@ -612,8 +612,8 @@ describe('Sales HTTP + PostgreSQL', () => {
     });
     expect(cardOnly.datos.map(({ id }) => id)).toEqual([card.id]);
 
-    const page2 = await list({ ...mine, page: 2, pageSize: 1 });
-    expect(page2).toMatchObject({ total: 2, pagina: 2, limite: 1 });
+    const page2 = await list({ ...mine, page: 1, pageSize: 1 });
+    expect(page2).toMatchObject({ total: 2, pagina: 1, limite: 1 });
     expect(page2.datos.map(({ id }) => id)).toEqual([cash.id]);
 
     const after = await list({ ...mine, startDate: byAdmin.fechaCreacion });
@@ -624,7 +624,7 @@ describe('Sales HTTP + PostgreSQL', () => {
     for (const query of [
       { startDate: '2026-10-02T00:00:00Z', endDate: '2026-10-01T00:00:00Z' },
       { startDate: 'ayer' },
-      { page: 0 },
+      { page: -1 },
       { page: 1.5 },
       { pageSize: 101 },
       { status: 'DONE' },

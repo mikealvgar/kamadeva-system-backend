@@ -48,6 +48,7 @@ describe('CustomersService', () => {
       findFirst: vi.fn(),
       findUnique: vi.fn(),
       findMany: vi.fn(),
+      count: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
     },
@@ -65,6 +66,7 @@ describe('CustomersService', () => {
     prisma.customer.create.mockResolvedValue(customer);
     prisma.customer.findUnique.mockResolvedValue(customer);
     prisma.customer.findMany.mockResolvedValue([customer]);
+    prisma.customer.count.mockResolvedValue(1);
     prisma.customer.update.mockResolvedValue(customer);
     prisma.$transaction.mockImplementation(
       (operation: (tx: typeof prisma) => Promise<unknown>) => operation(prisma),
@@ -104,10 +106,18 @@ describe('CustomersService', () => {
   it.each([undefined, 'false', 'true'] as const)(
     'lists by name with includeInactive=%s',
     async (includeInactive) => {
-      expect(await service.findAll({ includeInactive })).toEqual([dto]);
+      const result = await service.findAll({ includeInactive });
+      expect(result.items).toEqual([dto]);
+      expect(result.totalRecords).toBe(1);
+      expect(result.page).toBe(0);
+      expect(result.size).toBe(10);
+      expect(result.totalPages).toBe(1);
+      expect(result.isLastPage).toBe(true);
       expect(prisma.customer.findMany).toHaveBeenCalledWith({
         where: includeInactive === 'true' ? {} : { activo: true },
         orderBy: { nombre: 'asc' },
+        skip: 0,
+        take: 10,
         select,
       });
     },

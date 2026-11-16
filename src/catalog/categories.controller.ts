@@ -32,6 +32,7 @@ import { CategoryDto } from './dto/category.dto.js';
 import { CreateCategoryDto } from './dto/create-category.dto.js';
 import { UpdateCategoryDto } from './dto/update-category.dto.js';
 import { ListCategoriesDto } from './dto/list-categories.dto.js';
+import { PaginatedResponseDto } from '../common/dto/paginated-response.dto.js';
 
 @ApiTags('catalogo/categorias')
 @ApiBearerAuth()
@@ -53,9 +54,9 @@ export class CategoriesController {
 
   @Get()
   @Roles('ADMIN', 'VENDEDOR')
-  @ApiOkResponse({ type: [CategoryDto] })
-  findAll(@Query() query: ListCategoriesDto): Promise<CategoryDto[]> {
-    return this.categories.findAll(query.includeInactive === 'true');
+  @ApiOkResponse({ type: PaginatedResponseDto })
+  findAll(@Query() query: ListCategoriesDto): Promise<PaginatedResponseDto<CategoryDto>> {
+    return this.categories.findAll(query);
   }
 
   @Get(':id')

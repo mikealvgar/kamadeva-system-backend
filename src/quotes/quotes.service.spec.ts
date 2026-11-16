@@ -75,6 +75,7 @@ describe('QuotesService', () => {
       findUnique: vi.fn(),
       findFirst: vi.fn(),
       findMany: vi.fn(),
+      count: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
@@ -113,6 +114,7 @@ describe('QuotesService', () => {
     tx.quote.findFirst.mockResolvedValue(null);
     tx.quote.findUnique.mockResolvedValue(quote());
     tx.quote.findMany.mockResolvedValue([quote()]);
+    tx.quote.count.mockResolvedValue(1);
     tx.quote.create.mockResolvedValue(quote());
     tx.quote.update.mockResolvedValue(quote());
     tx.quoteItem.deleteMany.mockResolvedValue({ count: 1 });
@@ -397,12 +399,12 @@ describe('QuotesService', () => {
   );
 
   it('combines list filters and sorts newest first', async () => {
-    expect(
-      await service.findAll({
-        status: 'DRAFT',
-        customerId: 'customer',
-      }),
-    ).toHaveLength(1);
+    const res = await service.findAll({
+      status: 'DRAFT',
+      customerId: 'customer',
+    });
+    expect(res.items).toHaveLength(1);
+    expect(res.totalRecords).toBe(1);
     expect(tx.quote.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
@@ -412,8 +414,9 @@ describe('QuotesService', () => {
         orderBy: { fechaCreacion: 'desc' },
       }),
     );
+    tx.quote.count.mockResolvedValue(0);
     tx.quote.findMany.mockResolvedValue([]);
-    expect(await service.findAll()).toEqual([]);
+    expect((await service.findAll()).items).toEqual([]);
   });
 
   it.each(['DRAFT', 'SENT'] as const)(

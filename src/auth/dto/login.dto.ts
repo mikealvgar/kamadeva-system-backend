@@ -1,7 +1,8 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsByteLength,
   IsEmail,
+  IsOptional,
   IsString,
   MaxLength,
   MinLength,
@@ -9,21 +10,57 @@ import {
 import { Transform } from 'class-transformer';
 
 export class LoginDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: 'juan@kamadeva.com',
   })
+  @IsOptional()
   @IsEmail()
   @MaxLength(254)
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  @Transform(
+    ({
+      value,
+      obj,
+    }: {
+      value: unknown;
+      obj?: Record<string, unknown>;
+    }) => {
+      const val = value ?? obj?.correo;
+      return typeof val === 'string' ? val.trim().toLowerCase() : val;
+    },
   )
-  email: string;
+  email?: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
+    example: 'juan@kamadeva.com',
+  })
+  @IsOptional()
+  @IsEmail()
+  correo?: string;
+
+  @ApiPropertyOptional({
     example: 'Password123!',
   })
+  @IsOptional()
   @IsString()
   @MinLength(8)
   @IsByteLength(0, 72)
-  password: string;
+  @Transform(
+    ({
+      value,
+      obj,
+    }: {
+      value: unknown;
+      obj?: Record<string, unknown>;
+    }) => {
+      return value ?? obj?.contrasena;
+    },
+  )
+  password?: string;
+
+  @ApiPropertyOptional({
+    example: 'Password123!',
+  })
+  @IsOptional()
+  @IsString()
+  contrasena?: string;
 }

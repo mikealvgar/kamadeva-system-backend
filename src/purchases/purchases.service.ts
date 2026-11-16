@@ -12,6 +12,10 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import type { CreatePurchaseDto } from './dto/create-purchase.dto.js';
 import type { ListPurchasesDto } from './dto/list-purchases.dto.js';
 import type { PurchaseDto, PurchasePageDto } from './dto/purchase.dto.js';
+import {
+  calculateSkipTake,
+  resolvePrismaOrderBy,
+} from '../common/pagination/prisma-pagination.helper.js';
 
 const purchaseSelect = {
   id: true,
@@ -188,8 +192,8 @@ export class PurchasesService {
   }
 
   async findAll(query: ListPurchasesDto = {}): Promise<PurchasePageDto> {
-    const pagina = query.pagina ?? 1;
-    const limite = query.limite ?? 50;
+    const page = query.page ?? query.pagina ?? 0;
+    const size = query.size ?? query.limite ?? 10;
     const where: Prisma.PurchaseWhereInput = {};
     if (query.proveedorId) where.proveedorId = query.proveedorId;
     if (query.fechaInicio || query.fechaFin) {
@@ -198,17 +202,50 @@ export class PurchasesService {
         ...(query.fechaFin ? { lte: new Date(query.fechaFin) } : {}),
       };
     }
+
+    const { skip, take } = calculateSkipTake({ page, size });
+    const orderBy = resolvePrismaOrderBy({
+      sortBy: query.sortBy,
+      direction: query.direction,
+      allowedFields: {
+        fechaRecepcion: 'fechaRecepcion',
+        fechaCreacion: 'fechaCreacion',
+        createdAt: 'fechaCreacion',
+        total: 'total',
+      },
+      defaultOrderBy: [{ fechaRecepcion: 'desc' }, { id: 'desc' }],
+    });
+
     const [records, total] = await Promise.all([
       this.prisma.purchase.findMany({
         where,
-        orderBy: [{ fechaRecepcion: 'desc' }, { id: 'desc' }],
-        skip: (pagina - 1) * limite,
-        take: limite,
+        orderBy,
+        skip,
+        take,
         select: purchaseSelect,
       }),
       this.prisma.purchase.count({ where }),
     ]);
-    return { datos: records.map(toDto), pagina, limite, total };
+
+    const items = records.map(toDto);
+    const totalPages = total === 0 ? 0 : Math.ceil(total / size);
+    const isLastPage = totalPages === 0 || page >= totalPages - 1;
+
+    return {
+      items,
+      data: items,
+      datos: items,
+      page,
+      pagina: page,
+      size,
+      limite: size,
+      totalRecords: total,
+      totalElements: total,
+      total,
+      totalPages,
+      isLastPage,
+      lastPage: isLastPage,
+    };
   }
 
   async findById(id: string): Promise<PurchaseDto> {

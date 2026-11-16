@@ -197,20 +197,22 @@ describe('Sizes HTTP + PostgreSQL', () => {
       .send({ activo: false })
       .expect(200);
 
-    const active = (
+    const activeRes = (
       await http().get(base).set('Authorization', tokens.seller!).expect(200)
-    ).body as SizeDto[];
+    ).body;
+    const active = (activeRes.items ?? activeRes) as SizeDto[];
     const ids = active.map(({ id }) => id);
     expect(ids).not.toContain(hidden.id);
     expect(ids).toContain(s1.id);
     expect(ids).toContain(s2.id);
 
-    const all = (
+    const allRes = (
       await http()
         .get(`${base}?includeInactive=true`)
         .set('Authorization', tokens.seller!)
         .expect(200)
-    ).body as SizeDto[];
+    ).body;
+    const all = (allRes.items ?? allRes) as SizeDto[];
     expect(all.map(({ id }) => id)).toContain(hidden.id);
 
     const getRes = await http()

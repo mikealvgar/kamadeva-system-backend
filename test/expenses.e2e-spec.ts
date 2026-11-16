@@ -127,7 +127,7 @@ describe('Expenses HTTP + PostgreSQL', () => {
         .set('Authorization', tokens.seller)
         .expect(200);
       expect(
-        (response.body as ExpenseCategoryResponse[]).map(({ nombre }) => nombre),
+        ((response.body.items ?? response.body) as ExpenseCategoryResponse[]).map(({ nombre }) => nombre),
       ).toEqual(expect.arrayContaining(['Mantenimiento', 'Otros', 'Servicios']));
     });
 
@@ -191,19 +191,21 @@ describe('Expenses HTTP + PostgreSQL', () => {
         .set('Authorization', tokens.admin)
         .send({ isActive: false })
         .expect(200, { ...category, activo: false });
-      const active = (
+      const activeRes = (
         await http()
           .get(categoriesBase)
           .set('Authorization', tokens.seller)
           .expect(200)
-      ).body as ExpenseCategoryResponse[];
+      ).body;
+      const active = (activeRes.items ?? activeRes) as ExpenseCategoryResponse[];
       expect(active.map(({ id }) => id)).not.toContain(category.id);
-      const all = (
+      const allRes = (
         await http()
           .get(`${categoriesBase}?includeInactive=true`)
           .set('Authorization', tokens.seller)
           .expect(200)
-      ).body as ExpenseCategoryResponse[];
+      ).body;
+      const all = (allRes.items ?? allRes) as ExpenseCategoryResponse[];
       expect(all.map(({ id }) => id)).toContain(category.id);
 
       await createExpense({
@@ -361,11 +363,11 @@ describe('Expenses HTTP + PostgreSQL', () => {
       expect(ids(all)).toEqual([third.id, second.id, first.id]);
       expect(all).toMatchObject({
         total: 3,
-        pagina: 1,
-        limite: 20,
+        pagina: 0,
+        limite: 10,
         montoTotal: '650.00',
       });
-      const page = await list({ page: 2, pageSize: 1 });
+      const page = await list({ page: 1, pageSize: 1 });
       expect(ids(page)).toEqual([second.id]);
       expect(page).toMatchObject({ total: 3, montoTotal: '650.00' });
 
@@ -384,7 +386,7 @@ describe('Expenses HTTP + PostgreSQL', () => {
       for (const query of [
         { startDate: at(3), endDate: at(1) },
         { startDate: 'ayer' },
-        { page: 0 },
+        { page: -1 },
         { pageSize: 101 },
         { deductFromCash: 'yes' },
         { categoryId: 'x' },

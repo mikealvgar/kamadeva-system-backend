@@ -7,6 +7,10 @@ export interface QuoteQueryFilter {
   status?: string;
   customerId?: string;
   search?: string;
+  page?: number;
+  size?: number;
+  sortBy?: string;
+  direction?: 'ASC' | 'DESC' | 'asc' | 'desc';
 }
 
 export interface QuoteRepositoryPort {

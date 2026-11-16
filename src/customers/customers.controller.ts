@@ -32,6 +32,7 @@ import { CustomerDto } from './dto/customer.dto.js';
 import { CreateCustomerDto } from './dto/create-customer.dto.js';
 import { UpdateCustomerDto } from './dto/update-customer.dto.js';
 import { ListCustomersDto } from './dto/list-customers.dto.js';
+import { PaginatedResponseDto } from '../common/dto/paginated-response.dto.js';
 
 @ApiTags('clientes')
 @ApiBearerAuth()
@@ -52,8 +53,8 @@ export class CustomersController {
 
   @Get()
   @Roles('ADMIN', 'VENDEDOR')
-  @ApiOkResponse({ type: [CustomerDto] })
-  findAll(@Query() query: ListCustomersDto): Promise<CustomerDto[]> {
+  @ApiOkResponse({ type: PaginatedResponseDto })
+  findAll(@Query() query: ListCustomersDto): Promise<PaginatedResponseDto<CustomerDto>> {
     return this.customers.findAll(query);
   }
 

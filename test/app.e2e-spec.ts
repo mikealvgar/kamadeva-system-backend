@@ -597,10 +597,10 @@ describe('Auth HTTP + PostgreSQL', () => {
         },
       )}`;
       const response = await http()
-        .get('/api/usuarios?busqueda=Admin&activo=true&pagina=1&limite=1')
+        .get('/api/usuarios?busqueda=Admin&activo=true&pagina=0&limite=1')
         .set('Authorization', auth)
         .expect(200);
-      expect(response.body).toMatchObject({ pagina: 1, limite: 1, total: 1 });
+      expect(response.body).toMatchObject({ pagina: 0, limite: 1, total: 1 });
       expect(response.body.datos[0]).toMatchObject({
         nombre: 'Admin listado',
         correo: adminUser.email,

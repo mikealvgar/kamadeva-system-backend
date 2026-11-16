@@ -48,6 +48,8 @@ import { ProductDto } from './dto/product.dto.js';
 import { InventoryMovementDto } from './dto/inventory-movement.dto.js';
 import { ProductsService } from './products.service.js';
 import { ProductImageSizeFilter } from './product-image-size.filter.js';
+import { PaginatedResponseDto } from '../../common/dto/paginated-response.dto.js';
+import { PaginationQueryDto } from '../../common/dto/pagination-query.dto.js';
 
 const imageLimit = 5 * 1024 * 1024;
 const imageTypes = /^image\/(jpeg|png|webp)$/;
@@ -78,8 +80,8 @@ export class ProductsController {
 
   @Get()
   @Roles('ADMIN', 'VENDEDOR')
-  @ApiOkResponse({ type: [ProductDto] })
-  findAll(@Query() query: ListProductsDto): Promise<ProductDto[]> {
+  @ApiOkResponse({ type: PaginatedResponseDto })
+  findAll(@Query() query: ListProductsDto): Promise<PaginatedResponseDto<ProductDto>> {
     return this.products.findAll(query);
   }
 
@@ -97,12 +99,13 @@ export class ProductsController {
   @Get(':id/movimientos')
   @Roles('ADMIN', 'VENDEDOR')
   @ApiParam({ name: 'id', format: 'uuid' })
-  @ApiOkResponse({ type: [InventoryMovementDto] })
+  @ApiOkResponse({ type: PaginatedResponseDto })
   @ApiNotFoundResponse({ description: 'Producto inexistente' })
   movements(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
-  ): Promise<InventoryMovementDto[]> {
-    return this.products.movements(id);
+    @Query() query: PaginationQueryDto,
+  ): Promise<PaginatedResponseDto<InventoryMovementDto>> {
+    return this.products.movements(id, query);
   }
 
   @Patch(':id')

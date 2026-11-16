@@ -61,6 +61,8 @@ export class SalesService {
         'La fecha inicial no puede ser posterior a la final',
       );
     }
+    const page = query.page ?? 0;
+    const size = query.size ?? query.pageSize ?? 10;
     return this.listSales.execute({
       startDate,
       endDate,
@@ -69,8 +71,11 @@ export class SalesService {
       customerId: query.customerId,
       paymentMethod: query.paymentMethod,
       folio: query.folio,
-      page: query.page ?? 1,
-      pageSize: query.pageSize ?? 20,
+      page,
+      size,
+      pageSize: size,
+      sortBy: query.sortBy,
+      direction: query.direction,
     });
   }
 
