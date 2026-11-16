@@ -1,0 +1,22 @@
+-- Renombrar tablas de base de datos a español
+ALTER TABLE "users" RENAME TO "usuarios";
+ALTER TABLE "refresh_tokens" RENAME TO "tokens_renovacion";
+ALTER TABLE "categories" RENAME TO "categorias";
+ALTER TABLE "brands" RENAME TO "marcas";
+ALTER TABLE "sizes" RENAME TO "tallas";
+ALTER TABLE "products" RENAME TO "productos";
+ALTER TABLE "customers" RENAME TO "clientes";
+ALTER TABLE "inventory_movements" RENAME TO "movimientos_inventario";
+ALTER TABLE "purchases" RENAME TO "compras";
+ALTER TABLE "purchase_items" RENAME TO "renglones_compra";
+ALTER TABLE "quotes" RENAME TO "cotizaciones";
+ALTER TABLE "quote_items" RENAME TO "renglones_cotizacion";
+ALTER TABLE "sales" RENAME TO "ventas";
+ALTER TABLE "sale_items" RENAME TO "renglones_venta";
+ALTER TABLE "idempotency_keys" RENAME TO "claves_idempotencia";
+ALTER TABLE "expense_categories" RENAME TO "categorias_gastos";
+ALTER TABLE "expenses" RENAME TO "gastos";
+ALTER TABLE "cash_closures" RENAME TO "cortes_caja";
+ALTER TABLE "cash_closure_adjustments" RENAME TO "ajustes_corte_caja";
+ALTER TABLE "business_config" RENAME TO "configuracion_negocio";
+ALTER TABLE "providers" RENAME TO "proveedores";
