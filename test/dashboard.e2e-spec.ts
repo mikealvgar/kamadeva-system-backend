@@ -136,7 +136,7 @@ describe('Dashboard HTTP + PostgreSQL', () => {
     }
     categoryId = (
       await prisma.category.create({
-        data: { descripcion: `Dashboard ${randomUUID().slice(0, 8)}` },
+        data: { nombre: `Dashboard ${randomUUID().slice(0, 8)}` },
       })
     ).id;
     expenseCategoryId = (

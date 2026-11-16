@@ -23,6 +23,7 @@ const economicSelect = {
   notas: true,
   fechaCreacion: true,
   fechaActualizacion: true,
+  clienteNombre: true,
   cliente: { select: customerSelect },
 } as const;
 
@@ -94,7 +95,8 @@ export function quoteDto(quote: QuoteRecord): QuoteDto {
     id: quote.id,
     folio: folioFormatted,
     status: quote.estado,
-    customer: customerDto(quote.cliente),
+    customer: quote.cliente ? customerDto(quote.cliente) : null,
+    customerName: quote.clienteNombre ?? quote.cliente?.nombre ?? null,
     expiresAt: quote.fechaVencimiento?.toISOString() ?? null,
     canPay:
       (quote.estado === 'DRAFT' || quote.estado === 'SENT') &&

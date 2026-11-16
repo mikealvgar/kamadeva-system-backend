@@ -123,6 +123,8 @@ describe('AuthService', () => {
         telefono: null,
         rolId: 'admin-id',
         activo: true,
+        seccionesPermitidas: [],
+        permisosTemporales: [],
       },
       include: { rol: true },
     });
@@ -155,6 +157,71 @@ describe('AuthService', () => {
     expect(jwt.signAsync).toHaveBeenCalledWith(
       expect.objectContaining({ roles: ['VENDEDOR'] }),
     );
+  });
+
+  it('rejects assigning permissions on register without an active ADMIN token', async () => {
+    await expect(
+      service.register({
+        ...dto,
+        seccionesPermitidas: ['products.view'],
+      }),
+    ).rejects.toMatchObject({
+      status: 403,
+      message: 'Solo un administrador puede asignar permisos',
+    });
+    expect(tx.user.create).not.toHaveBeenCalled();
+  });
+
+  it('persists and returns seccionesPermitidas and permisosTemporales when an ADMIN registers an employee', async () => {
+    const adminId = '11111111-1111-4111-8111-111111111111';
+    jwt.verifyAsync.mockResolvedValue({ sub: adminId });
+    users.findById.mockResolvedValue({
+      id: adminId,
+      activo: true,
+      rol: { id: 'admin-role', nombre: 'ADMIN', activo: true },
+    });
+    tx.user.count.mockResolvedValue(1);
+    tx.role.findUnique.mockResolvedValue({
+      id: 'seller-id',
+      nombre: 'VENDEDOR',
+      activo: true,
+    });
+    const temp = [
+      {
+        permission: 'products.deactivate',
+        expiresAt: '2026-11-16T22:00:00.000Z',
+        grantedBy: adminId,
+      },
+    ];
+    tx.user.create.mockResolvedValue({
+      ...user,
+      rolId: 'seller-id',
+      rol: { id: 'seller-id', nombre: 'VENDEDOR', activo: true },
+      seccionesPermitidas: ['products.view', 'products.create'],
+      permisosTemporales: temp,
+    });
+
+    const result = await service.register(
+      {
+        ...dto,
+        seccionesPermitidas: ['products.view', 'products.create', 'products.view'],
+        permisosTemporales: temp,
+      },
+      'Bearer admin-token',
+    );
+
+    expect(tx.user.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        seccionesPermitidas: ['products.view', 'products.create'],
+        permisosTemporales: temp,
+      }),
+      include: { rol: true },
+    });
+    expect(result.user.seccionesPermitidas).toEqual([
+      'products.view',
+      'products.create',
+    ]);
+    expect(result.user.permisosTemporales).toEqual(temp);
   });
 
   it('retries serialization conflicts with a fresh user count', async () => {

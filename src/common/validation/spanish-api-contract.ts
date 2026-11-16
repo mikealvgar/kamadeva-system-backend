@@ -173,29 +173,17 @@ function mapResponseKeys(value: unknown, names: Record<string, string>): unknown
 
   const mapped: Record<string, unknown> = {};
 
+  const isPaginated =
+    'data' in value &&
+    'current_page' in value &&
+    'total_items' in value &&
+    'total_pages' in value;
+
   for (const [key, child] of Object.entries(value)) {
-    const mappedKey = names[key] ?? key;
-    mapped[mappedKey] = mapResponseKeys(child, names);
-  }
-
-  // Preserve standard pagination envelope properties if this is a paginated response
-  if ('totalRecords' in value || 'totalPages' in value || 'isLastPage' in value) {
-    const val = value as Record<string, unknown>;
-    if (val.items !== undefined) mapped.items = mapResponseKeys(val.items, names);
-    if (val.data !== undefined) mapped.data = mapResponseKeys(val.data, names);
-    if (val.page !== undefined) mapped.page = val.page;
-    if (val.size !== undefined) mapped.size = val.size;
-    if (val.totalRecords !== undefined) mapped.totalRecords = val.totalRecords;
-    if (val.totalElements !== undefined) mapped.totalElements = val.totalElements;
-    if (val.totalPages !== undefined) mapped.totalPages = val.totalPages;
-    if (val.isLastPage !== undefined) mapped.isLastPage = val.isLastPage;
-    if (val.lastPage !== undefined) mapped.lastPage = val.lastPage;
-
-    // Spanish compatibility fields
-    if (val.items !== undefined) mapped.datos = mapResponseKeys(val.items, names);
-    if (val.page !== undefined) mapped.pagina = val.page;
-    if (val.size !== undefined) mapped.limite = val.size;
-    if (val.totalRecords !== undefined) mapped.total = val.totalRecords;
+    const mappedKey =
+      isPaginated && key === 'data' ? 'data' : (names[key] ?? key);
+    mapped[mappedKey] =
+      key === 'permisosTemporales' ? child : mapResponseKeys(child, names);
   }
 
   return mapped;
@@ -314,22 +302,26 @@ export function translateOpenApiSchemas(document: object): void {
     paths?: Record<string, Record<string, unknown>>;
   };
   const components = openApi.components;
-  for (const value of Object.values(components?.schemas ?? {})) {
+  for (const [schemaName, value] of Object.entries(components?.schemas ?? {})) {
     if (!value || typeof value !== 'object') continue;
     const schema = value as {
       properties?: Record<string, unknown>;
       required?: string[];
     };
+    const isPaginatedSchema =
+      schemaName === 'PaginatedResponseDto' || schemaName.endsWith('PageDto');
     if (schema.properties) {
       schema.properties = Object.fromEntries(
         Object.entries(schema.properties).map(([key, property]) => [
-          publicNames[key] ?? key,
+          isPaginatedSchema && key === 'data' ? 'data' : (publicNames[key] ?? key),
           property,
         ]),
       );
     }
     if (schema.required)
-      schema.required = schema.required.map((key) => publicNames[key] ?? key);
+      schema.required = schema.required.map((key) =>
+        isPaginatedSchema && key === 'data' ? 'data' : (publicNames[key] ?? key),
+      );
   }
   for (const path of Object.values(openApi.paths ?? {})) {
     for (const operation of Object.values(path)) {

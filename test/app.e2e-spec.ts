@@ -597,23 +597,31 @@ describe('Auth HTTP + PostgreSQL', () => {
         },
       )}`;
       const response = await http()
-        .get('/api/usuarios?busqueda=Admin&activo=true&pagina=0&limite=1')
+        .get('/api/usuarios?busqueda=Admin&activo=true&pagina=1&limite=1')
         .set('Authorization', auth)
         .expect(200);
-      expect(response.body).toMatchObject({ pagina: 0, limite: 1, total: 1 });
-      expect(response.body.datos[0]).toMatchObject({
+      expect(response.body).toMatchObject({
+        current_page: 1,
+        total_items: 1,
+        total_pages: 1,
+        has_next_page: false,
+        has_prev_page: false,
+      });
+      expect(response.body.data[0]).toMatchObject({
         nombre: 'Admin listado',
         correo: adminUser.email,
         roles: ['ADMIN'],
         activo: true,
       });
-      expect(Object.keys(response.body.datos[0]).sort()).toEqual([
+      expect(Object.keys(response.body.data[0]).sort()).toEqual([
         'activo',
         'correo',
         'fechaCreacion',
         'id',
         'nombre',
+        'permisosTemporales',
         'roles',
+        'seccionesPermitidas',
         'telefono',
       ]);
     });
@@ -809,7 +817,7 @@ describe('Auth HTTP + PostgreSQL', () => {
       const auth = `Bearer ${admin.tokenAcceso}`;
       const target = `/api/usuarios/${seller.usuario.id}`;
       const category = await prisma.category.create({
-        data: { descripcion: `Test-${randomUUID().slice(0, 8)}` },
+        data: { nombre: `Test-${randomUUID().slice(0, 8)}` },
       });
       const product = await prisma.product.create({
         data: {
@@ -965,6 +973,101 @@ describe('Auth HTTP + PostgreSQL', () => {
         .send({ activo: false })
         .expect(200);
       expect(res3.body.activo).toBe(false);
+    });
+
+    it('registers, updates and returns seccionesPermitidas and permisosTemporales across auth and users endpoints', async () => {
+      const admin = await register();
+      const adminAuth = `Bearer ${admin.tokenAcceso}`;
+      const empEmail = `${randomUUID()}@example.com`;
+      const tempPerm = [
+        {
+          permission: 'products.deactivate',
+          expiresAt: '2026-11-16T22:00:00.000Z',
+          grantedBy: admin.usuario.id,
+        },
+      ];
+
+      // Non-admin / unauthenticated cannot assign permissions on register
+      await http()
+        .post('/api/autenticacion/registro')
+        .send({
+          nombre: 'Intruso',
+          correo: `${randomUUID()}@example.com`,
+          contrasena: 'Password123!',
+          seccionesPermitidas: ['products.view'],
+        })
+        .expect(403);
+
+      // Admin registers employee with permissions
+      const created = await http()
+        .post('/api/autenticacion/registro')
+        .set('Authorization', adminAuth)
+        .send({
+          nombre: 'Empleado Permisos',
+          correo: empEmail,
+          contrasena: 'Password123!',
+          seccionesPermitidas: ['products.view', 'products.create'],
+          permisosTemporales: tempPerm,
+        })
+        .expect(201);
+      expect(created.body.usuario).toMatchObject({
+        seccionesPermitidas: ['products.view', 'products.create'],
+        permisosTemporales: tempPerm,
+      });
+
+      const empId = created.body.usuario.id as string;
+
+      // Login returns both fields
+      const loggedIn = await http()
+        .post('/api/autenticacion/login')
+        .send({ correo: empEmail, contrasena: 'Password123!' })
+        .expect(200);
+      expect(loggedIn.body.usuario).toMatchObject({
+        seccionesPermitidas: ['products.view', 'products.create'],
+        permisosTemporales: tempPerm,
+      });
+
+      // GET /usuarios/:id returns both fields
+      const detail = await http()
+        .get(`/api/usuarios/${empId}`)
+        .set('Authorization', adminAuth)
+        .expect(200);
+      expect(detail.body).toMatchObject({
+        seccionesPermitidas: ['products.view', 'products.create'],
+        permisosTemporales: tempPerm,
+      });
+
+      // PATCH /usuarios/:id updates both fields
+      const updatedTemp = [
+        {
+          permission: 'products.delete',
+          expiresAt: '2026-12-01T00:00:00.000Z',
+          reason: 'Inventario anual',
+        },
+      ];
+      const patched = await http()
+        .patch(`/api/usuarios/${empId}`)
+        .set('Authorization', adminAuth)
+        .send({
+          seccionesPermitidas: ['products.view'],
+          permisosTemporales: updatedTemp,
+        })
+        .expect(200);
+      expect(patched.body).toMatchObject({
+        seccionesPermitidas: ['products.view'],
+        permisosTemporales: updatedTemp,
+      });
+
+      // GET /usuarios includes updated fields
+      const listed = await http()
+        .get(`/api/usuarios?busqueda=${encodeURIComponent(empEmail)}`)
+        .set('Authorization', adminAuth)
+        .expect(200);
+      expect(listed.body.data[0]).toMatchObject({
+        id: empId,
+        seccionesPermitidas: ['products.view'],
+        permisosTemporales: updatedTemp,
+      });
     });
     it('documents all management contracts in Swagger', async () => {
       const response = await http().get('/api/docs-json').expect(200);

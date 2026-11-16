@@ -16,10 +16,10 @@ export function calculateSkipTake(query?: { page?: number; size?: number }): {
   skip: number;
   take: number;
 } {
-  const page = Math.max(0, Number(query?.page) || 0);
+  const page = Math.max(1, Number(query?.page) || 1);
   const size = Math.max(1, Number(query?.size) || 10);
   return {
-    skip: page * size,
+    skip: (page - 1) * size,
     take: size,
   };
 }

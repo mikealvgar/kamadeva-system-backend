@@ -108,7 +108,7 @@ describe('Product import HTTP + PostgreSQL', () => {
     });
     await prisma.product.deleteMany({ where: { id: { in: ids } } });
     await prisma.category.deleteMany({
-      where: { descripcion: { startsWith: `CAT ${tag}` } },
+      where: { nombre: { startsWith: `CAT ${tag}` } },
     });
   });
 
@@ -202,7 +202,7 @@ describe('Product import HTTP + PostgreSQL', () => {
       nombre: 'Anillo de plata',
       descripcion: 'Fino',
       precioCompra: null,
-      categoria: { descripcion: category('lencería').toUpperCase() },
+      categoria: { nombre: category('lencería').toUpperCase() },
     });
     expect(stored.precioVenta.toFixed(2)).toBe('99.90');
     expect(stored.inventoryMovements).toEqual([
@@ -241,7 +241,7 @@ describe('Product import HTTP + PostgreSQL', () => {
     const existing = await http()
       .post('/api/catalogo/categorias')
       .set('Authorization', tokens.admin)
-      .send({ name: category('lenceria') })
+      .send({ nombre: category('lenceria') })
       .expect(201);
     const file = await workbook([
       ['Uno', null, code('-1'), 1, category('LENCERÍA'), null, null, 10],
@@ -263,10 +263,10 @@ describe('Product import HTTP + PostgreSQL', () => {
     const products = await prisma.product.findMany({
       where: { codigoBarras: { startsWith: `T${tag}` } },
       orderBy: { codigoBarras: 'asc' },
-      select: { categoriaId: true, categoria: { select: { descripcion: true } } },
+      select: { categoriaId: true, categoria: { select: { nombre: true } } },
     });
     expect(products[0]!.categoriaId).toBe(existing.body.id);
-    expect(products[1]!.categoria?.descripcion).toBe(category('fetish').toUpperCase());
+    expect(products[1]!.categoria?.nombre).toBe(category('fetish').toUpperCase());
     expect(products[2]!.categoriaId).toBeNull();
   });
 

@@ -123,7 +123,7 @@ describe('InventoryMovementsService', () => {
           startDate: date.toISOString(),
           endDate: date.toISOString(),
         })
-      ).items,
+      ).data,
     ).toEqual([
       {
         id: 'movement',
@@ -158,7 +158,7 @@ describe('InventoryMovementsService', () => {
   it('returns an empty global list without checking a product', async () => {
     prisma.inventoryMovement.count.mockResolvedValue(0);
     prisma.inventoryMovement.findMany.mockResolvedValue([]);
-    expect((await service.findAll()).items).toEqual([]);
+    expect((await service.findAll()).data).toEqual([]);
     expect(prisma.product.findUnique).not.toHaveBeenCalled();
   });
 

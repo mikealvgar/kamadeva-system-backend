@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { createPaginatedResponse } from '../common/dto/paginated-response.dto.js';
 import { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { CreateExpenseDto } from './dto/create-expense.dto.js';
@@ -160,7 +161,7 @@ export class ExpensesService {
         ...(startDate ? { gte: startDate } : {}),
         ...(endDate ? { lte: endDate } : {}),
       };
-    const page = query.page ?? 0;
+    const page = query.page ?? 1;
     const size = query.size ?? query.pageSize ?? 10;
     const { skip, take } = calculateSkipTake({ page, size });
     const orderBy = resolvePrismaOrderBy({
@@ -190,24 +191,14 @@ export class ExpensesService {
     ]);
     const dtos = expenses.map(toDto);
     const totalAmount = sum._sum.monto?.toFixed(2) ?? '0.00';
-    const totalPages = total === 0 ? 0 : Math.ceil(total / size);
-    const isLastPage = totalPages === 0 || page >= totalPages - 1;
 
     return {
-      items: dtos,
-      datos: dtos,
-      data: dtos,
-      total,
-      totalRecords: total,
-      totalElements: total,
-      pagina: page,
-      page,
-      limite: size,
-      pageSize: size,
-      size,
-      totalPages,
-      isLastPage,
-      lastPage: isLastPage,
+      ...createPaginatedResponse({
+        items: dtos,
+        totalRecords: total,
+        page,
+        size,
+      }),
       montoTotal: totalAmount,
       totalAmount,
     };

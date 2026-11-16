@@ -3,7 +3,9 @@ import { isValidSizeSelection } from '../../../catalog/sizes/size-selection.js';
 import { QuoteAggregate } from '../../domain/entities/quote.aggregate.js';
 import { QuoteItem } from '../../domain/entities/quote-item.entity.js';
 import { QuoteCreatedEvent } from '../../domain/events/quote-events.js';
+import { Money } from '../../../common/domain/money.js';
 import {
+  DomainException,
   InvalidExpirationDateException,
   InvalidSizeSelectionException,
   ProductNotFoundException,
@@ -34,10 +36,12 @@ export interface CreateQuoteItemCommand {
 }
 
 export interface CreateQuoteCommand {
-  customerId: string;
+  customerId?: string;
+  customerName?: string;
   items: CreateQuoteItemCommand[];
   notes?: string;
   expiresAt?: string;
+  total?: number;
   actorId: string;
 }
 
@@ -88,10 +92,18 @@ export class CreateQuoteUseCase {
 
   async execute(command: CreateQuoteCommand): Promise<QuoteAggregate> {
     return withQuoteCreationLock(async () => {
+      const normalizedCustomerName = command.customerName?.trim() || null;
+      if (!command.customerId && !normalizedCustomerName) {
+        throw new DomainException(
+          'Debe proporcionar customerId o customerName',
+        );
+      }
       const expiresAt = parseFutureDate(command.expiresAt);
 
       const quote = await this.unitOfWork.execute(async (tx) => {
-        await this.quoteRepo.requireCustomerExists(command.customerId, tx);
+        if (command.customerId) {
+          await this.quoteRepo.requireCustomerExists(command.customerId, tx);
+        }
 
       const productIds = [
         ...new Set(command.items.map((item) => item.productId)),
@@ -121,10 +133,12 @@ export class CreateQuoteUseCase {
 
       const quoteAggregate = new QuoteAggregate({
         folio: await this.folioSequence.next('C', tx),
-        customerId: command.customerId,
+        customerId: command.customerId ?? null,
+        customerName: normalizedCustomerName,
         createdById: command.actorId,
         notes: command.notes?.trim() || null,
         expiresAt: expiresAt ?? null,
+        total: command.total !== undefined ? new Money(command.total) : undefined,
         items,
       });
 

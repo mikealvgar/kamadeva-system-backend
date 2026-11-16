@@ -65,7 +65,7 @@ describe('Inventory HTTP + PostgreSQL', () => {
         `Bearer ${jwt.sign({ sub: user.id, email: user.email, roles: role ? [role] : [] }, { secret: process.env.JWT_ACCESS_SECRET, expiresIn: '15m', algorithm: 'HS256' })}`;
     }
     const category = await prisma.category.create({
-      data: { descripcion: `inventory-${randomUUID().slice(0, 8)}` },
+      data: { nombre: `inventory-${randomUUID().slice(0, 8)}` },
     });
     categoryId = category.id;
   });
@@ -142,7 +142,7 @@ describe('Inventory HTTP + PostgreSQL', () => {
         .query({ categoryId })
         .set('Authorization', tokens.seller!)
         .expect(200);
-      expect(list.body.items ?? list.body).toEqual(
+      expect(list.body.data).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ id: products[0], existencias: quantity }),
         ]),
@@ -151,7 +151,7 @@ describe('Inventory HTTP + PostgreSQL', () => {
         .get(path())
         .set('Authorization', tokens.seller!)
         .expect(200);
-      const items = (history.body.items ?? history.body) as InventoryMovementDto[];
+      const items = history.body.data as InventoryMovementDto[];
       expect(items).toEqual([movement]);
     },
   );
@@ -246,7 +246,7 @@ describe('Inventory HTTP + PostgreSQL', () => {
       ids.push(movement.id);
     }
     const allRes = (await get().expect(200)).body;
-    const all = (allRes.items ?? allRes) as InventoryMovementDto[];
+    const all = allRes.data as InventoryMovementDto[];
     expect(all.map((m: InventoryMovementDto) => m.id)).toEqual(
       [...ids].reverse(),
     );
@@ -256,20 +256,20 @@ describe('Inventory HTTP + PostgreSQL', () => {
       startDate: dates[1],
       endDate: dates[1],
     }).expect(200)).body;
-    const combined = (combinedRes.items ?? combinedRes) as InventoryMovementDto[];
+    const combined = combinedRes.data as InventoryMovementDto[];
     expect(combined.map((m: InventoryMovementDto) => m.id)).toEqual([
       ids[1],
     ]);
     const startDateRes = (await get({ startDate: dates[1] }).expect(200)).body;
-    expect(startDateRes.items ?? startDateRes).toHaveLength(2);
+    expect(startDateRes.data).toHaveLength(2);
     const endDateRes = (await get({ endDate: dates[1] }).expect(200)).body;
-    expect(endDateRes.items ?? endDateRes).toHaveLength(2);
+    expect(endDateRes.data).toHaveLength(2);
     const typeRes = (await get({ type: 'SALE_OUT' }).expect(200)).body;
-    expect(typeRes.items ?? typeRes).toHaveLength(1);
+    expect(typeRes.data).toHaveLength(1);
     const prodRes = (await get({ productId: products[0] }).expect(200)).body;
-    expect(prodRes.items ?? prodRes).toHaveLength(2);
+    expect(prodRes.data).toHaveLength(2);
     const returnRes = (await get({ type: 'RETURN_IN' }).expect(200)).body;
-    expect(returnRes.items ?? returnRes).toEqual([]);
+    expect(returnRes.data).toEqual([]);
   });
   it.each([
     'productId=bad',
@@ -288,7 +288,7 @@ describe('Inventory HTTP + PostgreSQL', () => {
   });
   it('returns an empty list for an existing product with no movements', async () => {
     const emptyRes = (await get({ productId: products[0] }).expect(200)).body;
-    expect(emptyRes.items ?? emptyRes).toEqual([]);
+    expect(emptyRes.data).toEqual([]);
   });
   it('enforces authentication, active users and roles on both routes', async () => {
     for (const [method, endpoint] of [

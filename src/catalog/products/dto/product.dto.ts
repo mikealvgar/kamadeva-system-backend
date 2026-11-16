@@ -3,7 +3,7 @@ import { SizeRefDto } from '../../sizes/dto/size.dto.js';
 
 export class ProductCategoryRefDto {
   @ApiProperty({ format: 'uuid' }) id!: string;
-  @ApiProperty() descripcion!: string;
+  @ApiProperty() nombre!: string;
   @ApiProperty({ required: false }) name?: string;
 }
 

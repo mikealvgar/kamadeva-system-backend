@@ -1,6 +1,12 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { PurchaseStatus } from '../../generated/prisma/client.js';
 
 export class PurchaseProviderDto {
+  @ApiProperty({ format: 'uuid' }) id: string;
+  @ApiProperty() nombre: string;
+}
+
+export class PurchaseUserRefDto {
   @ApiProperty({ format: 'uuid' }) id: string;
   @ApiProperty() nombre: string;
 }
@@ -23,27 +29,29 @@ export class PurchaseItemDto {
 export class PurchaseDto {
   @ApiProperty({ format: 'uuid' }) id: string;
   @ApiProperty({ type: PurchaseProviderDto }) proveedor: PurchaseProviderDto;
+  @ApiProperty({ format: 'date-time' }) fechaCompra: string;
   @ApiProperty({ format: 'date-time' }) fechaRecepcion: string;
   @ApiProperty({ type: String, nullable: true }) folioProveedor: string | null;
   @ApiProperty({ type: String, nullable: true }) notas: string | null;
-  @ApiProperty({ example: '1950.63' }) total: string;
+  @ApiProperty({ example: '312.10' }) iva: string;
+  @ApiProperty({ example: '2262.73' }) total: string;
   @ApiProperty({ type: [PurchaseItemDto] }) productos: PurchaseItemDto[];
   @ApiProperty({ format: 'uuid' }) creadoPorId: string;
+  @ApiProperty({ enum: PurchaseStatus }) estado: PurchaseStatus;
+  @ApiProperty({ type: String, format: 'date-time', nullable: true })
+  fechaCancelacion: string | null;
+  @ApiProperty({ type: PurchaseUserRefDto, nullable: true })
+  canceladoPor: PurchaseUserRefDto | null;
+  @ApiProperty({ type: String, nullable: true })
+  motivoCancelacion: string | null;
   @ApiProperty({ format: 'date-time' }) createdAt: string;
 }
 
 export class PurchasePageDto {
-  @ApiProperty({ type: [PurchaseDto] }) items: PurchaseDto[];
   @ApiProperty({ type: [PurchaseDto] }) data: PurchaseDto[];
-  @ApiProperty({ type: [PurchaseDto] }) datos: PurchaseDto[];
-  @ApiProperty() page: number;
-  @ApiProperty() pagina: number;
-  @ApiProperty() size: number;
-  @ApiProperty() limite: number;
-  @ApiProperty() totalRecords: number;
-  @ApiProperty() totalElements: number;
-  @ApiProperty() total: number;
-  @ApiProperty() totalPages: number;
-  @ApiProperty() isLastPage: boolean;
-  @ApiProperty() lastPage: boolean;
+  @ApiProperty({ example: 1 }) current_page: number;
+  @ApiProperty({ example: 1 }) total_items: number;
+  @ApiProperty({ example: 1 }) total_pages: number;
+  @ApiProperty({ example: false }) has_next_page: boolean;
+  @ApiProperty({ example: false }) has_prev_page: boolean;
 }

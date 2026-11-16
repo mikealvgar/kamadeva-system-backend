@@ -29,7 +29,10 @@ export class QuoteDto {
   })
   folio: string;
   @ApiProperty({ enum: QuoteStatus }) status: QuoteStatus;
-  @ApiProperty({ type: CustomerDto }) customer: CustomerDto;
+  @ApiProperty({ type: CustomerDto, nullable: true })
+  customer: CustomerDto | null;
+  @ApiProperty({ type: String, nullable: true })
+  customerName: string | null;
   @ApiProperty({ type: [QuoteItemDto] }) items: QuoteItemDto[];
   @ApiProperty({ example: '300.00' }) subtotal: string;
   @ApiProperty({ example: '0.00' }) discount: string;

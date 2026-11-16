@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Param,
   ParseUUIDPipe,
   Post,
@@ -24,6 +25,7 @@ import { Roles } from '../auth/decorators/roles.decorator.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../auth/guards/roles.guard.js';
 import type { AuthUser } from '../auth/types/auth-user.type.js';
+import { CancelPurchaseDto } from './dto/cancel-purchase.dto.js';
 import { CreatePurchaseDto } from './dto/create-purchase.dto.js';
 import { ListPurchasesDto } from './dto/list-purchases.dto.js';
 import { PurchaseDto, PurchasePageDto } from './dto/purchase.dto.js';
@@ -67,5 +69,21 @@ export class PurchasesController {
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
   ): Promise<PurchaseDto> {
     return this.purchases.findById(id);
+  }
+
+  @Post(':id/cancelar')
+  @HttpCode(200)
+  @Roles('ADMIN')
+  @ApiOkResponse({
+    type: PurchaseDto,
+    description:
+      'Compra cancelada y existencias revertidas en el kardex. Repetir devuelve el mismo resultado',
+  })
+  cancel(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() dto: CancelPurchaseDto,
+    @Req() req: { user: AuthUser },
+  ): Promise<PurchaseDto> {
+    return this.purchases.cancel(id, dto.motivo, req.user.id);
   }
 }

@@ -62,6 +62,11 @@ export class CreateProductDto {
   @IsUUID('4')
   marcaId?: string | null;
 
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @IsOptional()
+  @IsUUID('4')
+  idMarca?: string | null;
+
   @ApiPropertyOptional({ type: String, nullable: true })
   @IsOptional()
   @Transform(trim)
@@ -116,6 +121,15 @@ export class CreateProductDto {
   @Min(0)
   stock?: number;
 
+  @ApiPropertyOptional({
+    type: Number,
+    minimum: 0,
+  })
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 3 })
+  @Min(0)
+  existencias?: number;
+
   @ApiProperty({ minimum: 0.01, maximum: 9999999999.99 })
   @IsNumber({ maxDecimalPlaces: 2 })
   @IsPositive()
@@ -139,6 +153,27 @@ export class CreateProductDto {
   @IsOptional()
   @IsUUID('4')
   categoryId?: string | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true, maxLength: 100 })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(100)
+  categoria?: string | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true, maxLength: 2048 })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(2048)
+  imageUrl?: string | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true, maxLength: 2048 })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(2048)
+  urlImagen?: string | null;
 
   @ApiPropertyOptional({ example: true })
   @IsOptional()

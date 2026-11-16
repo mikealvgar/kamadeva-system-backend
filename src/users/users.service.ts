@@ -8,6 +8,11 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { createPaginatedResponse } from '../common/dto/paginated-response.dto.js';
+import {
+  normalizeAllowedSections,
+  normalizeTemporaryPermissions,
+} from './dto/temporary-permission.dto.js';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { Prisma } from '../generated/prisma/client.js';
@@ -114,6 +119,7 @@ export class UsersService {
         tx.expense.count({ where: { creadoPorId: userId } }),
         tx.cashClosure.count({ where: { cerradoPorId: userId } }),
         tx.purchase.count({ where: { creadoPorId: userId } }),
+        tx.purchase.count({ where: { canceladoPorId: userId } }),
       ]);
       if (counts.some((count) => count > 0))
         throw new ConflictException(
@@ -177,10 +183,13 @@ export class UsersService {
   }
 
   async listUsers(query: ListUsersDto): Promise<UserListPageDto> {
+    const includeInactive = query.incluirInactivos ?? query.includeInactive;
     const where: Prisma.UserWhereInput = {
-      ...(query.activo === undefined
-        ? {}
-        : { activo: query.activo === 'true' }),
+      ...(query.activo !== undefined
+        ? { activo: query.activo === 'true' }
+        : includeInactive === 'false'
+          ? { activo: true }
+          : {}),
       ...(query.busqueda
         ? {
             OR: [
@@ -191,7 +200,7 @@ export class UsersService {
           }
         : {}),
     };
-    const page = query.page ?? query.pagina ?? 0;
+    const page = query.page ?? query.pagina ?? 1;
     const size = query.size ?? query.limite ?? 10;
     const { skip, take } = calculateSkipTake({ page, size });
     const orderBy = resolvePrismaOrderBy({
@@ -221,6 +230,8 @@ export class UsersService {
           email: true,
           telefono: true,
           activo: true,
+          seccionesPermitidas: true,
+          permisosTemporales: true,
           rol: { select: { id: true, nombre: true } },
           fechaCreacion: true,
         },
@@ -232,27 +243,19 @@ export class UsersService {
       correo: user.email,
       telefono: user.telefono,
       roles: user.rol && isRoleName(user.rol.nombre) ? [user.rol.nombre] : [],
+      seccionesPermitidas: normalizeAllowedSections(user.seccionesPermitidas),
+      permisosTemporales: normalizeTemporaryPermissions(
+        user.permisosTemporales,
+      ),
       activo: user.activo,
       fechaCreacion: user.fechaCreacion.toISOString(),
     }));
-    const totalPages = total === 0 ? 0 : Math.ceil(total / size);
-    const isLastPage = totalPages === 0 || page >= totalPages - 1;
-
-    return {
+    return createPaginatedResponse({
       items,
-      data: items,
-      datos: items,
-      total,
       totalRecords: total,
-      totalElements: total,
       page,
-      pagina: page,
       size,
-      limite: size,
-      totalPages,
-      isLastPage,
-      lastPage: isLastPage,
-    };
+    });
   }
 
   create(
@@ -381,6 +384,16 @@ export class UsersService {
       if (newRoleId !== undefined) {
         data.rolId = newRoleId;
       }
+      if (dto.seccionesPermitidas !== undefined) {
+        data.seccionesPermitidas = normalizeAllowedSections(
+          dto.seccionesPermitidas,
+        );
+      }
+      if (dto.permisosTemporales !== undefined) {
+        data.permisosTemporales = normalizeTemporaryPermissions(
+          dto.permisosTemporales,
+        ) as unknown as Prisma.InputJsonValue;
+      }
 
       if (Object.keys(data).length > 0) {
         await tx.user.update({
@@ -404,6 +417,8 @@ export class UsersService {
     email: string;
     telefono: string | null;
     activo: boolean;
+    seccionesPermitidas?: string[];
+    permisosTemporales?: unknown;
     rolId?: string | null;
     rol?: { id: string; nombre: string; activo?: boolean } | null;
     fechaCreacion: Date | string;
@@ -425,6 +440,10 @@ export class UsersService {
       rolId: user.rolId ?? user.rol?.id ?? null,
       rol: rolNombre ?? (user.rol?.nombre ?? null),
       roles: rolNombre ? [rolNombre] : [],
+      seccionesPermitidas: normalizeAllowedSections(user.seccionesPermitidas),
+      permisosTemporales: normalizeTemporaryPermissions(
+        user.permisosTemporales,
+      ),
       fechaCreacion: toIsoString(user.fechaCreacion),
       fechaActualizacion: toIsoString(
         user.fechaActualizacion ?? user.fechaCreacion,

@@ -1,45 +1,23 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 
 export class PaginatedResponseDto<T> {
   @ApiProperty({ description: 'Lista de elementos obtenidos para la página' })
-  items!: T[];
+  data!: T[];
 
-  @ApiProperty({ description: 'Página actual devuelta (índice base 0)', example: 0 })
-  page!: number;
+  @ApiProperty({ description: 'Página actual devuelta (base 1)', example: 1 })
+  current_page!: number;
 
-  @ApiProperty({ description: 'Tamaño de página', example: 10 })
-  size!: number;
-
-  @ApiProperty({ description: 'Cantidad total de registros existentes', example: 42 })
-  totalRecords!: number;
+  @ApiProperty({ description: 'Cantidad total de registros existentes', example: 48 })
+  total_items!: number;
 
   @ApiProperty({ description: 'Cantidad total de páginas calculadas', example: 5 })
-  totalPages!: number;
+  total_pages!: number;
 
-  @ApiProperty({ description: 'Booleano que indica si ya se llegó a la última página', example: false })
-  isLastPage!: boolean;
+  @ApiProperty({ description: 'Indica si existe una página siguiente', example: true })
+  has_next_page!: boolean;
 
-  @ApiPropertyOptional({ description: 'Alias para items' })
-  data?: T[];
-
-  @ApiPropertyOptional({ description: 'Alias para totalRecords' })
-  totalElements?: number;
-
-  @ApiPropertyOptional({ description: 'Alias para isLastPage' })
-  lastPage?: boolean;
-
-  // Campos de compatibilidad en español
-  @ApiPropertyOptional({ description: 'Alias de compatibilidad para items' })
-  datos?: T[];
-
-  @ApiPropertyOptional({ description: 'Alias de compatibilidad para totalRecords' })
-  total?: number;
-
-  @ApiPropertyOptional({ description: 'Alias de compatibilidad para page' })
-  pagina?: number;
-
-  @ApiPropertyOptional({ description: 'Alias de compatibilidad para size' })
-  limite?: number;
+  @ApiProperty({ description: 'Indica si existe una página anterior', example: false })
+  has_prev_page!: boolean;
 }
 
 export function createPaginatedResponse<T>(params: {
@@ -49,27 +27,20 @@ export function createPaginatedResponse<T>(params: {
   size?: number;
   extra?: Record<string, unknown>;
 }): PaginatedResponseDto<T> & Record<string, unknown> {
-  const page = Math.max(0, params.page ?? 0);
+  const current_page = Math.max(1, params.page ?? 1);
   const size = Math.max(1, params.size ?? 10);
-  const totalRecords = Math.max(0, params.totalRecords);
-  const totalPages = totalRecords === 0 ? 0 : Math.ceil(totalRecords / size);
-  const isLastPage = totalPages === 0 || page >= totalPages - 1;
+  const total_items = Math.max(0, params.totalRecords);
+  const total_pages = total_items === 0 ? 0 : Math.ceil(total_items / size);
+  const has_next_page = total_pages > 0 && current_page < total_pages;
+  const has_prev_page = current_page > 1;
 
   return {
-    items: params.items,
     data: params.items,
-    page,
-    size,
-    totalRecords,
-    totalElements: totalRecords,
-    totalPages,
-    isLastPage,
-    lastPage: isLastPage,
-    // Compatibilidad adicional
-    datos: params.items,
-    total: totalRecords,
-    pagina: page,
-    limite: size,
+    current_page,
+    total_items,
+    total_pages,
+    has_next_page,
+    has_prev_page,
     ...params.extra,
   };
 }

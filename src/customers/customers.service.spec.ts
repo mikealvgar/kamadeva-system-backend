@@ -103,16 +103,27 @@ describe('CustomersService', () => {
     },
   );
 
+  it('persists activo when provided on create', async () => {
+    prisma.customer.create.mockResolvedValue({ ...customer, activo: false });
+    expect(
+      await service.create({ nombre: 'Ana', activo: false }),
+    ).toMatchObject({ activo: false, isActive: false });
+    expect(prisma.customer.create).toHaveBeenCalledWith({
+      data: { nombre: 'Ana', telefono: null, correo: null, activo: false },
+      select,
+    });
+  });
+
   it.each([undefined, 'false', 'true'] as const)(
     'lists by name with includeInactive=%s',
     async (includeInactive) => {
       const result = await service.findAll({ includeInactive });
-      expect(result.items).toEqual([dto]);
-      expect(result.totalRecords).toBe(1);
-      expect(result.page).toBe(0);
-      expect(result.size).toBe(10);
-      expect(result.totalPages).toBe(1);
-      expect(result.isLastPage).toBe(true);
+      expect(result.data).toEqual([dto]);
+      expect(result.total_items).toBe(1);
+      expect(result.current_page).toBe(1);
+      expect(result.total_pages).toBe(1);
+      expect(result.has_next_page).toBe(false);
+      expect(result.has_prev_page).toBe(false);
       expect(prisma.customer.findMany).toHaveBeenCalledWith({
         where: includeInactive === 'true' ? {} : { activo: true },
         orderBy: { nombre: 'asc' },

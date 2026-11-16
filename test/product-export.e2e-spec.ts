@@ -76,7 +76,7 @@ describe('Product export HTTP + PostgreSQL', () => {
     });
     await prisma.product.deleteMany({ where: { id: { in: ids } } });
     await prisma.category.deleteMany({
-      where: { descripcion: { startsWith: `EXP-${tag}` } },
+      where: { nombre: { startsWith: `EXP-${tag}` } },
     });
     await prisma.brand.deleteMany({
       where: { descripcion: { startsWith: `MARCA-${tag}` } },
@@ -110,7 +110,7 @@ describe('Product export HTTP + PostgreSQL', () => {
 
   it('exports active products with Kardex stock, leading-zero barcodes and supports filters', async () => {
     const category = await prisma.category.create({
-      data: { descripcion: `EXP-${tag}-CAT` },
+      data: { nombre: `EXP-${tag}-CAT` },
     });
     const brand = await prisma.brand.create({
       data: { descripcion: `MARCA-${tag}` },

@@ -73,7 +73,7 @@ describe('Sizes HTTP + PostgreSQL', () => {
     }
     categoryId = (
       await prisma.category.create({
-        data: { descripcion: `Ropa-${randomUUID().slice(0, 8)}` },
+        data: { nombre: `Ropa-${randomUUID().slice(0, 8)}` },
       })
     ).id;
     customerId = (
@@ -200,7 +200,7 @@ describe('Sizes HTTP + PostgreSQL', () => {
     const activeRes = (
       await http().get(base).set('Authorization', tokens.seller!).expect(200)
     ).body;
-    const active = (activeRes.items ?? activeRes) as SizeDto[];
+    const active = activeRes.data as SizeDto[];
     const ids = active.map(({ id }) => id);
     expect(ids).not.toContain(hidden.id);
     expect(ids).toContain(s1.id);
@@ -212,7 +212,7 @@ describe('Sizes HTTP + PostgreSQL', () => {
         .set('Authorization', tokens.seller!)
         .expect(200)
     ).body;
-    const all = (allRes.items ?? allRes) as SizeDto[];
+    const all = allRes.data as SizeDto[];
     expect(all.map(({ id }) => id)).toContain(hidden.id);
 
     const getRes = await http()
@@ -322,7 +322,7 @@ describe('Sizes HTTP + PostgreSQL', () => {
     await http()
       .post(`/api/cotizaciones/${quote.id}/pagar`)
       .set('Authorization', tokens.seller!)
-      .send({ method: 'CASH', amount: Number(quote.total) })
+      .send({ metodoPago: 'EFECTIVO', montoRecibido: Number(quote.total) })
       .expect(200);
 
     const saleItems = await prisma.saleItem.findMany({

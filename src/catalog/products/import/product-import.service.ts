@@ -127,10 +127,10 @@ export class ProductImportService {
       valid.push(product);
     }
     const allCategories = await tx.category.findMany({
-      select: { id: true, descripcion: true },
+      select: { id: true, nombre: true },
     });
     const categoryIdsByKey = new Map(
-      allCategories.map(({ descripcion, id }) => [categoryKey(descripcion), id]),
+      allCategories.map(({ nombre, id }) => [categoryKey(nombre), id]),
     );
     const missingKeys = [...namesByKey.keys()].filter(
       (key) => !categoryIdsByKey.has(key),
@@ -152,7 +152,7 @@ export class ProductImportService {
       await tx.category.createMany({
         data: missingKeys.map((key) => ({
           id: categoryIdsByKey.get(key)!,
-          descripcion: namesByKey.get(key)!,
+          nombre: namesByKey.get(key)!,
         })),
       });
 

@@ -85,7 +85,7 @@ describe('Purchases HTTP + PostgreSQL', () => {
     if (purchases.length) {
       await prisma.inventoryMovement.deleteMany({
         where: {
-          tipoReferencia: 'PURCHASE',
+          tipoReferencia: { in: ['PURCHASE', 'PURCHASE_CANCELLATION'] },
           referenciaId: { in: purchases },
         },
       });
@@ -171,6 +171,30 @@ describe('Purchases HTTP + PostgreSQL', () => {
     });
     expect(product.precioCompra?.toFixed(2)).toBe('12.34');
     expect(product.precioVenta.toFixed(2)).toBe('99.95');
+
+    const withPricesAndIva = await receivePurchase(tokens.admin!, {
+      fechaCompra: '2026-10-29T12:00:00.000Z',
+      iva: 32,
+      productos: [
+        {
+          productoId: productId,
+          cantidad: 2,
+          precioCompra: 100,
+          precioVenta: 149.99,
+        },
+      ],
+    }).expect(201);
+    purchases.push(withPricesAndIva.body.id as string);
+    expect(withPricesAndIva.body).toMatchObject({
+      fechaCompra: '2026-10-29T12:00:00.000Z',
+      iva: '32.00',
+      total: '232.00',
+    });
+    const updatedProduct = await prisma.product.findUniqueOrThrow({
+      where: { id: productId },
+    });
+    expect(updatedProduct.precioCompra?.toFixed(2)).toBe('100.00');
+    expect(updatedProduct.precioVenta.toFixed(2)).toBe('149.99');
   });
 
   it('allows ADMIN to create and ADMIN/VENDEDOR to list and read purchases', async () => {
@@ -189,16 +213,22 @@ describe('Purchases HTTP + PostgreSQL', () => {
     const created = await receivePurchase().expect(201);
     purchases.push(created.body.id as string);
     const response = await http()
-      .get(`${base}?proveedorId=${providerId}&pagina=0&limite=1`)
+      .get(`${base}?proveedorId=${providerId}&pagina=1&limite=1`)
       .set('Authorization', tokens.admin!)
       .expect(200);
-    expect(response.body).toMatchObject({ pagina: 0, limite: 1, total: 1 });
-    expect(response.body.datos[0].id).toBe(created.body.id);
+    expect(response.body).toMatchObject({
+      current_page: 1,
+      total_items: 1,
+      total_pages: 1,
+      has_next_page: false,
+      has_prev_page: false,
+    });
+    expect(response.body.data[0].id).toBe(created.body.id);
     await http()
       .get(`${base}?fechaInicio=2027-01-01T00:00:00.000Z`)
       .set('Authorization', tokens.admin!)
       .expect(200)
-      .expect(({ body }) => expect(body.datos).toEqual([]));
+      .expect(({ body }) => expect(body.data).toEqual([]));
   });
 
   it('rejects invalid products, missing acquisition cost, inactive records and bad bodies without stock changes', async () => {
@@ -234,5 +264,100 @@ describe('Purchases HTTP + PostgreSQL', () => {
     });
     expect(stock._sum.cambioExistencias?.toFixed(3)).toBe('5.000');
     expect(await prisma.purchase.count()).toBe(0);
+  });
+
+  it('cancels a purchase, reverses stock in kardex, and rejects VENDEDOR or insufficient stock', async () => {
+    const created = await receivePurchase().expect(201);
+    const purchaseId = created.body.id as string;
+    purchases.push(purchaseId);
+    expect(created.body.estado).toBe('COMPLETED');
+
+    await http()
+      .post(`${base}/${purchaseId}/cancelar`)
+      .set('Authorization', tokens.seller!)
+      .send({ motivo: 'Intento sin permiso' })
+      .expect(403);
+
+    const cancelled = await http()
+      .post(`${base}/${purchaseId}/cancelar`)
+      .set('Authorization', tokens.admin!)
+      .send({ motivo: 'Factura cancelada' })
+      .expect(200);
+    expect(cancelled.body).toMatchObject({
+      id: purchaseId,
+      estado: 'CANCELLED',
+      motivoCancelacion: 'Factura cancelada',
+    });
+    expect(cancelled.body.fechaCancelacion).toBeTruthy();
+    expect(cancelled.body.canceladoPor.id).toBe(users[0]);
+
+    // Repeating cancellation is idempotent
+    const repeated = await http()
+      .post(`${base}/${purchaseId}/cancelar`)
+      .set('Authorization', tokens.admin!)
+      .send({ motivo: 'Otro motivo' })
+      .expect(200);
+    expect(repeated.body.motivoCancelacion).toBe('Factura cancelada');
+
+    // Kardex includes both PURCHASE_IN and PURCHASE_CANCELLATION (ADJUSTMENT_OUT)
+    const kardex = await http()
+      .get(`/api/productos/${productId}/movimientos`)
+      .set('Authorization', tokens.admin!)
+      .expect(200);
+    expect(
+      kardex.body.data.some(
+        (m: { tipo: string; tipoReferencia: string; referenciaId: string }) =>
+          m.tipo === 'PURCHASE_IN' &&
+          m.tipoReferencia === 'PURCHASE' &&
+          m.referenciaId === purchaseId,
+      ),
+    ).toBe(true);
+    expect(
+      kardex.body.data.some(
+        (m: {
+          tipo: string;
+          cambioExistencias: string;
+          tipoReferencia: string;
+          referenciaId: string;
+        }) =>
+          m.tipo === 'ADJUSTMENT_OUT' &&
+          m.cambioExistencias === '-2.000' &&
+          m.tipoReferencia === 'PURCHASE_CANCELLATION' &&
+          m.referenciaId === purchaseId,
+      ),
+    ).toBe(true);
+
+    // 404 for unknown purchase
+    await http()
+      .post(`${base}/${randomUUID()}/cancelar`)
+      .set('Authorization', tokens.admin!)
+      .send({ motivo: 'No existe' })
+      .expect(404);
+
+    // 409 when stock is insufficient to reverse
+    const second = await receivePurchase(tokens.admin!, {
+      productos: [{ productoId: productId, cantidad: 10 }],
+    }).expect(201);
+    const secondId = second.body.id as string;
+    purchases.push(secondId);
+
+    const outMove = await prisma.inventoryMovement.create({
+      data: {
+        productoId: productId,
+        tipo: 'ADJUSTMENT_OUT',
+        cambioExistencias: '-10.000',
+        creadoPorId: users[0],
+        notas: 'Salida para simular stock insuficiente',
+      },
+    });
+    try {
+      await http()
+        .post(`${base}/${secondId}/cancelar`)
+        .set('Authorization', tokens.admin!)
+        .send({ motivo: 'Ya se vendió' })
+        .expect(409);
+    } finally {
+      await prisma.inventoryMovement.delete({ where: { id: outMove.id } });
+    }
   });
 });

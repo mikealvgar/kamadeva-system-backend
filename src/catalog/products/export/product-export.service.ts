@@ -83,7 +83,7 @@ export class ProductExportService {
           product.existenciaMinima !== null
             ? Number(product.existenciaMinima)
             : null,
-        categoria: product.categoria?.descripcion ?? null,
+        categoria: product.categoria?.nombre ?? null,
         marca: product.marca?.descripcion ?? null,
         precioCompra:
           product.precioCompra !== null ? Number(product.precioCompra) : null,

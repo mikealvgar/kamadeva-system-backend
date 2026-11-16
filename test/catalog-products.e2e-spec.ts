@@ -22,7 +22,7 @@ interface ProductResponse {
   stockMinimo: string | null;
   urlImagen: string | null;
   activo: boolean;
-  categoria: { id: string; descripcion: string } | null;
+  categoria: { id: string; nombre: string } | null;
   fechaCreacion: string;
   fechaActualizacion: string;
 }
@@ -90,7 +90,7 @@ describe('Products HTTP + PostgreSQL', () => {
     }
     for (const name of ['Anillos', 'Collares']) {
       const category = await prisma.category.create({
-        data: { descripcion: `${name}-${randomUUID().slice(0, 8)}` },
+        data: { nombre: `${name}-${randomUUID().slice(0, 8)}` },
       });
       categories.push(category.id);
     }
@@ -183,7 +183,7 @@ describe('Products HTTP + PostgreSQL', () => {
       stockMinimo: null,
       urlImagen: null,
       activo: true,
-      categoria: { id: category.id, descripcion: category.descripcion },
+      categoria: { id: category.id, nombre: category.nombre },
       fechaCreacion: expect.any(String),
       fechaActualizacion: expect.any(String),
     });
@@ -281,7 +281,7 @@ describe('Products HTTP + PostgreSQL', () => {
         .set('Authorization', tokens.admin!)
         .expect(200)
     ).body;
-    const listed = (listedRes.items ?? listedRes) as ProductDto[];
+    const listed = listedRes.data as ProductDto[];
     expect(listed.map(({ id }) => id)).toContain(product.id);
     expect(listed.every(({ categoria }) => categoria === null)).toBe(true);
     const categorized = await create();
@@ -378,7 +378,7 @@ describe('Products HTTP + PostgreSQL', () => {
       { stock: -1 },
       { stock: 1.0001 },
       { stock: '10' },
-      { imageUrl: 'https://image.test' },
+      { imageUrl: 123 },
       { extraProp: true },
     ])
       await http()
@@ -425,7 +425,7 @@ describe('Products HTTP + PostgreSQL', () => {
         .get(base + query)
         .set('Authorization', tokens.seller!)
         .expect(200);
-      const items = (response.body.items ?? response.body) as ProductDto[];
+      const items = response.body.data as ProductDto[];
       const results = items.filter(({ id }) =>
         products.includes(id),
       );
@@ -473,7 +473,7 @@ describe('Products HTTP + PostgreSQL', () => {
         .set('Authorization', tokens.seller!)
         .expect(200)
     ).body;
-    const listItems = (listRes.items ?? listRes) as ProductResponse[];
+    const listItems = listRes.data as ProductResponse[];
     expect(
       listItems.find(({ id }) => id === product.id)
         ?.existencias,
@@ -486,7 +486,7 @@ describe('Products HTTP + PostgreSQL', () => {
       .get(`${base}/${product.id}/movimientos`)
       .set('Authorization', tokens.seller!)
       .expect(200);
-    const movements = (response.body.items ?? response.body) as Array<Record<string, unknown>>;
+    const movements = response.body.data as Array<Record<string, unknown>>;
     expect(movements).toEqual([
       {
         id: outgoing.id,
@@ -570,7 +570,7 @@ describe('Products HTTP + PostgreSQL', () => {
       { stock: -1 },
       { stock: 1.0001 },
       { stock: '99' },
-      { imageUrl: 'https://image.test' },
+      { imageUrl: 123 },
     ]) {
       await http()
         .patch(target)
@@ -764,7 +764,8 @@ describe('Products HTTP + PostgreSQL', () => {
         'exact-limit.png',
       )
       .expect(200);
-    expect(uploader.upload).toHaveBeenCalledTimes(1);
+    await post().attach('image', png, 'via-image-field.png').expect(200);
+    expect(uploader.upload).toHaveBeenCalledTimes(2);
   });
 
   it('validates UUIDs and filters', async () => {

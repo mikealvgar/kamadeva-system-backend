@@ -18,7 +18,7 @@ function makeProduct(overrides: Partial<ProductDto> = {}): ProductDto {
     existenciaMinima: '3.000',
     imageUrl: null,
     activo: true,
-    categoria: { id: 'c1', descripcion: 'BIENESTAR' },
+    categoria: { id: 'c1', nombre: 'BIENESTAR' },
     categoriaId: 'c1',
     fechaCreacion: '2026-11-01T00:00:00.000Z',
     fechaActualizacion: '2026-11-01T00:00:00.000Z',

@@ -28,7 +28,7 @@ interface ExpenseResponse {
 }
 
 interface ExpensePageResponse {
-  datos: ExpenseResponse[];
+  data: ExpenseResponse[];
   total: number;
   pagina: number;
   limite: number;
@@ -127,7 +127,7 @@ describe('Expenses HTTP + PostgreSQL', () => {
         .set('Authorization', tokens.seller)
         .expect(200);
       expect(
-        ((response.body.items ?? response.body) as ExpenseCategoryResponse[]).map(({ nombre }) => nombre),
+        (response.body.data as ExpenseCategoryResponse[]).map(({ nombre }) => nombre),
       ).toEqual(expect.arrayContaining(['Mantenimiento', 'Otros', 'Servicios']));
     });
 
@@ -197,7 +197,7 @@ describe('Expenses HTTP + PostgreSQL', () => {
           .set('Authorization', tokens.seller)
           .expect(200)
       ).body;
-      const active = (activeRes.items ?? activeRes) as ExpenseCategoryResponse[];
+      const active = activeRes.data as ExpenseCategoryResponse[];
       expect(active.map(({ id }) => id)).not.toContain(category.id);
       const allRes = (
         await http()
@@ -205,7 +205,7 @@ describe('Expenses HTTP + PostgreSQL', () => {
           .set('Authorization', tokens.seller)
           .expect(200)
       ).body;
-      const all = (allRes.items ?? allRes) as ExpenseCategoryResponse[];
+      const all = allRes.data as ExpenseCategoryResponse[];
       expect(all.map(({ id }) => id)).toContain(category.id);
 
       await createExpense({
@@ -357,19 +357,28 @@ describe('Expenses HTTP + PostgreSQL', () => {
             .set('Authorization', tokens.seller)
             .expect(200)
         ).body as ExpensePageResponse;
-      const ids = (page: ExpensePageResponse) => page.datos.map(({ id }) => id);
+      const ids = (page: ExpensePageResponse) => page.data.map(({ id }) => id);
 
       const all = await list({});
       expect(ids(all)).toEqual([third.id, second.id, first.id]);
       expect(all).toMatchObject({
-        total: 3,
-        pagina: 0,
-        limite: 10,
+        current_page: 1,
+        total_items: 3,
+        total_pages: 1,
+        has_next_page: false,
+        has_prev_page: false,
         montoTotal: '650.00',
       });
-      const page = await list({ page: 1, pageSize: 1 });
+      const page = await list({ page: 2, pageSize: 1 });
       expect(ids(page)).toEqual([second.id]);
-      expect(page).toMatchObject({ total: 3, montoTotal: '650.00' });
+      expect(page).toMatchObject({
+        current_page: 2,
+        total_items: 3,
+        total_pages: 3,
+        has_next_page: true,
+        has_prev_page: true,
+        montoTotal: '650.00',
+      });
 
       const cash = await list({ deductFromCash: 'true' });
       expect(ids(cash)).toEqual([third.id, first.id]);

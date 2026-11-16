@@ -78,6 +78,8 @@ export class SaleSummaryDto {
   @ApiProperty({ format: 'uuid' }) id: string;
   @ApiProperty({ example: 'V-000123' }) folio: string;
   @ApiProperty({ enum: SaleStatus }) status: SaleStatus;
+  @ApiProperty({ example: '598.00' }) subtotal: string;
+  @ApiProperty({ example: '0.00' }) discount: string;
   @ApiProperty({ example: '598.00' }) total: string;
   @ApiProperty({ enum: PaymentMethod, nullable: true })
   paymentMethod: PaymentMethod | null;
@@ -87,19 +89,15 @@ export class SaleSummaryDto {
   createdBy: SaleRefDto | null;
   @ApiProperty({ type: String, format: 'uuid', nullable: true })
   quoteId: string | null;
+  @ApiProperty({ type: [SaleItemDto] }) items: SaleItemDto[];
   @ApiProperty({ format: 'date-time' }) createdAt: string;
 }
 
 export class SalePageDto {
-  @ApiProperty({ type: [SaleSummaryDto] }) items: SaleSummaryDto[];
   @ApiProperty({ type: [SaleSummaryDto] }) data: SaleSummaryDto[];
-  @ApiProperty({ example: 0 }) page: number;
-  @ApiProperty({ example: 10 }) size: number;
-  @ApiProperty({ example: 10 }) pageSize: number;
-  @ApiProperty({ example: 1 }) totalRecords: number;
-  @ApiProperty({ example: 1 }) totalElements: number;
-  @ApiProperty({ example: 1 }) total: number;
-  @ApiProperty({ example: 1 }) totalPages: number;
-  @ApiProperty({ example: true }) isLastPage: boolean;
-  @ApiProperty({ example: true }) lastPage: boolean;
+  @ApiProperty({ example: 1 }) current_page: number;
+  @ApiProperty({ example: 1 }) total_items: number;
+  @ApiProperty({ example: 1 }) total_pages: number;
+  @ApiProperty({ example: false }) has_next_page: boolean;
+  @ApiProperty({ example: false }) has_prev_page: boolean;
 }

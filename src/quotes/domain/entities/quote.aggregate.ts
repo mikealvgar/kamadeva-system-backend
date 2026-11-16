@@ -21,7 +21,8 @@ export interface QuoteAggregateProps {
   id?: string;
   folio: Folio | string;
   status?: QuoteStatus;
-  customerId: string;
+  customerId?: string | null;
+  customerName?: string | null;
   createdById?: string | null;
   notes?: string | null;
   expiresAt?: Date | null;
@@ -38,7 +39,8 @@ export class QuoteAggregate {
   readonly id: string;
   private _folio: Folio;
   private _status: QuoteStatus;
-  private _customerId: string;
+  private _customerId: string | null;
+  private _customerName: string | null;
   private _createdById: string | null;
   private _notes: string | null;
   private _expiresAt: Date | null;
@@ -56,7 +58,8 @@ export class QuoteAggregate {
     this._folio =
       props.folio instanceof Folio ? props.folio : new Folio(props.folio);
     this._status = props.status ?? 'DRAFT';
-    this._customerId = props.customerId;
+    this._customerId = props.customerId ?? null;
+    this._customerName = props.customerName ?? null;
     this._createdById = props.createdById ?? null;
     this._notes = props.notes ?? null;
     this._expiresAt = props.expiresAt ?? null;
@@ -95,8 +98,12 @@ export class QuoteAggregate {
     return this._status;
   }
 
-  get customerId(): string {
+  get customerId(): string | null {
     return this._customerId;
+  }
+
+  get customerName(): string | null {
+    return this._customerName;
   }
 
   get createdById(): string | null {
@@ -162,14 +169,19 @@ export class QuoteAggregate {
   }
 
   updateDetails(params: {
-    customerId?: string;
+    customerId?: string | null;
+    customerName?: string | null;
     notes?: string | null;
     expiresAt?: Date | null;
     items?: QuoteItem[];
+    total?: Money;
   }): void {
     this.assertDraft();
     if (params.customerId !== undefined) {
       this._customerId = params.customerId;
+    }
+    if (params.customerName !== undefined) {
+      this._customerName = params.customerName?.trim() || null;
     }
     if (params.notes !== undefined) {
       this._notes = params.notes?.trim() || null;
@@ -184,6 +196,9 @@ export class QuoteAggregate {
       this._discount = totals.discount;
       this._tax = totals.tax;
       this._total = totals.total;
+    }
+    if (params.total !== undefined) {
+      this._total = params.total;
     }
     this._updatedAt = new Date();
   }

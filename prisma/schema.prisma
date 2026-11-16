@@ -33,6 +33,11 @@ enum SaleStatus {
   REFUNDED
 }
 
+enum PurchaseStatus {
+  COMPLETED
+  CANCELLED
+}
+
 enum PaymentMethod {
   CASH
   CARD
@@ -52,12 +57,14 @@ enum IdempotencyStatus {
 }
 
 model User {
-  id           String   @id @default(uuid()) @db.Uuid
-  nombre       String
-  email        String   @unique
-  passwordHash String
-  telefono     String?
-  activo       Boolean  @default(true)
+  id                  String   @id @default(uuid()) @db.Uuid
+  nombre              String
+  email               String   @unique
+  passwordHash        String
+  telefono            String?
+  activo              Boolean  @default(true)
+  seccionesPermitidas String[] @default([])
+  permisosTemporales  Json     @default("[]")
 
   rolId String? @db.Uuid
   rol   Role?   @relation(fields: [rolId], references: [id])
@@ -68,6 +75,7 @@ model User {
   cancelledSales     Sale[]              @relation("SaleCancelledBy")
   expenses           Expense[]
   purchases          Purchase[]          @relation("PurchaseCreatedBy")
+  cancelledPurchases Purchase[]          @relation("PurchaseCancelledBy")
   cashClosures       CashClosure[]       @relation("CashClosureClosedBy")
   inventoryMovements InventoryMovement[] @relation("InventoryMovementCreatedBy")
   idempotencyKeys    IdempotencyKey[]
@@ -107,9 +115,9 @@ model RefreshToken {
 }
 
 model Category {
-  id          String   @id @default(uuid()) @db.Uuid
-  descripcion String   @unique
-  activo      Boolean  @default(true)
+  id       String  @id @default(uuid()) @db.Uuid
+  nombre   String  @unique
+  isActive Boolean @default(true)
 
   products Product[]
 
@@ -225,19 +233,28 @@ model Purchase {
   proveedorId    String   @db.Uuid
   proveedor      Provider @relation(fields: [proveedorId], references: [id], onDelete: Restrict)
 
+  fechaCompra    DateTime @default(now())
   fechaRecepcion DateTime @default(now())
   folioProveedor String?
   notas          String?
+  iva            Decimal  @default(0) @db.Decimal(12, 2)
   total          Decimal  @db.Decimal(12, 2)
 
-  creadoPorId String @db.Uuid
-  creadoPor   User   @relation("PurchaseCreatedBy", fields: [creadoPorId], references: [id], onDelete: Restrict)
+  creadoPorId       String         @db.Uuid
+  creadoPor         User           @relation("PurchaseCreatedBy", fields: [creadoPorId], references: [id], onDelete: Restrict)
+
+  estado            PurchaseStatus @default(COMPLETED)
+  fechaCancelacion  DateTime?
+  canceladoPorId    String?        @db.Uuid
+  canceladoPor      User?          @relation("PurchaseCancelledBy", fields: [canceladoPorId], references: [id], onDelete: Restrict)
+  motivoCancelacion String?
 
   items         PurchaseItem[]
   fechaCreacion DateTime       @default(now())
 
   @@index([proveedorId, fechaRecepcion])
   @@index([fechaRecepcion])
+  @@index([estado])
   @@map("compras")
 }
 
@@ -267,8 +284,9 @@ model Quote {
   folio            Int         @unique @default(autoincrement())
   estado           QuoteStatus @default(DRAFT)
 
-  clienteId        String   @db.Uuid
-  cliente          Customer @relation(fields: [clienteId], references: [id])
+  clienteId        String?   @db.Uuid
+  cliente          Customer? @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  clienteNombre    String?
 
   items QuoteItem[]
 

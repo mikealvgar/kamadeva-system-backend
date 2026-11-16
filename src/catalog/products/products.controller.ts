@@ -15,12 +15,12 @@ import {
   Post,
   Query,
   Req,
-  UploadedFile,
+  UploadedFiles,
   UseFilters,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import {
   ApiBadGatewayResponse,
   ApiBadRequestResponse,
@@ -158,34 +158,45 @@ export class ProductsController {
   @ApiBadGatewayResponse({ description: 'No se pudo subir la imagen' })
   @UseFilters(ProductImageSizeFilter)
   @UseInterceptors(
-    FileInterceptor('file', {
-      limits: { fileSize: imageLimit + 1, files: 1, fields: 0 },
-      fileFilter: (_request, file, callback) => {
-        if (!imageTypes.test(file.mimetype))
-          return callback(
-            new BadRequestException('Formato de imagen inválido'),
-            false,
-          );
-        callback(null, true);
+    FileFieldsInterceptor(
+      [
+        { name: 'file', maxCount: 1 },
+        { name: 'image', maxCount: 1 },
+        { name: 'imagen', maxCount: 1 },
+      ],
+      {
+        limits: { fileSize: imageLimit + 1, files: 1, fields: 0 },
+        fileFilter: (_request, file, callback) => {
+          if (!imageTypes.test(file.mimetype))
+            return callback(
+              new BadRequestException('Formato de imagen inválido'),
+              false,
+            );
+          callback(null, true);
+        },
       },
-    }),
+    ),
   )
-  uploadImage(
+  async uploadImage(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
-    @UploadedFile(
-      new ParseFilePipe({
-        validators: [
-          // MaxFileSizeValidator is exclusive; this accepts exactly 5 MiB.
-          new MaxFileSizeValidator({ maxSize: imageLimit + 1 }),
-          new FileTypeValidator({
-            fileType: imageTypes,
-            overrideMimeType: true,
-          }),
-        ],
-      }),
-    )
-    file: Express.Multer.File,
+    @UploadedFiles()
+    files?: {
+      file?: Express.Multer.File[];
+      image?: Express.Multer.File[];
+      imagen?: Express.Multer.File[];
+    },
   ): Promise<ProductDto> {
+    const rawFile = files?.file?.[0] ?? files?.image?.[0] ?? files?.imagen?.[0];
+    const file = (await new ParseFilePipe({
+      validators: [
+        // MaxFileSizeValidator is exclusive; this accepts exactly 5 MiB.
+        new MaxFileSizeValidator({ maxSize: imageLimit + 1 }),
+        new FileTypeValidator({
+          fileType: imageTypes,
+          overrideMimeType: true,
+        }),
+      ],
+    }).transform(rawFile)) as Express.Multer.File;
     return this.products.uploadImage(id, file.buffer, file.mimetype);
   }
 }

@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { createPaginatedResponse } from '../common/dto/paginated-response.dto.js';
 import { Prisma } from '../generated/prisma/client.js';
 import { Money, Quantity } from '../common/domain/money.js';
 import { InvalidAmountException } from '../common/domain/domain-exception.js';
@@ -20,11 +21,17 @@ import {
 const purchaseSelect = {
   id: true,
   proveedor: { select: { id: true, nombre: true } },
+  fechaCompra: true,
   fechaRecepcion: true,
   folioProveedor: true,
   notas: true,
+  iva: true,
   total: true,
   creadoPorId: true,
+  estado: true,
+  fechaCancelacion: true,
+  canceladoPor: { select: { id: true, nombre: true } },
+  motivoCancelacion: true,
   fechaCreacion: true,
   items: {
     orderBy: { posicion: 'asc' },
@@ -51,9 +58,11 @@ function toDto(purchase: PurchaseRecord): PurchaseDto {
       id: purchase.proveedor.id,
       nombre: purchase.proveedor.nombre,
     },
+    fechaCompra: purchase.fechaCompra.toISOString(),
     fechaRecepcion: purchase.fechaRecepcion.toISOString(),
     folioProveedor: purchase.folioProveedor,
     notas: purchase.notas,
+    iva: purchase.iva.toFixed(2),
     total: purchase.total.toFixed(2),
     productos: purchase.items.map((item) => ({
       id: item.id,
@@ -67,6 +76,12 @@ function toDto(purchase: PurchaseRecord): PurchaseDto {
       subtotal: item.subtotalRenglon.toFixed(2),
     })),
     creadoPorId: purchase.creadoPorId,
+    estado: purchase.estado,
+    fechaCancelacion: purchase.fechaCancelacion?.toISOString() ?? null,
+    canceladoPor: purchase.canceladoPor
+      ? { id: purchase.canceladoPor.id, nombre: purchase.canceladoPor.nombre }
+      : null,
+    motivoCancelacion: purchase.motivoCancelacion,
     createdAt: purchase.fechaCreacion.toISOString(),
   };
 }
@@ -76,6 +91,9 @@ export class PurchasesService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreatePurchaseDto, actorId: string): Promise<PurchaseDto> {
+    const fechaCompra = dto.fechaCompra
+      ? new Date(dto.fechaCompra)
+      : new Date();
     const fechaRecepcion = dto.fechaRecepcion
       ? new Date(dto.fechaRecepcion)
       : new Date();
@@ -115,13 +133,17 @@ export class PurchasesService {
               throw new ConflictException(
                 `El producto ${product.codigoBarras} está inactivo`,
               );
-            if (product.precioCompra === null)
+            const effectiveCost =
+              input.precioCompra !== undefined
+                ? input.precioCompra
+                : product.precioCompra;
+            if (effectiveCost === null)
               throw new BadRequestException(
                 `Configura el precio de compra del producto ${product.codigoBarras} antes de registrarlo`,
               );
 
             const quantity = new Quantity(input.cantidad);
-            const unitCost = new Money(product.precioCompra);
+            const unitCost = new Money(effectiveCost);
             const lineSubtotal = unitCost.times(quantity);
             return {
               posicion,
@@ -129,20 +151,56 @@ export class PurchasesService {
               cantidad: quantity.toDecimal(),
               costoUnitario: unitCost.toDecimal(),
               subtotalRenglon: lineSubtotal.toDecimal(),
+              updatePrecioCompra:
+                input.precioCompra !== undefined
+                  ? unitCost.toDecimal()
+                  : undefined,
+              updatePrecioVenta:
+                input.precioVenta !== undefined
+                  ? new Money(input.precioVenta).toDecimal()
+                  : undefined,
             };
           });
-          const total = lines.reduce(
+
+          for (const line of lines) {
+            if (
+              line.updatePrecioCompra !== undefined ||
+              line.updatePrecioVenta !== undefined
+            ) {
+              await tx.product.update({
+                where: { id: line.product.id },
+                data: {
+                  ...(line.updatePrecioCompra !== undefined
+                    ? { precioCompra: line.updatePrecioCompra }
+                    : {}),
+                  ...(line.updatePrecioVenta !== undefined
+                    ? { precioVenta: line.updatePrecioVenta }
+                    : {}),
+                },
+              });
+            }
+          }
+
+          const subtotal = lines.reduce(
             (sum, line) => sum.plus(new Money(line.subtotalRenglon)),
             Money.zero(),
           );
+          const iva =
+            dto.iva !== undefined ? new Money(dto.iva) : Money.zero();
+          const total =
+            dto.total !== undefined
+              ? new Money(dto.total)
+              : subtotal.plus(iva);
 
           const created = await tx.purchase.create({
             data: {
               proveedorId: provider.id,
               creadoPorId: actorId,
+              fechaCompra,
               fechaRecepcion,
               folioProveedor: dto.folioProveedor?.trim() || null,
               notas: dto.notas?.trim() || null,
+              iva: iva.toDecimal(),
               total: total.toDecimal(),
               items: {
                 create: lines.map((line) => ({
@@ -192,7 +250,7 @@ export class PurchasesService {
   }
 
   async findAll(query: ListPurchasesDto = {}): Promise<PurchasePageDto> {
-    const page = query.page ?? query.pagina ?? 0;
+    const page = query.page ?? query.pagina ?? 1;
     const size = query.size ?? query.limite ?? 10;
     const where: Prisma.PurchaseWhereInput = {};
     if (query.proveedorId) where.proveedorId = query.proveedorId;
@@ -228,24 +286,12 @@ export class PurchasesService {
     ]);
 
     const items = records.map(toDto);
-    const totalPages = total === 0 ? 0 : Math.ceil(total / size);
-    const isLastPage = totalPages === 0 || page >= totalPages - 1;
-
-    return {
+    return createPaginatedResponse({
       items,
-      data: items,
-      datos: items,
-      page,
-      pagina: page,
-      size,
-      limite: size,
       totalRecords: total,
-      totalElements: total,
-      total,
-      totalPages,
-      isLastPage,
-      lastPage: isLastPage,
-    };
+      page,
+      size,
+    });
   }
 
   async findById(id: string): Promise<PurchaseDto> {
@@ -254,6 +300,79 @@ export class PurchasesService {
       select: purchaseSelect,
     });
     if (!purchase) throw new NotFoundException('Compra inexistente');
+    return toDto(purchase);
+  }
+
+  /**
+   * Cancels a completed purchase and reverses its stock in the kardex.
+   * Repeating the call on an already cancelled purchase returns it without
+   * creating duplicate inventory movements.
+   */
+  async cancel(
+    id: string,
+    motivo: string,
+    actorId: string,
+  ): Promise<PurchaseDto> {
+    const purchase = await serializableTransaction(
+      this.prisma,
+      async (tx) => {
+        const existing = await tx.purchase.findUnique({
+          where: { id },
+          select: purchaseSelect,
+        });
+        if (!existing) throw new NotFoundException('Compra inexistente');
+        if (existing.estado === 'CANCELLED') return existing;
+
+        const productIds = existing.items.map((item) => item.productoId);
+        const groupedStock = await tx.inventoryMovement.groupBy({
+          by: ['productoId'],
+          where: { productoId: { in: productIds } },
+          _sum: { cambioExistencias: true },
+        });
+        const stockByProduct = new Map<string, Prisma.Decimal>(
+          groupedStock.map((row) => [
+            row.productoId,
+            new Prisma.Decimal(row._sum.cambioExistencias ?? 0),
+          ]),
+        );
+
+        for (const item of existing.items) {
+          const available =
+            stockByProduct.get(item.productoId) ?? new Prisma.Decimal(0);
+          if (available.lessThan(item.cantidad)) {
+            throw new ConflictException(
+              `Stock insuficiente para cancelar la compra del producto ${item.codigoBarras}`,
+            );
+          }
+        }
+
+        const updated = await tx.purchase.update({
+          where: { id: existing.id },
+          data: {
+            estado: 'CANCELLED',
+            fechaCancelacion: new Date(),
+            canceladoPorId: actorId,
+            motivoCancelacion: motivo,
+          },
+          select: purchaseSelect,
+        });
+
+        await tx.inventoryMovement.createMany({
+          data: existing.items.map((item) => ({
+            productoId: item.productoId,
+            tipo: 'ADJUSTMENT_OUT',
+            cambioExistencias: item.cantidad.negated(),
+            costoUnitario: item.costoUnitario,
+            tipoReferencia: 'PURCHASE_CANCELLATION',
+            referenciaId: updated.id,
+            creadoPorId: actorId,
+            notas: `Cancelación de compra: ${motivo}`,
+          })),
+        });
+
+        return updated;
+      },
+    );
     return toDto(purchase);
   }
 }

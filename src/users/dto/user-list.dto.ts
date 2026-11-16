@@ -1,4 +1,5 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
+import { TemporaryPermissionDto } from './temporary-permission.dto.js';
 
 export class UserListItemDto {
   @ApiProperty({ format: 'uuid' })
@@ -16,6 +17,12 @@ export class UserListItemDto {
   @ApiProperty({ type: [String] })
   roles: string[];
 
+  @ApiProperty({ type: [String] })
+  seccionesPermitidas: string[];
+
+  @ApiProperty({ type: [TemporaryPermissionDto] })
+  permisosTemporales: TemporaryPermissionDto[];
+
   @ApiProperty()
   activo: boolean;
 
@@ -25,41 +32,20 @@ export class UserListItemDto {
 
 export class UserListPageDto {
   @ApiProperty({ type: [UserListItemDto] })
-  items: UserListItemDto[];
-
-  @ApiProperty({ type: [UserListItemDto], required: false })
-  data?: UserListItemDto[];
-
-  @ApiProperty({ type: [UserListItemDto], required: false })
-  datos: UserListItemDto[];
-
-  @ApiProperty({ example: 0 })
-  page: number;
-
-  @ApiProperty({ example: 0, required: false })
-  pagina: number;
-
-  @ApiProperty({ example: 10 })
-  size: number;
-
-  @ApiProperty({ example: 10, required: false })
-  limite: number;
+  data: UserListItemDto[];
 
   @ApiProperty({ example: 1 })
-  totalRecords: number;
-
-  @ApiProperty({ example: 1, required: false })
-  totalElements?: number;
+  current_page: number;
 
   @ApiProperty({ example: 1 })
-  total: number;
+  total_items: number;
 
   @ApiProperty({ example: 1 })
-  totalPages: number;
+  total_pages: number;
 
-  @ApiProperty({ example: true })
-  isLastPage: boolean;
+  @ApiProperty({ example: false })
+  has_next_page: boolean;
 
-  @ApiPropertyOptional({ example: true })
-  lastPage?: boolean;
+  @ApiProperty({ example: false })
+  has_prev_page: boolean;
 }

@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
+  IsArray,
   IsBoolean,
   IsByteLength,
   IsEmail,
@@ -10,8 +11,10 @@ import {
   Matches,
   MaxLength,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
 import { ROLE_NAMES, type RoleName } from '../../roles/role-names.js';
+import { TemporaryPermissionDto } from './temporary-permission.dto.js';
 
 export class UpdateUserDto {
   @ApiPropertyOptional({ example: 'Juan Pérez', maxLength: 200 })
@@ -135,4 +138,23 @@ export class UpdateUserDto {
   @IsOptional()
   @IsIn(ROLE_NAMES)
   rol?: RoleName;
+
+  @ApiPropertyOptional({
+    type: [String],
+    example: ['products.view', 'products.create'],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(100, { each: true })
+  seccionesPermitidas?: string[];
+
+  @ApiPropertyOptional({
+    type: [TemporaryPermissionDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TemporaryPermissionDto)
+  permisosTemporales?: TemporaryPermissionDto[];
 }

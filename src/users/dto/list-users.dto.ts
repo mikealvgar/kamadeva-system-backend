@@ -26,11 +26,21 @@ export class ListUsersDto extends PaginationQueryDto {
   @IsIn(['true', 'false'])
   activo?: 'true' | 'false';
 
-  @ApiPropertyOptional({ minimum: 0, default: 0, description: 'Alias para page' })
+  @ApiPropertyOptional({ enum: ['true', 'false'] })
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  incluirInactivos?: 'true' | 'false';
+
+  @ApiPropertyOptional({ enum: ['true', 'false'] })
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  includeInactive?: 'true' | 'false';
+
+  @ApiPropertyOptional({ minimum: 1, default: 1, description: 'Alias para page' })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @Min(0)
+  @Min(1)
   pagina?: number;
 
   @ApiPropertyOptional({ minimum: 1, maximum: 100, default: 10, description: 'Alias para size' })

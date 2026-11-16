@@ -100,9 +100,11 @@ export class QuotesService {
     try {
       const quote = await this.createQuoteUseCase.execute({
         customerId: dto.customerId,
+        customerName: dto.customerName,
         items: dto.items,
         notes: dto.notes,
         expiresAt: dto.expiresAt,
+        total: dto.total,
         actorId,
       });
       const resolved =
@@ -168,8 +170,8 @@ export class QuotesService {
   async pay(id: string, dto: PayQuoteDto, actorId: string): Promise<SaleDto> {
     try {
       const sale = await this.payQuoteUseCase.execute(id, {
-        amount: dto.amount,
-        method: dto.method,
+        amount: dto.montoRecibido,
+        method: dto.metodoPago,
         actorId,
       });
       const record = await this.prisma.sale.findUnique({

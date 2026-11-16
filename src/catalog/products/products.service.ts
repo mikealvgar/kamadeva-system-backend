@@ -43,7 +43,7 @@ const productSelect = {
   fechaCreacion: true,
   fechaActualizacion: true,
   categoriaId: true,
-  categoria: { select: { id: true, descripcion: true } },
+  categoria: { select: { id: true, nombre: true } },
 } satisfies Prisma.ProductSelect;
 type ProductRecord = Prisma.ProductGetPayload<{ select: typeof productSelect }>;
 
@@ -55,10 +55,27 @@ export class ProductsService {
   ) {}
 
   async create(dto: CreateProductDto, actorId: string): Promise<ProductDto> {
-    const categoryId = dto.categoriaId ?? dto.categoryId;
-    if (categoryId) await this.requireCategory(categoryId);
+    let categoryId = dto.categoriaId ?? dto.categoryId;
+    if (categoryId) {
+      await this.requireCategory(categoryId);
+    } else if (dto.categoria) {
+      const catName = dto.categoria.trim().replace(/\s+/g, ' ').toUpperCase();
+      if (catName) {
+        const category = await this.prisma.category.findUnique({
+          where: { nombre: catName },
+        });
+        if (category) {
+          categoryId = category.id;
+        } else {
+          const createdCategory = await this.prisma.category.create({
+            data: { nombre: catName },
+          });
+          categoryId = createdCategory.id;
+        }
+      }
+    }
 
-    let marcaId = dto.marcaId;
+    let marcaId = dto.marcaId ?? dto.idMarca;
     if (!marcaId && dto.marca) {
       const brandName = dto.marca.trim().toUpperCase();
       const brand = await this.prisma.brand.findUnique({
@@ -80,6 +97,10 @@ export class ProductsService {
         throw new BadRequestException('El nombre o artículo es obligatorio');
       }
 
+      const rawImageUrl = (dto.imageUrl ?? dto.urlImagen)?.trim() || null;
+      const imageUrl =
+        rawImageUrl && !rawImageUrl.startsWith('blob:') ? rawImageUrl : null;
+
       const data: Prisma.ProductUncheckedCreateInput = {
         nombre,
         descripcion: (dto.descripcion ?? dto.description)?.trim() || null,
@@ -98,9 +119,10 @@ export class ProductsService {
               : null,
         categoriaId: categoryId ?? null,
         activo: dto.activo ?? dto.isActive ?? true,
+        ...(imageUrl !== null ? { imageUrl } : {}),
       };
 
-      const initialStock = new Prisma.Decimal(dto.stock ?? 0);
+      const initialStock = new Prisma.Decimal(dto.stock ?? dto.existencias ?? 0);
       const product = initialStock.isZero()
         ? await this.prisma.product.create({ data, select: productSelect })
         : await serializableTransaction(this.prisma, async (tx) => {

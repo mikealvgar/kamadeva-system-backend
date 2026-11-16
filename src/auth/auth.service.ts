@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   UnauthorizedException,
@@ -19,6 +20,10 @@ import type { AuthUser } from './types/auth-user.type.js';
 import type { AuthResult, TokenPair } from './types/auth-result.type.js';
 import { serializableTransaction } from '../prisma/serializable-transaction.js';
 import { isRoleName } from '../roles/role-names.js';
+import {
+  normalizeAllowedSections,
+  normalizeTemporaryPermissions,
+} from '../users/dto/temporary-permission.dto.js';
 
 type RefreshPayload = { sub: string; jti: string; exp: number };
 type UserWithRole = NonNullable<Awaited<ReturnType<UsersService['findById']>>>;
@@ -39,14 +44,6 @@ const ADMIN_SECTIONS = [
   'CONFIGURACION',
 ];
 
-const VENDEDOR_SECTIONS = [
-  'VENTAS',
-  'COTIZACIONES',
-  'CLIENTES',
-  'PRODUCTOS',
-  'INVENTARIO',
-];
-
 @Injectable()
 export class AuthService {
   constructor(
@@ -56,7 +53,7 @@ export class AuthService {
     private readonly config: ConfigService,
   ) {}
 
-  async register(dto: RegisterDto): Promise<AuthResult> {
+  async register(dto: RegisterDto, authorization?: string): Promise<AuthResult> {
     const rawName = (dto.name ?? dto.nombre)?.trim();
     const rawEmail = (dto.email ?? dto.correo)?.trim().toLowerCase();
     const rawPassword = dto.password ?? dto.contrasena;
@@ -65,6 +62,13 @@ export class AuthService {
       throw new BadRequestException(
         'El nombre, correo y contraseña son obligatorios',
       );
+    }
+
+    const hasPermissionsInput =
+      dto.seccionesPermitidas !== undefined ||
+      dto.permisosTemporales !== undefined;
+    if (hasPermissionsInput) {
+      await this.assertAdminCanAssignPermissions(authorization);
     }
 
     if (await this.users.findByEmail(rawEmail)) {
@@ -95,6 +99,14 @@ export class AuthService {
         }
 
         const userId = randomUUID();
+        const seccionesPermitidas =
+          dto.seccionesPermitidas !== undefined
+            ? normalizeAllowedSections(dto.seccionesPermitidas)
+            : [];
+        const permisosTemporales =
+          dto.permisosTemporales !== undefined
+            ? normalizeTemporaryPermissions(dto.permisosTemporales)
+            : [];
         const createdUser = await tx.user.create({
           data: {
             id: userId,
@@ -104,6 +116,9 @@ export class AuthService {
             telefono: dto.telefono ? dto.telefono.trim() : null,
             rolId: role.id,
             activo: true,
+            seccionesPermitidas,
+            permisosTemporales:
+              permisosTemporales as unknown as Prisma.InputJsonValue,
           },
           include: { rol: true },
         });
@@ -201,6 +216,13 @@ export class AuthService {
   private publicUser(user: UserWithRole): AuthUser {
     const rolNombre = user.rol?.activo && isRoleName(user.rol.nombre) ? user.rol.nombre : '';
     const hasAdmin = rolNombre === 'ADMIN';
+    const storedSections = normalizeAllowedSections(user.seccionesPermitidas);
+    const seccionesPermitidas =
+      storedSections.length > 0
+        ? storedSections
+        : hasAdmin
+          ? ADMIN_SECTIONS
+          : [];
     return {
       id: user.id,
       nombre: user.nombre,
@@ -212,8 +234,36 @@ export class AuthService {
       rolId: user.rolId,
       roles: rolNombre ? [rolNombre] : [],
       hasAdmin,
-      seccionesPermitidas: hasAdmin ? ADMIN_SECTIONS : rolNombre ? VENDEDOR_SECTIONS : [],
+      seccionesPermitidas,
+      permisosTemporales: normalizeTemporaryPermissions(user.permisosTemporales),
     };
+  }
+
+  private async assertAdminCanAssignPermissions(
+    authorization?: string,
+  ): Promise<void> {
+    const match = /^Bearer\s+(.+)$/i.exec(authorization?.trim() ?? '');
+    const token = match?.[1]?.trim() ?? '';
+    if (!token) {
+      throw new ForbiddenException(
+        'Solo un administrador puede asignar permisos',
+      );
+    }
+    let payload: { sub?: string };
+    try {
+      payload = await this.jwt.verifyAsync<{ sub?: string }>(token);
+    } catch {
+      throw new UnauthorizedException('Token inválido o expirado');
+    }
+    if (!payload?.sub || !isUUID(payload.sub)) {
+      throw new UnauthorizedException('Token inválido o expirado');
+    }
+    const actor = await this.users.findById(payload.sub);
+    if (!actor || !actor.activo || !actor.rol?.activo || actor.rol.nombre !== 'ADMIN') {
+      throw new ForbiddenException(
+        'Solo un administrador puede asignar permisos',
+      );
+    }
   }
 
   private async issueSession(user: AuthUser) {
